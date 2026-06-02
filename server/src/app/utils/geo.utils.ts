@@ -4,7 +4,8 @@ import { RIDE_STATUS, RIDE_TYPE } from '../modules/ride/ride.constant';
 import { Ride } from '../modules/ride/ride.model';
 import { User } from '../modules/user/user.model';
 import { Vehicle } from '../modules/vehicle/vehicle.model';
-import { calculateDistance, calculateFareFromDistance, getRealDistanceAndETA } from './location.utils';
+import { calculateDistance, calculateFareFromDistance } from './location.utils';
+import { getRealDistanceAndETA } from './maps.utils';
 
 const DESTINATION_MATCH_RADIUS_KM = 5; 
 
