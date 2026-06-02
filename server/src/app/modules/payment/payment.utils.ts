@@ -1,6 +1,8 @@
 import Stripe from 'stripe'
 import { Types } from 'mongoose'
 import { config } from '../../config/env.config'
+console.log(config.server.url);
+
 
 const stripe: Stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2025-08-27.basil',
