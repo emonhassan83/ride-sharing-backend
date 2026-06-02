@@ -32,14 +32,18 @@ export interface TRide {
 
   totalSeats: number;
   bookedSeats: number;
-  startOdometer: number
-  endOdometer: number
+  startOdometer: number;
+  endOdometer: number;
+  routeGeometry?: {
+    type: 'LineString';
+    coordinates: number[][];
+  };
 
   status: TRideStatus;
-  cancellationReason: string
-  cancelledAt: Date
-  arrivedAt: Date
-  cancelledBy: TCancelledBy
+  cancellationReason: string;
+  cancelledAt: Date;
+  arrivedAt: Date;
+  cancelledBy: TCancelledBy;
 
   createdAt: Date;
   updatedAt: Date;
