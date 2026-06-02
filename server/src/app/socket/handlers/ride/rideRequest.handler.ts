@@ -4,17 +4,18 @@ import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant'
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { RIDE_STATUS } from '../../../modules/ride/ride.constant';
 import { Ride } from '../../../modules/ride/ride.model';
-import {
-  calculateDistance,
-  getRealDistanceAndETA,
-} from '../../../utils/location.utils';
+import { calculateDistance } from '../../../utils/location.utils';
 import { calculateFareBreakdown } from '../../../utils/fareCalculator';
 import { TSocket } from '../../interface/socket.interface';
 import eventHandler from '../../utils/eventHandler';
 import { getFareType } from '../../../utils/time.utils';
 import { roundObjectNumbers, roundTo2 } from '../../../utils/number.utils';
 import { getIO } from '../../socket.init';
-import { getRouteGeometry, startMatchingForRide } from '../../../utils/maps.utils';
+import {
+  getRealDistanceAndETA,
+  getRouteGeometry,
+  startMatchingForRide,
+} from '../../../utils/maps.utils';
 
 export const rideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -71,7 +72,7 @@ export const rideRequestHandler = eventHandler<any>(
         actualDuration = Math.ceil((actualDistance / 30) * 60);
       }
 
-        // ✅ রুট জ্যামিতি সংগ্রহ (উভয় টাইপের জন্যই)
+      // ✅ রুট জ্যামিতি সংগ্রহ (উভয় টাইপের জন্যই)
       let routeGeometry = null;
       try {
         routeGeometry = await getRouteGeometry(pickup, destination);
