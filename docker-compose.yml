@@ -1,0 +1,93 @@
+version: '3.8'
+services:
+  redis:
+    image: redis:latest
+    container_name: splitride_redis_container
+    command: redis-server --requirepass myStrongRedisPassword
+    ports:
+      - 6380:6379
+    networks:
+      - splitride_backend_network
+    volumes:
+      - splitride_redis_volume:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "myStrongRedisPassword", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-ui:
+    image: rediscommander/redis-commander:latest
+    container_name: splitride_redis_ui_container
+    environment:
+      # Format: connectionName:host:port:dbIndex:password
+      - REDIS_HOSTS=local:redis:6379:0:myStrongRedisPassword
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=admin
+    ports:
+      - 8082:8081
+    networks:
+      - splitride_backend_network
+    depends_on:
+      - redis
+
+  worker:
+    container_name: splitride_worker_container
+    build:
+      context: ./worker
+      dockerfile: Dockerfile.dev
+    env_file:
+      - ./worker/.env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: myStrongRedisPassword
+      DATABASE_URL: postgresql://postgres:myStrongPostgresPassword@postgres:5432/splitride
+      NODE_ENV: development
+    volumes:
+      - ./worker:/app             
+      - /app/node_modules          
+      - ./worker/logs:/app/logs
+    networks:
+      - splitride_backend_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    container_name: splitride_server_container
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./server/.env
+    environment:
+      - NODE_ENV=development
+      - TZ=Asia/Dhaka
+    volumes:
+      - ./server:/app             
+      - /app/node_modules         
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - splitride_backend_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  splitride_backend_network:
+    name: splitride_backend_network
+    driver: bridge
+
+volumes:
+  splitride_redis_volume:

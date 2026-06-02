@@ -1,0 +1,29 @@
+# Development Dockerfile with watch mode support
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Set time zone to Asia/Dhaka
+RUN apk add --no-cache tzdata && \
+    ln -sf /usr/share/zoneinfo/Asia/Dhaka /etc/localtime && \
+    echo "Asia/Dhaka" > /etc/timezone
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev dependencies)
+RUN npm install
+
+# Copy tsconfig and source files
+COPY tsconfig.json ./
+COPY src ./src
+
+# Expose the development port (matches docker-compose and ts-node-dev config)
+EXPOSE 8080
+
+# Set development environment
+ENV NODE_ENV=development
+ENV TZ=Asia/Dhaka
+
+# Use ts-node-dev for watch mode (--respawn to restart on changes, --transpile-only for faster compilation)
+CMD ["npm", "run", "dev"]

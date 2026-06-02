@@ -1,0 +1,116 @@
+import { z } from 'zod';
+import { PROVIDER_STATUS } from './provider.constant';
+
+const imageUrlSchema = z
+  .string({ required_error: 'Image URL is required' })
+  .url('Must be a valid image URL')
+  .trim();
+
+// ─────────────────────────────────────────────────────────────
+// Create Provider (Initial Submission)
+// ─────────────────────────────────────────────────────────────
+const createProviderZodSchema = z.object({
+  body: z.object({
+    companyName: z
+      .string()
+      .min(3, 'Company name must be at least 3 characters')
+      .max(100, 'Company name is too long')
+      .trim(),
+
+    companyReg: z
+      .string()
+      .min(3, 'Company registration number is required')
+      .trim(),
+
+    vatNumber: z
+      .string()
+      .min(3, 'VAT number is required')
+      .trim(),
+
+    socialInsurance: z
+      .string()
+      .min(3, 'Social insurance number is required')
+      .trim(),
+
+    cnicFront: imageUrlSchema,
+    cnicBack: imageUrlSchema,
+    licenseFront: imageUrlSchema,
+    licenseBack: imageUrlSchema,
+
+    carPapers: z
+      .array(imageUrlSchema, { required_error: 'Car papers are required' })
+      .min(1, 'At least 1 car paper is required')
+      .max(10, 'Maximum 10 car papers allowed'),
+  }),
+});
+
+// ─────────────────────────────────────────────────────────────
+// Update Documents (After Rejection)
+// ─────────────────────────────────────────────────────────────
+const updateProviderZodSchema = z.object({
+  body: z.object({
+    companyName: z
+      .string()
+      .min(3)
+      .max(100)
+      .trim()
+      .optional(),
+
+    companyReg: z.string().trim().optional(),
+    vatNumber: z.string().trim().optional(),
+    socialInsurance: z.string().trim().optional(),
+
+    cnicFront: imageUrlSchema.optional(),
+    cnicBack: imageUrlSchema.optional(),
+    licenseFront: imageUrlSchema.optional(),
+    licenseBack: imageUrlSchema.optional(),
+
+    carPapers: z
+      .array(imageUrlSchema)
+      .min(1, 'At least 1 car paper is required')
+      .max(10, 'Maximum 10 car papers allowed')
+      .optional(),
+  })
+    .refine((data) => Object.keys(data).length > 0, {
+      message: 'At least one field must be provided for update',
+    }),
+});
+
+// ─────────────────────────────────────────────────────────────
+// Update Status (Admin Only)
+// ─────────────────────────────────────────────────────────────
+const updateStatusZodSchema = z.object({
+  body: z.object({
+    status: z.enum(Object.values(PROVIDER_STATUS) as [string, ...string[]]),
+
+    rejectionReason: z
+      .string()
+      .trim()
+      .min(10, 'Rejection reason must be at least 10 characters')
+      .max(1000)
+      .optional(),
+  })
+    .refine(
+      (data) =>
+        !(data.status === PROVIDER_STATUS.rejected && !data.rejectionReason),
+      {
+        message: 'Rejection reason is required when rejecting a provider',
+        path: ['rejectionReason'],
+      }
+    )
+    .refine(
+      (data) =>
+        !(data.status !== PROVIDER_STATUS.rejected && data.rejectionReason),
+      {
+        message: 'Rejection reason should only be provided when status is rejected',
+        path: ['rejectionReason'],
+      }
+    ),
+});
+
+
+export const ProviderValidation = {
+  createProviderZodSchema,
+  updateProviderZodSchema,
+  updateStatusZodSchema
+};

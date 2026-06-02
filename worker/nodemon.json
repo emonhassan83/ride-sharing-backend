@@ -1,0 +1,8 @@
+{
+  "watch": ["src"],
+  "ext": "ts",
+  "ignore": ["node_modules", "dist"],
+  "exec": "ts-node --transpile-only --require tsconfig-paths/register src/index.ts",
+  "legacyWatch": true,
+  "pollingInterval": 1000
+}

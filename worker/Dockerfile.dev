@@ -1,0 +1,14 @@
+FROM node:20-alpine
+WORKDIR /app
+# Set time zone to Asia/Dhaka
+RUN apk add --no-cache tzdata && \
+    ln -sf /usr/share/zoneinfo/Asia/Dhaka /etc/localtime && \
+    echo "Asia/Dhaka" > /etc/timezone
+RUN apk add --no-cache dumb-init
+COPY package*.json ./
+COPY tsconfig.json ./
+RUN npm install
+ENV NODE_ENV=development
+ENV TZ=Asia/Dhaka
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["npm", "run", "dev"]
