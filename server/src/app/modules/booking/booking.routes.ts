@@ -17,7 +17,7 @@ router.get(
 // ====================== USER & DRIVER ROUTES ======================
 router.get(
   '/my-bookings',
-  auth([USER_ROLE.admin, USER_ROLE.provider]),
+  auth([USER_ROLE.user, USER_ROLE.provider]),
   BookingController.getMyBookings
 );
 
@@ -30,7 +30,7 @@ router.get(
 // Status Update
 router.patch(
   '/status/:id',
-  auth([USER_ROLE.admin, USER_ROLE.provider]),                    // Driver & Admin can update
+  auth([USER_ROLE.admin, USER_ROLE.provider]),                    
   validateRequest(BookingValidation.updateBookingStatusZodSchema),
   BookingController.updateBookingStatus
 );

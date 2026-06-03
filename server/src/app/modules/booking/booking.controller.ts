@@ -9,7 +9,8 @@ const getAllBookings = catchAsync(async (req: Request, res: Response) => {
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'All bookings retrieved successfully',
-    data: result,
+    data: result.data,
+    pagination: result.meta
   });
 });
 
@@ -19,7 +20,8 @@ const getMyBookings = catchAsync(async (req: Request, res: Response) => {
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'My bookings retrieved successfully',
-    data: result,
+    data: result.data,
+    pagination: result.meta
   });
 });
 
