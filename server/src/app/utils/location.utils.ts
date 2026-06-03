@@ -1,7 +1,3 @@
-import axios from 'axios';
-import { getRedisClient } from '../config/redis.config';
-import { config } from '../config/env.config';
-
 export interface LatLng {
   lat: number;
   lng: number;
