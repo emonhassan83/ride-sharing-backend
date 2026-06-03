@@ -41,6 +41,19 @@ const rideSchema = new Schema<TRide>(
     startOdometer: { type: Number },
     endOdometer: { type: Number },
 
+    // Route geometry (GeoJSON LineString)
+    routeGeometry: {
+      type: {
+        type: String,
+        enum: ['LineString'],
+        default: 'LineString',
+      },
+      coordinates: {
+        type: [[Number]], // array of [[lng, lat], [lng, lat], ...]
+        required: false,
+      },
+    },
+
     totalSeats: { type: Number, required: true, min: 1 },
     bookedSeats: { type: Number, default: 0 },
 
