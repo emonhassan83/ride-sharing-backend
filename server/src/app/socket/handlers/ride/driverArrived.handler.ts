@@ -43,6 +43,7 @@ export const driverArrivedHandler = eventHandler<any>(
       await Passenger.findByIdAndUpdate(passenger._id, {
         arriveAt: new Date(),
         arrivedNotified: true,
+        status: PASSENGER_STATUS.driver_arrived,
       });
 
       // Redis log
