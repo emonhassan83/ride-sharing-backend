@@ -38,6 +38,7 @@ export async function triggerArrival(
     // ── Update passenger ───────────────────────────────────────────────────
     passenger.arriveAt = new Date();
     passenger.arrivedNotified = true;
+    passenger.status = PASSENGER_STATUS.driver_arrived;
     await passenger.save();
     console.log(`✅ Passenger ${passengerId} → arrivedNotified: true`);
 
@@ -63,7 +64,7 @@ export async function triggerArrival(
       passengerId: passenger._id,
       driverId,
       message: 'Your driver has arrived at your pickup location',
-      waitingTime: 2,
+      waitingTime: 0,
       autoDetected: true,
     });
 

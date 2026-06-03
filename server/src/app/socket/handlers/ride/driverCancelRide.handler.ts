@@ -46,8 +46,19 @@ export const driverCancelRideHandler = eventHandler<any>(
           success: false,
           message: 'Not assigned to this ride',
         });
-      if (ride.status !== RIDE_STATUS.accepted)
-        return callback?.({ success: false, message: 'Cannot cancel now' });
+
+      // শুধুমাত্র accepted স্টেটে ক্যানসেল করা যাবে
+      const cancellableStatuses = [
+        RIDE_STATUS.accepted,
+        RIDE_STATUS.driver_assigned,
+        RIDE_STATUS.driver_arrived,
+      ];
+      if (!cancellableStatuses.includes(ride.status as any)) {
+        return callback?.({
+          success: false,
+          message: 'Cannot cancel now: trip already in progress or completed',
+        });
+      }
 
       const redis = getRedisClient();
       const io = getIO();
@@ -56,7 +67,7 @@ export const driverCancelRideHandler = eventHandler<any>(
       if (ride.type === RIDE_TYPE.private) {
         const passenger = await Passenger.findOne({
           rideId,
-          status: PASSENGER_STATUS.matched,
+          status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.in_progress, PASSENGER_STATUS.driver_arrived] },
         });
         if (!passenger)
           return callback?.({

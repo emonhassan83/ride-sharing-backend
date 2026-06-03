@@ -9,7 +9,7 @@ import { Ride } from "../modules/ride/ride.model";
 import { getIO } from "../socket/socket.init";
 
 
-const NO_SHOW_WAIT_TIME = 5 * 60 * 1000; // 5 minutes
+const NO_SHOW_WAIT_TIME = 60 * 60 * 1000; // 1 hour in milliseconds
 const BATCH_SIZE = 50;
 
 /**
