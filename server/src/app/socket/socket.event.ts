@@ -20,6 +20,7 @@ import { driverRejectRideHandler } from './handlers/ride/driverRejectRide.handle
 import { driverCancelRideHandler } from './handlers/ride/driverCancelRide.handler';
 import { driverArrivedHandler } from './handlers/ride/driverArrived.handler';
 import { driverStartTripHandler } from './handlers/ride/driverStartTrip.handler';
+import { pickUpRideHandler } from './handlers/ride/pickUpRide.handler';
 import { driverCompleteTripHandler } from './handlers/ride/driverCompleteTrip.handler';
 
 // Passenger/Ride events
@@ -85,6 +86,9 @@ export const registerSocketEvents = (socket: Socket) => {
   );
   tSocket.on('driver:start-trip', (data, callback) =>
     driverStartTripHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('driver:pickup-ride', (data, callback) =>
+    pickUpRideHandler.call(tSocket, data, callback)
   );
   tSocket.on('driver:complete-trip', (data, callback) =>
     driverCompleteTripHandler.call(tSocket, data, callback)
