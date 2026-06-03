@@ -200,9 +200,9 @@ const sendOtpInEmail = async (userId: string, email: string) => {
 
 const sendOtpViaTokenInPhone = async (
   userId: string,
-  payload: { phoneNumber: string }
+  payload: { phone: string }
 ) => {
-  const { phoneNumber } = payload;
+  const { phone } = payload;
 
   const user = await User.findById(userId);
   if (!user || user?.isDeleted) {
@@ -229,7 +229,7 @@ const sendOtpViaTokenInPhone = async (
   const isDevelopment = config.environment !== 'production';
 
   if (isDevelopment) {
-    console.log('🔑 [MOCK OTP] Phone:', phoneNumber);
+    console.log('🔑 [MOCK OTP] Phone:', phone);
     console.log('🔑 [MOCK OTP] Code:', otp);
     console.log(
       '🔑 [MOCK OTP] Expires at:',
@@ -252,7 +252,7 @@ const sendOtpViaTokenInPhone = async (
     const res = await client.messages.create({
       body: `Welcome to Split Ride, your verification code is ${otp}. It expires in 5 minutes. Please do not sharing.`,
       from: config.twilio.phoneNumber,
-      to: phoneNumber,
+      to: phone,
     });
     console.log(res);
 
@@ -265,10 +265,10 @@ const sendOtpViaTokenInPhone = async (
   }
 };
 
-const sendOtpViaDirectPhone = async (payload: { phoneNumber: string }) => {
-  const { phoneNumber } = payload;
+const sendOtpViaDirectPhone = async (payload: { phone: string }) => {
+  const { phone } = payload;
 
-  const user = await User.findOne({ phoneNumber });
+  const user = await User.findOne({ phone });
   if (!user || user?.isDeleted) {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'User not found');
   }
@@ -277,12 +277,13 @@ const sendOtpViaDirectPhone = async (payload: { phoneNumber: string }) => {
   const hashedOtp = await bcrypt.hash(otp.toString(), 10);
 
   // === Save OTP redis ===
-  await OtpRedisService.saveOtp(phoneNumber, hashedOtp, OTP_EXPIRE);
+  await OtpRedisService.saveOtp(user.email, hashedOtp, OTP_EXPIRE);
   const expiresAt = moment().add(5, 'minute');
 
   const jwtPayload = {
-    phoneNumber: user?.phone,
     userId: user?._id,
+    email: user?.email,
+    role: user?.role,
   };
   const token = jwt.sign(jwtPayload, config.jwt.accessSecret as Secret, {
     expiresIn: '5m',
@@ -292,7 +293,7 @@ const sendOtpViaDirectPhone = async (payload: { phoneNumber: string }) => {
   const isDevelopment = config.environment !== 'production';
 
   if (isDevelopment) {
-    console.log('🔑 [MOCK OTP] Phone:', phoneNumber);
+    console.log('🔑 [MOCK OTP] Phone:', phone);
     console.log('🔑 [MOCK OTP] Code:', otp);
     console.log(
       '🔑 [MOCK OTP] Expires at:',
@@ -315,7 +316,7 @@ const sendOtpViaDirectPhone = async (payload: { phoneNumber: string }) => {
     const res = await client.messages.create({
       body: `Your verification code is ${otp}. It expires in 5 minutes. Please do not sharing.`,
       from: config.twilio.phoneNumber,
-      to: phoneNumber,
+      to: phone,
     });
     console.log(res);
 

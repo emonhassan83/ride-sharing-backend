@@ -13,6 +13,7 @@ import { TSocket } from "../../interface/socket.interface";
 import { getIO } from "../../socket.init";
 import eventHandler from "../../utils/eventHandler";
 import { RIDE_HISTORY_PAYMENT_STATUS, RIDE_HISTORY_STATUS } from "../../../modules/riderHistory/riderHistory.constant";
+import { getRealDistanceAndETA } from "../../../utils/maps.utils";
 
 /**
  * driver:complete-trip Handler
@@ -23,12 +24,9 @@ import { RIDE_HISTORY_PAYMENT_STATUS, RIDE_HISTORY_STATUS } from "../../../modul
  */
 export const driverCompleteTripHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    let {
+    const {
       rideId,
       passengerId,
-      fare,
-      distance,
-      duration,
       endOdometer,
       completeType = 'all',
       waitingCharge = 0,
@@ -36,377 +34,272 @@ export const driverCompleteTripHandler = eventHandler<any>(
     } = data;
     const driverId = socket.auth?._id?.toString();
 
-    if (!driverId || !rideId) {
+    if (!driverId || !rideId)
       return callback?.({ success: false, message: 'Missing required fields' });
-    }
 
-    try {
-      const redis = getRedisClient();
-      const ride = await Ride.findById(rideId);
+    const redis = getRedisClient();
+    const io = getIO();
 
-      if (!ride) {
-        return callback?.({ success: false, message: 'Ride not found' });
-      }
-      if (ride.driverId?.toString() !== driverId) {
-        return callback?.({ success: false, message: 'You are not assigned to this ride' });
-      }
-      if (ride.status !== RIDE_STATUS.in_progress) {
-        return callback?.({ success: false, message: `Ride cannot be completed in current state: ${ride.status}` });
-      }
+    const ride = await Ride.findById(rideId);
+    if (!ride) return callback?.({ success: false, message: 'Ride not found' });
+    if (ride.driverId?.toString() !== driverId)
+      return callback?.({ success: false, message: 'You are not assigned to this ride' });
+    if (ride.status !== RIDE_STATUS.in_progress)
+      return callback?.({ success: false, message: `Ride cannot be completed in current state: ${ride.status}` });
 
-      const io = getIO();
+    // ── Driver info ───────────────────────────────────────────────────────────
+    const driverDetails = await redis.hgetall(`driver:${driverId}:details`);
+    const driverName  = driverDetails?.name          || socket.auth?.name               || 'Unknown';
+    const driverPhone = driverDetails?.phone         || socket.auth?.phone              || '';
+    const driverPhoto = driverDetails?.photo         || socket.auth?.photo              || null;
+    const carModel    = driverDetails?.vehicleModel  || socket.auth?.vehicle?.model     || 'Standard';
+    const carNumber   = driverDetails?.vehicleNumber || socket.auth?.vehicle?.number    || null;
 
-      // ড্রাইভার তথ্য (Redis থেকে)
-      const driverDetails = await redis.hgetall(`driver:${driverId}:details`);
-      const driverName = driverDetails?.name || socket.auth?.name || 'Unknown';
-      const driverPhone = driverDetails?.phone || socket.auth?.phone || '';
-      const driverPhoto = driverDetails?.photo || socket.auth?.photo || '';
-      const carModel = driverDetails?.vehicleModel || 'Standard';
-      const carNumber = driverDetails?.vehicleNumber || '';
+    // ── Location history from Redis ───────────────────────────────────────────
+    const locationKey = `ride:${rideId}:live`;
+    const locations = await redis.lrange(locationKey, 0, -1);
+    const parsedLocations = locations.map((loc: string) => JSON.parse(loc));
 
-      // লোকেশন হিস্ট্রি
-      const locationKey = `ride:${rideId}:live`;
-      const locations = await redis.lrange(locationKey, 0, -1);
-      const parsedLocations = locations.map((loc) => JSON.parse(loc));
+    // ── Get real distance & duration per passenger via Google Maps ────────────
+    const getPassengerDistanceDuration = async (passenger: any): Promise<{
+      distanceKm: number;
+      durationSeconds: number;
+      fare: number;
+    }> => {
+      const pickupLat = passenger.pickup.coordinates[1];
+      const pickupLng = passenger.pickup.coordinates[0];
+      const destLat   = passenger.destination.coordinates[1];
+      const destLng   = passenger.destination.coordinates[0];
 
-      let actualDistance = distance;
-      let actualFare = fare;
-      if (!actualDistance && parsedLocations.length > 0) {
-        actualDistance = calculateTotalDistance(parsedLocations);
-        actualFare = calculateFareFromDistance(actualDistance);
-      }
-
-      // ========== প্রাইভেট রাইড ==========
-      if (ride.type === RIDE_TYPE.private) {
-        const passenger = await Passenger.findOne({
-          rideId,
-          status: PASSENGER_STATUS.picked_up, // শুধু picked_up
-        });
-        if (!passenger) {
-          return callback?.({ success: false, message: 'No passenger found for this private ride' });
-        }
-
-        const individualFare = actualFare + waitingCharge + extraCharge;
-
-        // বুকিং আপডেট
-        await Booking.findOneAndUpdate(
-          { passengerId: passenger._id },
-          {
-            totalFare: individualFare,
-            bookingStatus: BOOKING_STATUS.completed,
-            paymentStatus: PAYMENT_STATUS.pending,
-          }
+      try {
+        const { distanceKm, durationMinutes } = await getRealDistanceAndETA(
+          { lat: pickupLat, lng: pickupLng },
+          { lat: destLat,   lng: destLng   },
         );
 
-        // প্যাসেঞ্জার আপডেট
-        passenger.status = PASSENGER_STATUS.dropped_off;
-        passenger.droppedOffAt = new Date();
-        if (waitingCharge) passenger.waitingCharge = waitingCharge;
-        if (extraCharge) passenger.extraCharge = extraCharge;
-        await passenger.save();
-
-        // রাইড আপডেট
-        await Ride.findByIdAndUpdate(rideId, {
-          status: RIDE_STATUS.completed,
-          completedAt: new Date(),
-          endOdometer: endOdometer || 0,
-          actualDistance,
-          actualFare: individualFare,
-          tripDuration: duration || calculateDuration(parsedLocations),
-        });
-
-        // RiderHistory তৈরি
-        await RiderHistory.create({
-          userId: passenger.userId,
-          rideId: ride._id,
-          summary: {
-            pickupAddress: passenger.pickup.address,
-            pickupCoordinates: passenger.pickup.coordinates,
-            destinationAddress: passenger.destination.address,
-            destinationCoordinates: passenger.destination.coordinates,
-            date: new Date(),
-            fare: individualFare,
-            distance: actualDistance,
-            duration: duration || calculateDuration(parsedLocations),
-            rideType: ride.type,
-          },
-          driver: {
-            driverId: ride.driverId,
-            driverName,
-            driverPhone,
-            driverPhoto,
-            carModel,
-            carNumber,
-          },
-          paymentStatus: RIDE_HISTORY_PAYMENT_STATUS.pending,
-          status: RIDE_HISTORY_STATUS.completed,
-        });
-
-        // নোটিফিকেশন
-        io.to(`user:${passenger.userId}`).emit('ride:trip-completed', {
-          rideId,
-          passengerId: passenger._id,
-          fare: individualFare,
-          distance: actualDistance,
-          duration: duration || calculateDuration(parsedLocations),
-          message: 'Trip completed successfully',
-          waitingCharge,
-          extraCharge,
-        });
-
-        io.to(`user:${passenger.userId}`).emit('ride:request-rating', { rideId, driverId });
-
-        // লোকেশন হিস্ট্রি সেভ ও রেডিস ক্লিনআপ
-        await saveLocationsToDatabase(rideId, parsedLocations, driverId);
-        await redis.del(locationKey);
-        await redis.del(`ride:active:${rideId}`);
-        await redis.del(`driver:${driverId}:activeRide`);
-
-        return callback?.({
-          success: true,
-          message: 'Private ride completed successfully',
-          fare: individualFare,
-          passengerCount: 1,
-          allDroppedOff: true,
-        });
+        const fare = calculateFareFromDistance(distanceKm);
+        return {
+          distanceKm,
+          durationSeconds: durationMinutes * 60,
+          fare,
+        };
+      } catch {
+        // Fallback to Redis location data
+        const distanceKm    = calculateTotalDistance(parsedLocations) || passenger.estimatedDistanceKm || 0;
+        const durationSeconds = calculateDuration(parsedLocations)    || 0;
+        const fare          = calculateFareFromDistance(distanceKm);
+        return { distanceKm, durationSeconds, fare };
       }
+    };
 
-      // ========== স্প্লিট রাইড ==========
+    // ── Helper: create RiderHistory ───────────────────────────────────────────
+    const createRiderHistory = async (
+      passenger: any,
+      totalFare: number,
+      distanceKm: number,
+      durationSeconds: number,
+    ) => {
+      await RiderHistory.create({
+        userId: passenger.userId,
+        rideId: ride._id,
+        summary: {
+          pickupAddress:        passenger.pickup.address,
+          pickupCoordinates:    passenger.pickup.coordinates,
+          destinationAddress:   passenger.destination.address,
+          destinationCoordinates: passenger.destination.coordinates,
+          date:     new Date(),
+          fare:     totalFare,
+          distance: distanceKm,
+          duration: durationSeconds,
+          rideType: ride.type,
+        },
+        driver: {
+          driverId:    ride.driverId,
+          driverName,
+          driverPhone,
+          driverPhoto,
+          carModel,
+          carNumber,
+        },
+        paymentStatus: RIDE_HISTORY_PAYMENT_STATUS.paid,
+        status:        RIDE_HISTORY_STATUS.completed,
+      });
+    };
 
-      // কেস ১: নির্দিষ্ট প্যাসেঞ্জার ড্রপ অফ (single)
-      if (completeType === 'single' && passengerId) {
-        const passenger = await Passenger.findOne({
-          _id: passengerId,
-          rideId,
-          status: PASSENGER_STATUS.picked_up,
-        });
-        if (!passenger) {
-          return callback?.({ success: false, message: 'Passenger not found or already dropped off' });
-        }
+    // ── Helper: complete a single passenger ───────────────────────────────────
+    const completePassenger = async (passenger: any) => {
+      const { distanceKm, durationSeconds, fare: calculatedFare } =
+        await getPassengerDistanceDuration(passenger);
 
-        const individualFare = (passenger.estimatedFare || actualFare) + waitingCharge + extraCharge;
+      const baseFare  = passenger.estimatedFare || calculatedFare;
+      const totalFare = baseFare + waitingCharge + extraCharge;
 
-        // বুকিং আপডেট
-        await Booking.findOneAndUpdate(
-          { passengerId: passenger._id },
-          {
-            totalFare: individualFare,
-            bookingStatus: BOOKING_STATUS.completed,
-            paymentStatus: PAYMENT_STATUS.pending,
-          }
-        );
+      passenger.status      = PASSENGER_STATUS.dropped_off;
+      passenger.droppedOffAt = new Date();
+      if (waitingCharge) passenger.waitingCharge = waitingCharge;
+      if (extraCharge)   passenger.extraCharge   = extraCharge;
+      await passenger.save();
 
-        // প্যাসেঞ্জার আপডেট
-        passenger.status = PASSENGER_STATUS.dropped_off;
-        passenger.droppedOffAt = new Date();
-        if (waitingCharge) passenger.waitingCharge = waitingCharge;
-        if (extraCharge) passenger.extraCharge = extraCharge;
-        await passenger.save();
+      await Booking.findOneAndUpdate(
+        { passengerId: passenger._id },
+        {
+          totalFare,
+          amountPaid:    totalFare,
+          bookingStatus: BOOKING_STATUS.completed,
+          paymentStatus: PAYMENT_STATUS.paid,
+        },
+      );
 
-        // RiderHistory তৈরি
-        await RiderHistory.create({
-          userId: passenger.userId,
-          rideId: ride._id,
-          summary: {
-            pickupAddress: passenger.pickup.address,
-            pickupCoordinates: passenger.pickup.coordinates,
-            destinationAddress: passenger.destination.address,
-            destinationCoordinates: passenger.destination.coordinates,
-            date: new Date(),
-            fare: individualFare,
-            distance: actualDistance,
-            duration: duration || calculateDuration(parsedLocations),
-            rideType: ride.type,
-          },
-          driver: {
-            driverId: ride.driverId,
-            driverName,
-            driverPhone,
-            driverPhoto,
-            carModel,
-            carNumber,
-          },
-          paymentStatus: RIDE_HISTORY_PAYMENT_STATUS.pending,
-          status: RIDE_HISTORY_STATUS.completed,
-        });
+      await createRiderHistory(passenger, totalFare, distanceKm, durationSeconds);
 
-        // ইভেন্ট লগ
-        await redis.rpush(`ride:${rideId}:live`, JSON.stringify({
-          event: 'PASSENGER_DROPPED_OFF',
-          driverId,
-          passengerId: passenger._id,
-          timestamp: Date.now(),
-          endOdometer: endOdometer || 0,
-        }));
+      io.to(`user:${passenger.userId}`).emit('ride:trip-completed', {
+        rideId,
+        passengerId:      passenger._id,
+        fare:             totalFare,
+        distance:         distanceKm,
+        duration:         durationSeconds,
+        message:          'Trip completed successfully. Thank you for riding with us!',
+        waitingCharge,
+        extraCharge,
+      });
 
-        // ✅ প্রথম ড্রপ অফে endOdometer রাইড ডকুমেন্টে সেভ (যদি পাঠানো থাকে)
-        if (endOdometer && !ride.endOdometer) {
-          await Ride.findByIdAndUpdate(rideId, { endOdometer });
-        }
+      io.to(`user:${passenger.userId}`).emit('ride:request-rating', { rideId, driverId });
 
-        // নোটিফিকেশন
-        io.to(`user:${passenger.userId}`).emit('ride:trip-completed', {
-          rideId,
-          passengerId: passenger._id,
-          fare: individualFare,
-          distance: actualDistance,
-          duration: duration || calculateDuration(parsedLocations),
-          message: 'You have been dropped off. Thank you for riding with us!',
-          waitingCharge,
-          extraCharge,
-        });
-        io.to(`user:${passenger.userId}`).emit('ride:request-rating', { rideId, driverId });
+      return { totalFare, distanceKm, durationSeconds };
+    };
 
-        // বাকি প্যাসেঞ্জার সংখ্যা
-        const remainingPassengers = await Passenger.countDocuments({
-          rideId,
-          status: PASSENGER_STATUS.picked_up,
-        });
-        const allDroppedOff = remainingPassengers === 0;
+    // ── Helper: finalize ride ─────────────────────────────────────────────────
+    const finalizeRide = async (distanceKm: number, durationSeconds: number, totalFare?: number) => {
+      await Ride.findByIdAndUpdate(rideId, {
+        status:       RIDE_STATUS.completed,
+        completedAt:  new Date(),
+        endOdometer:  endOdometer || 0,
+        actualDistance: distanceKm,
+        actualFare:   totalFare,
+        tripDuration: durationSeconds,
+      });
 
-        // সব প্যাসেঞ্জার ড্রপ হলে রাইড সম্পন্ন
-        if (allDroppedOff) {
-          await Ride.findByIdAndUpdate(rideId, {
-            status: RIDE_STATUS.completed,
-            completedAt: new Date(),
-            actualDistance,
-            tripDuration: duration || calculateDuration(parsedLocations),
-          });
+      await saveLocationsToDatabase(rideId, parsedLocations, driverId);
 
-          // লোকেশন হিস্ট্রি একবারই সেভ
-          await saveLocationsToDatabase(rideId, parsedLocations, driverId);
+      await Promise.all([
+        redis.del(locationKey),
+        redis.del(`ride:active:${rideId}`),
+        redis.del(`driver:${driverId}:activeRide`),
+      ]);
 
-          // রেডিস ক্লিনআপ
-          await redis.del(locationKey);
-          await redis.del(`ride:active:${rideId}`);
-          await redis.del(`driver:${driverId}:activeRide`);
+      io.to(`driver:${driverId}`).emit('ride:all-passengers-dropped', {
+        rideId,
+        message: 'All passengers dropped off. Ride completed.',
+      });
 
-          io.to(`driver:${driverId}`).emit('ride:all-passengers-dropped', {
-            rideId,
-            message: 'All passengers have been dropped off. Ride completed.',
-          });
-        }
+      io.to(`ride:${rideId}`).emit('ride:status-update', {
+        rideId,
+        status:      RIDE_STATUS.completed,
+        completedAt: new Date(),
+      });
+    };
 
-        return callback?.({
-          success: true,
-          message: allDroppedOff
-            ? 'All passengers dropped off. Ride completed successfully!'
-            : `Passenger dropped off. ${remainingPassengers} passenger(s) remaining.`,
-          passengerId: passenger._id,
-          fare: individualFare,
-          remainingPassengers,
-          allDroppedOff,
-        });
-      }
+    // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
+    if (ride.type === RIDE_TYPE.private) {
+      const passenger = await Passenger.findOne({
+        rideId,
+        status: PASSENGER_STATUS.picked_up,
+      });
+      if (!passenger)
+        return callback?.({ success: false, message: 'No passenger found for this private ride' });
 
-      // কেস ২: সব প্যাসেঞ্জার একসাথে ড্রপ (completeType === 'all')
-      if (completeType === 'all') {
-        const passengers = await Passenger.find({
-          rideId,
-          status: PASSENGER_STATUS.picked_up,
-        });
-        if (passengers.length === 0) {
-          return callback?.({ success: false, message: 'No passengers found for this ride' });
-        }
+      const { totalFare, distanceKm, durationSeconds } = await completePassenger(passenger);
 
-        for (const passenger of passengers) {
-          const individualFare = (passenger.estimatedFare || actualFare) + waitingCharge + extraCharge;
+      await finalizeRide(distanceKm, durationSeconds, totalFare);
 
-          // বুকিং আপডেট
-          await Booking.findOneAndUpdate(
-            { passengerId: passenger._id },
-            {
-              totalFare: individualFare,
-              bookingStatus: BOOKING_STATUS.completed,
-              paymentStatus: PAYMENT_STATUS.pending,
-            }
-          );
-
-          // প্যাসেঞ্জার আপডেট
-          passenger.status = PASSENGER_STATUS.dropped_off;
-          passenger.droppedOffAt = new Date();
-          if (waitingCharge) passenger.waitingCharge = waitingCharge;
-          if (extraCharge) passenger.extraCharge = extraCharge;
-          await passenger.save();
-
-          // RiderHistory তৈরি
-          await RiderHistory.create({
-            userId: passenger.userId,
-            rideId: ride._id,
-            summary: {
-              pickupAddress: passenger.pickup.address,
-              pickupCoordinates: passenger.pickup.coordinates,
-              destinationAddress: passenger.destination.address,
-              destinationCoordinates: passenger.destination.coordinates,
-              date: new Date(),
-              fare: individualFare,
-              distance: actualDistance,
-              duration: duration || calculateDuration(parsedLocations),
-              rideType: ride.type,
-            },
-            driver: {
-              driverId: ride.driverId,
-              driverName,
-              driverPhone,
-              driverPhoto,
-              carModel,
-              carNumber,
-            },
-            paymentStatus: RIDE_HISTORY_PAYMENT_STATUS.pending,
-            status: RIDE_HISTORY_STATUS.completed,
-          });
-
-          // নোটিফিকেশন
-          io.to(`user:${passenger.userId}`).emit('ride:trip-completed', {
-            rideId,
-            passengerId: passenger._id,
-            fare: individualFare,
-            distance: actualDistance,
-            duration: duration || calculateDuration(parsedLocations),
-            message: 'Trip completed successfully. Thank you for riding with us!',
-            waitingCharge,
-            extraCharge,
-          });
-          io.to(`user:${passenger.userId}`).emit('ride:request-rating', { rideId, driverId });
-        }
-
-        // রাইড আপডেট
-        await Ride.findByIdAndUpdate(rideId, {
-          status: RIDE_STATUS.completed,
-          completedAt: new Date(),
-          endOdometer: endOdometer || 0,
-          actualDistance,
-          tripDuration: duration || calculateDuration(parsedLocations),
-        });
-
-        // লোকেশন হিস্ট্রি সেভ
-        await saveLocationsToDatabase(rideId, parsedLocations, driverId);
-
-        // রেডিস ক্লিনআপ
-        await redis.del(locationKey);
-        await redis.del(`ride:active:${rideId}`);
-        await redis.del(`driver:${driverId}:activeRide`);
-
-        const totalEarnings = passengers.reduce((sum, p) => sum + (p.estimatedFare || 0), 0) + waitingCharge + extraCharge;
-        const platformCommission = totalEarnings * 0.15;
-        const driverEarnings = totalEarnings - platformCommission;
-
-        return callback?.({
-          success: true,
-          message: 'All passengers dropped off. Ride completed successfully!',
-          fare: actualFare,
-          totalEarnings,
-          driverEarnings,
-          platformCommission,
-          passengerCount: passengers.length,
-          allDroppedOff: true,
-        });
-      }
-
-      return callback?.({ success: false, message: 'Invalid completeType or missing passengerId for single dropoff' });
-    } catch (error) {
-      console.error('Error in driverCompleteTripHandler:', error);
-      return callback?.({ success: false, message: 'Internal server error' });
+      return callback?.({
+        success:      true,
+        message:      'Private ride completed successfully',
+        fare:         totalFare,
+        distance:     distanceKm,
+        duration:     durationSeconds,
+        passengerCount: 1,
+        allDroppedOff:  true,
+      });
     }
-  }
+
+    // ── SPLIT RIDE — single passenger drop ────────────────────────────────────
+    if (completeType === 'single' && passengerId) {
+      const passenger = await Passenger.findOne({
+        _id: passengerId,
+        rideId,
+        status: PASSENGER_STATUS.picked_up,
+      });
+      if (!passenger)
+        return callback?.({ success: false, message: 'Passenger not found or already dropped off' });
+
+      const { totalFare, distanceKm, durationSeconds } = await completePassenger(passenger);
+
+      await redis.rpush(`ride:${rideId}:live`, JSON.stringify({
+        event:       'WAYPOINT',
+        note:        'PASSENGER_DROPPED_OFF',
+        driverId,
+        passengerId: passenger._id,
+        timestamp:   Date.now(),
+        endOdometer: endOdometer || 0,
+      }));
+
+      if (endOdometer && !ride.endOdometer)
+        await Ride.findByIdAndUpdate(rideId, { endOdometer });
+
+      const remainingPassengers = await Passenger.countDocuments({
+        rideId,
+        status: PASSENGER_STATUS.picked_up,
+      });
+      const allDroppedOff = remainingPassengers === 0;
+
+      if (allDroppedOff) await finalizeRide(distanceKm, durationSeconds, totalFare);
+
+      return callback?.({
+        success:   true,
+        message:   allDroppedOff
+          ? 'All passengers dropped off. Ride completed!'
+          : `Passenger dropped off. ${remainingPassengers} passenger(s) remaining.`,
+        passengerId:        passenger._id,
+        fare:               totalFare,
+        distance:           distanceKm,
+        duration:           durationSeconds,
+        remainingPassengers,
+        allDroppedOff,
+      });
+    }
+
+    // ── SPLIT RIDE — all passengers drop ─────────────────────────────────────
+    if (completeType === 'all') {
+      const passengers = await Passenger.find({ rideId, status: PASSENGER_STATUS.picked_up });
+      if (!passengers.length)
+        return callback?.({ success: false, message: 'No passengers found for this ride' });
+
+      let totalFareSum    = 0;
+      let lastDistanceKm  = 0;
+      let lastDurationSec = 0;
+
+      for (const passenger of passengers) {
+        const { totalFare, distanceKm, durationSeconds } = await completePassenger(passenger);
+        totalFareSum    += totalFare;
+        lastDistanceKm   = distanceKm;
+        lastDurationSec  = durationSeconds;
+      }
+
+      await finalizeRide(lastDistanceKm, lastDurationSec, totalFareSum);
+
+      return callback?.({
+        success:       true,
+        message:       'All passengers dropped off. Ride completed successfully!',
+        totalFare:     totalFareSum,
+        passengerCount: passengers.length,
+        allDroppedOff:  true,
+      });
+    }
+
+    return callback?.({
+      success: false,
+      message: 'Invalid completeType or missing passengerId for single dropoff',
+    });
+  },
 );

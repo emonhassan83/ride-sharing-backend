@@ -56,7 +56,13 @@ export const driverStartTripHandler = eventHandler<any>(
       if (ride.type === RIDE_TYPE.private) {
         const passenger = await Passenger.findOne({
           rideId,
-          status: PASSENGER_STATUS.matched,
+          status: {
+            $in: [
+              PASSENGER_STATUS.matched,
+              PASSENGER_STATUS.in_progress,
+              PASSENGER_STATUS.driver_arrived,
+            ],
+          },
         });
         if (!passenger) {
           return callback?.({
@@ -129,7 +135,13 @@ export const driverStartTripHandler = eventHandler<any>(
         const passenger = await Passenger.findOne({
           _id: passengerId,
           rideId,
-          status: PASSENGER_STATUS.matched,
+          status: {
+            $in: [
+              PASSENGER_STATUS.matched,
+              PASSENGER_STATUS.in_progress,
+              PASSENGER_STATUS.driver_arrived,
+            ],
+          },
         });
         if (!passenger) {
           return callback?.({
@@ -171,7 +183,9 @@ export const driverStartTripHandler = eventHandler<any>(
         const otherPassengers = await Passenger.find({
           rideId,
           _id: { $ne: passengerId },
-          status: PASSENGER_STATUS.matched,
+          status: {
+            $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.driver_arrived],
+          },
         }).select('userId');
         for (const op of otherPassengers) {
           io.to(`user:${op.userId}`).emit('ride:co-passenger-picked', {
@@ -185,7 +199,13 @@ export const driverStartTripHandler = eventHandler<any>(
         // বাকি প্যাসেঞ্জার সংখ্যা
         const remainingPassengers = await Passenger.countDocuments({
           rideId,
-          status: PASSENGER_STATUS.matched,
+          status: {
+            $in: [
+              PASSENGER_STATUS.matched,
+              PASSENGER_STATUS.driver_arrived,
+              PASSENGER_STATUS.in_progress,
+            ],
+          },
         });
         const allPickedUp = remainingPassengers === 0;
 
@@ -296,7 +316,7 @@ export const driverStartTripHandler = eventHandler<any>(
         await redis.rpush(
           `ride:${rideId}:live`,
           JSON.stringify({
-            event: 'TRIP_STARTED_ALL',
+            event: 'TRIP_STARTED',
             driverId,
             passengerCount: passengers.length,
             passengerIds: passengers.map((p) => p._id),
