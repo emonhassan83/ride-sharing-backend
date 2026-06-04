@@ -10,6 +10,8 @@ export type TWithdraw = {
   stripeTransferId?: string
   status: TWithdrawStatus
   proceedAt?: Date
+  completedAt?: Date
+  note?: String
   createdAt?: Date
 }
 

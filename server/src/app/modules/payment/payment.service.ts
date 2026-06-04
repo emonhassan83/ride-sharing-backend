@@ -6,11 +6,6 @@ import mongoose, { startSession } from 'mongoose';
 import { PAYMENT_STATUS } from './payment.constant';
 import { BOOKING_STATUS } from '../booking/booking.constant';
 import { User } from '../user/user.model';
-// import { sendBookingsNotification } from '../booking/booking.utils'
-// import {
-//   sendNewBookingToConsultant,
-//   sendPaymentSuccessToUser,
-// } from '../../utils/emailNotify'
 import { Chat } from '../chat/chat.models';
 import { CHAT_STATUS } from '../chat/chat.constants';
 import ApiError from '../../errors/ApiError';
@@ -21,6 +16,7 @@ import { createCheckoutSession } from './payment.utils';
 import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
 import { Ride } from '../ride/ride.model';
+import { Setting } from '../settings/settings.model';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-05-27.dahlia',
@@ -36,31 +32,45 @@ const createPaymentIntent = async (payload: {
 }) => {
   const { booking: bookingId, user: userId } = payload;
 
-  // 1. Validate Booking
+  // ── 1. Validate booking ───────────────────────────────────────────────────
   const booking = await Booking.findById(bookingId);
   if (!booking) throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found');
-  if (booking.userId.toString() !== userId) {
+  if (booking.userId.toString() !== userId)
     throw new ApiError(
       StatusCodes.FORBIDDEN,
       'This booking does not belong to you'
     );
-  }
-  if (booking.paymentStatus === 'paid') {
+  if (booking.paymentStatus === PAYMENT_STATUS.paid)
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       'Payment already completed for this booking'
     );
-  }
 
-  // 2. Validate User
+  // ── 2. Validate user ──────────────────────────────────────────────────────
   const user = await User.findById(userId);
-  if (!user || user.isDeleted) {
+  if (!user || user.isDeleted)
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
-  }
 
+  // ── 3. Get platform commission from settings ──────────────────────────────
+  const commissionSetting = await Setting.findOne({
+    key: 'platformCommissionPercent',
+  }).lean();
+
+  const commissionPercent = Number(commissionSetting?.value ?? 10); // default 10%
+
+  const totalFare = booking.totalFare;
+  const platformCommission =
+    Math.round(((totalFare * commissionPercent) / 100) * 100) / 100;
+  const providerEarning =
+    Math.round((totalFare - platformCommission) * 100) / 100;
+
+  console.log(
+    `💰 Fare: ${totalFare} | Commission (${commissionPercent}%): ${platformCommission} | Provider: ${providerEarning}`
+  );
+
+  // ── 4. Check existing unpaid payment ─────────────────────────────────────
   const transactionId = generateTransactionId();
 
-  // 3. Check existing unpaid payment
   let payment = await Payment.findOne({
     booking: bookingId,
     user: userId,
@@ -73,22 +83,24 @@ const createPaymentIntent = async (payload: {
       provider: booking.driverId,
       booking: bookingId,
       transactionId,
-      amount: booking.totalFare,
-      platformCommission: 0, // Later calculate if needed
-      providerEarning: booking.totalFare,
+      amount: totalFare,
+      platformCommission,
+      providerEarning,
       status: PAYMENT_STATUS.unpaid,
       isPaid: false,
     });
   } else {
-    // Update transaction ID for existing payment
+    // Recalculate on retry (commission may have changed)
     payment.transactionId = transactionId;
+    payment.platformCommission = platformCommission;
+    payment.providerEarning = providerEarning;
     await payment.save();
   }
 
-  // 4. Create Stripe Checkout Session
+  // ── 5. Create Stripe Checkout Session ────────────────────────────────────
   const checkoutSession = await createCheckoutSession({
     product: {
-      amount: booking.totalFare,
+      amount: totalFare,
       name: `Ride Booking - ${booking._id}`,
       quantity: 1,
     },
@@ -114,7 +126,10 @@ const confirmPayment = async (query: Record<string, any>) => {
     paymentIntentId = PaymentSession.payment_intent as string;
 
     if (PaymentSession.status !== 'complete') {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Payment session is not completed');
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Payment session is not completed'
+      );
     }
 
     session.startTransaction();
@@ -139,7 +154,7 @@ const confirmPayment = async (query: Record<string, any>) => {
       await Payment.findByIdAndUpdate(
         payment._id,
         { isPaid: true, status: PAYMENT_STATUS.paid, paymentIntentId },
-        { session },
+        { session }
       );
       await session.commitTransaction();
       return payment;
@@ -154,25 +169,32 @@ const confirmPayment = async (query: Record<string, any>) => {
     // ── 4. Update booking ─────────────────────────────────────────────────────
     booking.paymentStatus = PAYMENT_STATUS.paid;
     booking.bookingStatus = BOOKING_STATUS.accepted;
-    booking.amountPaid    = booking.totalFare;
+    booking.amountPaid = booking.totalFare;
     await booking.save({ session });
 
     // ── 5. Update passenger & ride ────────────────────────────────────────────
-    const passenger = await Passenger.findById(booking.passengerId).session(session);
-    if (!passenger) throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
+    const passenger = await Passenger.findById(booking.passengerId).session(
+      session
+    );
+    if (!passenger)
+      throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
 
     const ride = await Ride.findById(booking.rideId).session(session);
     if (!ride) throw new ApiError(httpStatus.NOT_FOUND, 'Ride not found');
 
-    const newBookedSeats = (ride.bookedSeats || 0) + (passenger.requestedSeats || 1);
+    const newBookedSeats =
+      (ride.bookedSeats || 0) + (passenger.requestedSeats || 1);
     if (newBookedSeats > ride.totalSeats) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Not enough seats available in the ride');
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Not enough seats available in the ride'
+      );
     }
 
     await Ride.findByIdAndUpdate(
       ride._id,
       { $inc: { bookedSeats: passenger.requestedSeats } },
-      { session },
+      { session }
     );
 
     // ── 6. Provider wallet update — duplicate safe ────────────────────────────
@@ -183,22 +205,24 @@ const confirmPayment = async (query: Record<string, any>) => {
       await User.findByIdAndUpdate(
         payment.provider,
         { $inc: { wallet: payment.providerEarning } },
-        { session, new: true },
+        { session, new: true }
       );
     }
 
     // ── 7. Create chat ────────────────────────────────────────────────────────
-    const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
+    const existingChat = await Chat.findOne({ booking: booking._id }).session(
+      session
+    );
     if (!existingChat) {
       await Chat.create(
         [
           {
-            booking:      booking._id,
+            booking: booking._id,
             participants: [booking.userId, booking.driverId],
-            status:       CHAT_STATUS.accepted,
+            status: CHAT_STATUS.accepted,
           },
         ],
-        { session },
+        { session }
       );
     }
 

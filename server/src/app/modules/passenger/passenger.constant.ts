@@ -1,14 +1,13 @@
 export const PASSENGER_STATUS = {
     searching: 'searching',
+    rejected: 'rejected',
     confirmed: 'confirmed',
-    matched: 'matched',
     driver_arrived: 'driver_arrived',
     in_progress: 'in_progress',
-    picked_up: 'picked_up',
-    rejected: 'rejected',
-    completed: 'completed',
     cancelled: 'cancelled',
+    picked_up: 'picked_up',
     dropped_off: 'dropped_off',
+    completed: 'completed',
 } as const;
 
 export const FARE_TYPE = {

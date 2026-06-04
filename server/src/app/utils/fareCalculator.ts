@@ -1,23 +1,17 @@
 // utils/fareCalculator.ts
-import { calculateDistance } from './location.utils';
+import { Setting } from '../modules/settings/settings.model';
 
-// Public holidays (month-day)
-const PUBLIC_HOLIDAYS = [
-  '12-24', '12-25', '12-26', '12-31', // Dec 24,25,26,31
-  '01-01', // Jan 1
-  // Good Friday, Easter, Easter Monday are variable dates – simplified: we can accept a year parameter or fetch from external API.
-  // For now, we'll include a placeholder; the user can extend.
-  '03-29', // Example Good Friday 2024 (change yearly)
-  '03-31', // Easter Sunday 2024 (not needed)
-  '04-01', // Easter Monday 2024
-  '05-01', // May 1
-];
-
-export function isPublicHoliday(date: Date): boolean {
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  const key = `${month}-${day}`;
-  return PUBLIC_HOLIDAYS.includes(key);
+export interface FareBreakdown {
+  initialCharge: number;
+  perKmCharge: number;
+  totalKmCharge: number;
+  luggageCharge: number;
+  passengerCountExtra: number;
+  holidaySurcharge: number;
+  waitingCharge: number;
+  extraCharge: number;
+  vat: number;
+  totalFare: number;
 }
 
 interface DayNightRates {
@@ -26,91 +20,262 @@ interface DayNightRates {
   waitingChargePerHour: number;
 }
 
-export function getDayNightRate(departureDate: Date, departureTimeStr: string): DayNightRates {
-  // Parse departureTime (HH:MM)
+interface FareSettings {
+  dayFareInitialCharge: number;
+  dayFarePerKMRate: number;
+  dayFareWaitingCharge: number;
+  nightFareInitialCharge: number;
+  nightFarePerKMRate: number;
+  nightFareWaitingCharge: number;
+  perLuggageCharge: number;
+  holidayIncreasePercentage: number;
+  fivePassengerExtraCharge: number;
+  sixPassengerExtraChargePercentage: number;
+  platformVat: number;
+  platformCommissionPercent: number;
+}
+
+// Default fallback values — used if DB fetch fails
+const DEFAULTS: FareSettings = {
+  dayFareInitialCharge: 3.8,
+  dayFarePerKMRate: 0.95,
+  dayFareWaitingCharge: 17.0,
+  nightFareInitialCharge: 4.8,
+  nightFarePerKMRate: 1.1,
+  nightFareWaitingCharge: 19.0,
+  perLuggageCharge: 2.0,
+  holidayIncreasePercentage: 20,
+  fivePassengerExtraCharge: 1.4,
+  sixPassengerExtraChargePercentage: 40,
+  platformVat: 9,
+  platformCommissionPercent: 10,
+};
+
+// TODO: Public holidays (MM-DD)
+const PUBLIC_HOLIDAYS = [
+  '12-24',
+  '12-25',
+  '12-26',
+  '12-31',
+  '01-01',
+  '03-29',
+  '04-01',
+  '05-01',
+];
+
+export function isPublicHoliday(date: Date): boolean {
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return PUBLIC_HOLIDAYS.includes(`${month}-${day}`);
+}
+
+// ── Load all fare settings from DB in one query ───────────────────────────────
+export async function loadFareSettings(): Promise<FareSettings> {
+  const keys = Object.keys(DEFAULTS);
+
+  const docs = await Setting.find({ key: { $in: keys } })
+    .select('key value')
+    .lean();
+
+  const map = new Map(docs.map((d) => [d.key, Number(d.value)]));
+
+  return {
+    dayFareInitialCharge:
+      map.get('dayFareInitialCharge') ?? DEFAULTS.dayFareInitialCharge,
+    dayFarePerKMRate: map.get('dayFarePerKMRate') ?? DEFAULTS.dayFarePerKMRate,
+    dayFareWaitingCharge:
+      map.get('dayFareWaitingCharge') ?? DEFAULTS.dayFareWaitingCharge,
+    nightFareInitialCharge:
+      map.get('nightFareInitialCharge') ?? DEFAULTS.nightFareInitialCharge,
+    nightFarePerKMRate:
+      map.get('nightFarePerKMRate') ?? DEFAULTS.nightFarePerKMRate,
+    nightFareWaitingCharge:
+      map.get('nightFareWaitingCharge') ?? DEFAULTS.nightFareWaitingCharge,
+    perLuggageCharge: map.get('perLuggageCharge') ?? DEFAULTS.perLuggageCharge,
+    holidayIncreasePercentage:
+      map.get('holidayIncreasePercentage') ??
+      DEFAULTS.holidayIncreasePercentage,
+    fivePassengerExtraCharge:
+      map.get('fivePassengerExtraCharge') ?? DEFAULTS.fivePassengerExtraCharge,
+    sixPassengerExtraChargePercentage:
+      map.get('sixPassengerExtraChargePercentage') ??
+      DEFAULTS.sixPassengerExtraChargePercentage,
+    platformVat: map.get('platformVat') ?? DEFAULTS.platformVat,
+    platformCommissionPercent:
+      map.get('platformCommissionPercent') ??
+      DEFAULTS.platformCommissionPercent,
+  };
+}
+
+function getDayNightRate(
+  departureTimeStr: string,
+  settings: FareSettings
+): DayNightRates {
   const [hour] = departureTimeStr.split(':').map(Number);
-  const isNight = (hour >= 20 && hour < 24) || (hour >= 0 && hour < 6); // 20:30 - 06:00
-  // Actually night fare from 20:30 to 06:00; simplify using hour
-  if (isNight) {
-    return {
-      initialCharge: 4.80,
-      perKm: 1.10,
-      waitingChargePerHour: 19.00,
-    };
-  } else {
-    return {
-      initialCharge: 3.80,
-      perKm: 0.95,
-      waitingChargePerHour: 17.00,
-    };
-  }
+  const isNight = hour >= 20 || hour < 6;
+
+  return isNight
+    ? {
+        initialCharge: settings.nightFareInitialCharge,
+        perKm: settings.nightFarePerKMRate,
+        waitingChargePerHour: settings.nightFareWaitingCharge,
+      }
+    : {
+        initialCharge: settings.dayFareInitialCharge,
+        perKm: settings.dayFarePerKMRate,
+        waitingChargePerHour: settings.dayFareWaitingCharge,
+      };
 }
 
-export interface FareBreakdown {
-  initialCharge: number;
-  perKmCharge: number;
-  totalKmCharge: number;
-  luggageCharge: number;
-  passengerCountExtra: number; // for 4 or 6 passenger taxi
-  holidaySurcharge: number;
-  waitingCharge?: number; // initially 0
-  extraCharge?: number;   // other extras, initially 0
-  vat: number;
-  totalFare: number;
-}
-
-export function calculateFareBreakdown(params: {
+// ── Main calculator — async, loads settings from DB ──────────────────────────
+export async function calculateFareBreakdown(params: {
   distanceKm: number;
   departureDate: Date;
   departureTime: string;
   luggageCount: number;
   requestedSeats: number;
   rideType: 'private' | 'split';
-  waitingMinutes?: number; // optional, for later use
-}): FareBreakdown {
-  const { distanceKm, departureDate, departureTime, luggageCount, requestedSeats, rideType, waitingMinutes = 0 } = params;
+  waitingMinutes?: number;
+}): Promise<FareBreakdown> {
+  const {
+    distanceKm,
+    departureDate,
+    departureTime,
+    luggageCount,
+    requestedSeats,
+    rideType,
+    waitingMinutes = 0,
+  } = params;
 
-  // 1. Determine day/night rates
-  const rates = getDayNightRate(departureDate, departureTime);
+  // ── Load settings ─────────────────────────────────────────────────────────
+  const settings = await loadFareSettings();
+  const rates = getDayNightRate(departureTime, settings);
 
-  // 2. Base fare
+  // ── 1. Base fare ──────────────────────────────────────────────────────────
   const initialCharge = rates.initialCharge;
-  const totalKmCharge = distanceKm * rates.perKm;
+  const totalKmCharge = Math.round(distanceKm * rates.perKm * 100) / 100;
   let subTotal = initialCharge + totalKmCharge;
 
-  // 3. Luggage charge (per luggage €2)
-  const luggageCharge = luggageCount * 2.00;
+  // ── 2. Luggage charge ─────────────────────────────────────────────────────
+  const luggageCharge =
+    Math.round(luggageCount * settings.perLuggageCharge * 100) / 100;
   subTotal += luggageCharge;
 
-  // 4. Passenger count extra (only if rideType is private, because split ride passengers are separate)
+  // ── 3. Passenger count extra (private ride only) ──────────────────────────
   let passengerCountExtra = 0;
   if (rideType === 'private') {
-    if (requestedSeats === 4) {
-      passengerCountExtra = 1.40;
+    if (requestedSeats === 5) {
+      passengerCountExtra = settings.fivePassengerExtraCharge;
     } else if (requestedSeats === 6) {
-      passengerCountExtra = subTotal * 0.40; // 40% increase on total so far? According to document: 40% increase for 6 passenger taxi. Usually it's on total fare.
-      // We'll apply on subTotal before holiday surcharge?
+      passengerCountExtra =
+        Math.round(
+          subTotal * (settings.sixPassengerExtraChargePercentage / 100) * 100
+        ) / 100;
     }
     subTotal += passengerCountExtra;
   }
 
-  // 5. Holiday surcharge (20% extra) – applied on subTotal before VAT?
+  // ── 4. Holiday surcharge ──────────────────────────────────────────────────
   let holidaySurcharge = 0;
   if (isPublicHoliday(departureDate)) {
-    holidaySurcharge = subTotal * 0.20;
+    holidaySurcharge =
+      Math.round(subTotal * (settings.holidayIncreasePercentage / 100) * 100) /
+      100;
     subTotal += holidaySurcharge;
   }
 
-  // 6. Waiting charge (if any) – per hour rate * minutes/60
+  // ── 5. Waiting charge ─────────────────────────────────────────────────────
   let waitingCharge = 0;
   if (waitingMinutes > 0) {
-    waitingCharge = (rates.waitingChargePerHour * waitingMinutes) / 60;
+    waitingCharge =
+      Math.round(((rates.waitingChargePerHour * waitingMinutes) / 60) * 100) /
+      100;
     subTotal += waitingCharge;
   }
 
-  // 7. VAT is already included (9% inside the rates). Document says VAT included, so we do not add extra. However for breakdown we can set vat = subTotal * 0.09? No, because it's already included. We'll set vat = 0 as it's not added.
-  const vat = 0;
-  const totalFare = Math.round(subTotal * 100) / 100; // round to cents
+  // ── 6. VAT (included in price — shown for breakdown only) ────────────────
+  const vat = Math.round(subTotal * (settings.platformVat / 100) * 100) / 100;
+  // VAT is included, so totalFare does NOT add vat on top
+  // If your business model adds VAT on top, change to: subTotal += vat
+  const totalFare = Math.round(subTotal * 100) / 100;
+
+  return {
+    initialCharge,
+    perKmCharge: rates.perKm,
+    totalKmCharge,
+    luggageCharge,
+    passengerCountExtra,
+    holidaySurcharge,
+    waitingCharge,
+    extraCharge: 0,
+    vat,
+    totalFare,
+  };
+}
+
+// ── Sync version — use only when settings are pre-loaded ─────────────────────
+export function calculateFareBreakdownSync(
+  params: {
+    distanceKm: number;
+    departureDate: Date;
+    departureTime: string;
+    luggageCount: number;
+    requestedSeats: number;
+    rideType: 'private' | 'split';
+    waitingMinutes?: number;
+  },
+  settings: FareSettings
+): FareBreakdown {
+  const {
+    distanceKm,
+    departureDate,
+    departureTime,
+    luggageCount,
+    requestedSeats,
+    rideType,
+    waitingMinutes = 0,
+  } = params;
+
+  const rates = getDayNightRate(departureTime, settings);
+  const initialCharge = rates.initialCharge;
+  const totalKmCharge = Math.round(distanceKm * rates.perKm * 100) / 100;
+  let subTotal = initialCharge + totalKmCharge;
+
+  const luggageCharge =
+    Math.round(luggageCount * settings.perLuggageCharge * 100) / 100;
+  subTotal += luggageCharge;
+
+  let passengerCountExtra = 0;
+  if (rideType === 'private') {
+    if (requestedSeats === 5) {
+      passengerCountExtra = settings.fivePassengerExtraCharge;
+    } else if (requestedSeats === 6) {
+      passengerCountExtra =
+        Math.round(
+          subTotal * (settings.sixPassengerExtraChargePercentage / 100) * 100
+        ) / 100;
+    }
+    subTotal += passengerCountExtra;
+  }
+
+  let holidaySurcharge = 0;
+  if (isPublicHoliday(departureDate)) {
+    holidaySurcharge =
+      Math.round(subTotal * (settings.holidayIncreasePercentage / 100) * 100) /
+      100;
+    subTotal += holidaySurcharge;
+  }
+
+  let waitingCharge = 0;
+  if (waitingMinutes > 0) {
+    waitingCharge =
+      Math.round(((rates.waitingChargePerHour * waitingMinutes) / 60) * 100) /
+      100;
+    subTotal += waitingCharge;
+  }
+
+  const vat = Math.round(subTotal * (settings.platformVat / 100) * 100) / 100;
+  const totalFare = Math.round(subTotal * 100) / 100;
 
   return {
     initialCharge,

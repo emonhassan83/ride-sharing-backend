@@ -48,11 +48,7 @@ export const driverCancelRideHandler = eventHandler<any>(
         });
 
       // শুধুমাত্র accepted স্টেটে ক্যানসেল করা যাবে
-      const cancellableStatuses = [
-        RIDE_STATUS.accepted,
-        RIDE_STATUS.driver_assigned,
-        RIDE_STATUS.driver_arrived,
-      ];
+      const cancellableStatuses = [RIDE_STATUS.accepted, RIDE_STATUS.started];
       if (!cancellableStatuses.includes(ride.status as any)) {
         return callback?.({
           success: false,
@@ -67,7 +63,13 @@ export const driverCancelRideHandler = eventHandler<any>(
       if (ride.type === RIDE_TYPE.private) {
         const passenger = await Passenger.findOne({
           rideId,
-          status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.in_progress, PASSENGER_STATUS.driver_arrived] },
+          status: {
+            $in: [
+              PASSENGER_STATUS.confirmed,
+              PASSENGER_STATUS.in_progress,
+              PASSENGER_STATUS.driver_arrived,
+            ],
+          },
         });
         if (!passenger)
           return callback?.({
@@ -128,8 +130,10 @@ export const driverCancelRideHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'Private ride cancelled',
-          passengerCount: 1,
-          rideCancelled: true,
+          data: {
+            passengerCount: 1,
+            rideCancelled: true,
+          },
         });
       }
 
@@ -139,12 +143,12 @@ export const driverCancelRideHandler = eventHandler<any>(
         const passenger = await Passenger.findOne({
           _id: passengerId,
           rideId,
-          status: PASSENGER_STATUS.matched,
+          status: PASSENGER_STATUS.confirmed,
         });
         if (!passenger)
           return callback?.({
             success: false,
-            message: 'Passenger not found or not matched',
+            message: 'Passenger not found or not confirmed',
           });
 
         const booking = await Booking.findOne({ passengerId: passenger._id });
@@ -192,7 +196,7 @@ export const driverCancelRideHandler = eventHandler<any>(
         // ✅ অন্য প্যাসেঞ্জারদের নোটিফিকেশন
         const remainingPassengers = await Passenger.find({
           rideId,
-          status: PASSENGER_STATUS.matched,
+          status: PASSENGER_STATUS.confirmed,
         }).select('userId');
         for (const p of remainingPassengers) {
           io.to(`user:${p.userId}`).emit('ride:co-passenger-cancelled', {
@@ -224,8 +228,10 @@ export const driverCancelRideHandler = eventHandler<any>(
             remainingPassengers.length === 0
               ? 'Last passenger cancelled. Ride cancelled.'
               : 'Passenger cancelled.',
-          remainingPassengers: remainingPassengers.length,
-          rideCancelled,
+          data: {
+            remainingPassengers: remainingPassengers.length,
+            rideCancelled,
+          },
         });
       }
 
@@ -233,12 +239,12 @@ export const driverCancelRideHandler = eventHandler<any>(
       if (cancelType === 'all') {
         const passengers = await Passenger.find({
           rideId,
-          status: PASSENGER_STATUS.matched,
+          status: PASSENGER_STATUS.confirmed,
         });
         if (passengers.length === 0)
           return callback?.({
             success: false,
-            message: 'No matched passengers',
+            message: 'No confirmed passengers',
           });
 
         const totalSeats = passengers.reduce(
@@ -300,8 +306,10 @@ export const driverCancelRideHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'Ride cancelled. All passengers refunded.',
-          passengerCount: passengers.length,
-          rideCancelled: true,
+          data: {
+            passengerCount: passengers.length,
+            rideCancelled: true,
+          },
         });
       }
 

@@ -57,7 +57,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
         success: false,
         message: 'You are not assigned to this ride',
       });
-    if (ride.status !== RIDE_STATUS.in_progress)
+    if (ride.status !== RIDE_STATUS.started)
       return callback?.({
         success: false,
         message: `Ride cannot be completed in current state: ${ride.status}`,
@@ -257,11 +257,13 @@ export const driverCompleteTripHandler = eventHandler<any>(
       return callback?.({
         success: true,
         message: 'Private ride completed successfully',
-        fare: totalFare,
-        distance: distanceKm,
-        duration: durationSeconds,
-        passengerCount: 1,
-        allDroppedOff: true,
+        data: {
+          fare: totalFare,
+          distance: distanceKm,
+          duration: durationSeconds,
+          passengerCount: 1,
+          allDroppedOff: true
+        },
       });
     }
 
@@ -310,12 +312,14 @@ export const driverCompleteTripHandler = eventHandler<any>(
         message: allDroppedOff
           ? 'All passengers dropped off. Ride completed!'
           : `Passenger dropped off. ${remainingPassengers} passenger(s) remaining.`,
-        passengerId: passenger._id,
-        fare: totalFare,
-        distance: distanceKm,
-        duration: durationSeconds,
-        remainingPassengers,
-        allDroppedOff,
+        data: {
+          passengerId: passenger._id,
+          fare: totalFare,
+          distance: distanceKm,
+          duration: durationSeconds,
+          remainingPassengers,
+          allDroppedOff,
+        },
       });
     }
 
@@ -348,9 +352,11 @@ export const driverCompleteTripHandler = eventHandler<any>(
       return callback?.({
         success: true,
         message: 'All passengers dropped off. Ride completed successfully!',
-        totalFare: totalFareSum,
-        passengerCount: passengers.length,
-        allDroppedOff: true,
+        data: {
+          totalFare: totalFareSum,
+          passengerCount: passengers.length,
+          allDroppedOff: true,
+        },
       });
     }
 

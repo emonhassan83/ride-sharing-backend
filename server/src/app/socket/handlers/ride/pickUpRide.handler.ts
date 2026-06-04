@@ -1,6 +1,6 @@
 // handlers/driver/pickUpRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
-import { RIDE_TYPE } from '../../../modules/ride/ride.constant';
+import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
@@ -35,7 +35,7 @@ export const pickUpRideHandler = eventHandler<any>(
           message: 'You are not assigned to this ride',
         });
       }
-      if (ride.status !== 'in_progress') {
+      if (ride.status !== RIDE_STATUS.started) {
         return callback?.({
           success: false,
           message: 'Trip must be started before picking up passengers',
@@ -103,8 +103,10 @@ export const pickUpRideHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'All passengers picked up successfully',
-          passengerCount: passengers.length,
+          data: {
+            passengerCount: passengers.length,
           allPickedUp: true,
+          }
         });
       }
 
@@ -189,9 +191,11 @@ export const pickUpRideHandler = eventHandler<any>(
           return callback?.({
             success: true,
             message: `Passenger picked up. ${remainingCount} passenger(s) remaining.`,
-            passengerId: passenger._id,
+            data: {
+              passengerId: passenger._id,
             remainingPassengers: remainingCount,
             allPickedUp: false,
+            }
           });
         }
 
@@ -206,9 +210,11 @@ export const pickUpRideHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'Last passenger picked up. All passengers on board!',
-          passengerId: passenger._id,
-          remainingPassengers: 0,
-          allPickedUp: true,
+          data: {
+            passengerId: passenger._id,
+            remainingPassengers: 0,
+            allPickedUp: true,
+          }
         });
       }
 
