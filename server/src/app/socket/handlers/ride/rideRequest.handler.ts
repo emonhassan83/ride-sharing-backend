@@ -86,7 +86,7 @@ export const rideRequestHandler = eventHandler<any>(
       const fareType = getFareType(departureDateTime);
 
       // ফেয়ার ব্রেকডাউন ক্যালকুলেট (প্রকৃত দূরত্ব ব্যবহার করে)
-      const fareBreakdown = calculateFareBreakdown({
+      const fareBreakdown = await calculateFareBreakdown({
         distanceKm: actualDistance,
         departureDate: departureDateTime,
         departureTime: scheduledTime || new Date().toLocaleTimeString(),
