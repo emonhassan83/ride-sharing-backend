@@ -41,7 +41,7 @@ const createLocationHistory = async (
   return await LocationHistory.create({
     rideId,
     driverId,
-    userId,
+    passengerIds: [userId],
     locations,
     startTime,
     endTime,

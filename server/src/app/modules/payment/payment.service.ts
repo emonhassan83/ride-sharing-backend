@@ -23,7 +23,7 @@ import { Passenger } from '../passenger/passenger.model';
 import { Ride } from '../ride/ride.model';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
-  apiVersion: '2025-08-27.basil',
+  apiVersion: '2026-05-27.dahlia',
   typescript: true,
 });
 
@@ -265,11 +265,11 @@ const refundPayment = async (payload: any) => {
   session.startTransaction();
 
   try {
-    const refundData: Stripe.RefundCreateParams = {
+    const refundData = {
       payment_intent: payload.intendId,
       ...(payload.amount && {
         amount: payload.amount * 100,
-        reason: 'requested_by_customer',
+        reason: 'requested_by_customer' as const,
       }),
     };
 

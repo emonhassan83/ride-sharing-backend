@@ -16,7 +16,7 @@ const createValidationSchema = z.object({
 const updateValidationSchema = z.object({
   body: z.object({
     status: z.enum(Object.values(WITHDRAW_STATUS) as [string, ...string[]], {
-      required_error: 'Withdraw status is required!',
+      message: 'Withdraw status is required!',
     }),
     note: z.string().optional(),
   }),

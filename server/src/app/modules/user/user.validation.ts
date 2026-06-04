@@ -2,34 +2,32 @@ import { z } from 'zod';
 import { USER_ROLE, USER_STATUS } from './user.constant';
 
 const createUserValidationSchema = z.object({
-  body: z.object({
+  body: z
+    .object({
       name: z
         .string({
-          required_error: 'Name is required.',
-          invalid_type_error: 'Name must be a string.',
+          message: 'Name is required.',
         })
-        .min(1, 'Name cannot be empty.'),
+        .min(1, { message: 'Name cannot be empty.' }),
 
       email: z
-  .string({
-    required_error: 'Email is required.',
-    invalid_type_error: 'Email must be a string.',
-  })
-  .email('Invalid email address.'),
+        .string({
+          message: 'Email is required.',
+        })
+        .email({ message: 'Invalid email address.' }),
 
       countryCode: z
-  .string()
-  .min(1, 'Country code cannot be empty.'),
+        .string()
+        .min(1, { message: 'Country code cannot be empty.' }),
 
       phone: z
-  .string({ required_error: 'Phone number is required!' })
-  .min(6, { message: 'Contact number must be at least 6 digits long' })
-  .max(15, { message: 'Contact number must be at most 15 digits long' }),
+        .string({ message: 'Phone number is required!' })
+        .min(6, { message: 'Contact number must be at least 6 digits long' })
+        .max(15, { message: 'Contact number must be at most 15 digits long' }),
 
       role: z.enum(Object.values(USER_ROLE) as [string, ...string[]], {
-  invalid_type_error: 'Role must be a valid option.',
-  required_error: 'Role is required.',
-}),
+        message: 'Role is required.',
+      }),
     })
     .strict(),
 });
@@ -50,7 +48,7 @@ const updateUserValidationSchema = z.object({
 const changeStatusValidationSchema = z.object({
   body: z.object({
     status: z.enum(Object.values(USER_STATUS) as [string, ...string[]], {
-      required_error: 'User status is required!',
+      message: 'User status is required!',
     }),
   }),
 });
@@ -58,24 +56,28 @@ const changeStatusValidationSchema = z.object({
 const updateLocationValidationSchema = z.object({
   body: z.object({
     longitude: z.number({
-      required_error: 'longitude is required!',
+      message: 'longitude is required!',
     }),
     latitude: z.number({
-      required_error: 'latitude is required!',
+      message: 'latitude is required!',
     }),
-    address: z.string().min(1, 'Address cannot be empty.'),
+    address: z.string().min(1, { message: 'Address cannot be empty.' }),
   }),
 });
 
 const profileDeletionValidationSchema = z.object({
   body: z.object({
-    reason: z.string().min(1, 'Profile deletion reason cannot be empty.'),
+    reason: z
+      .string()
+      .min(1, { message: 'Profile deletion reason cannot be empty.' }),
   }),
 });
 
 const changeEmailZodSchema = z.object({
   body: z.object({
-    email: z.string().email('Please provide a valid email address'),
+    email: z
+      .string()
+      .email({ message: 'Please provide a valid email address' }),
   }),
 });
 

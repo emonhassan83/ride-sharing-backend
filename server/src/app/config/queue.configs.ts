@@ -5,7 +5,7 @@ import { getRedisClient } from './redis.config';
 
 export function createQueueOptions(): QueueOptions {
   return {
-    connection: getRedisClient(),
+    connection: getRedisClient() as any, // Cast to any to satisfy BullMQ's expected type
     defaultJobOptions: {
       attempts: 3,
       backoff: {

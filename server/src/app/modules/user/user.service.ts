@@ -22,6 +22,7 @@ import { Vehicle } from '../vehicle/vehicle.model';
 import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS } from '../ride/ride.constant';
 import { Payment } from '../payment/payment.model';
+import { BOOKING_STATUS } from '../booking/booking.constant';
 
 const getAllUsersFromDB = async (query: Record<string, unknown>) => {
   const usersQuery = new QueryBuilder(
@@ -404,7 +405,7 @@ const deleteUserProfile = async (
 
     const activeBooking = await Booking.findOne({
       userId,
-      bookingStatus: { $in: ['accepted', 'ongoing'] },
+      bookingStatus: { $in: [BOOKING_STATUS.accepted, BOOKING_STATUS.running] },
     });
     if (activeBooking) {
       throw new ApiError(
