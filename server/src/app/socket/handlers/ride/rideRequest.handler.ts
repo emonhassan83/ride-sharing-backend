@@ -16,6 +16,7 @@ import {
   getRouteGeometry,
   startMatchingForRide,
 } from '../../../utils/maps.utils';
+import { Vehicle } from '../../../modules/vehicle/vehicle.model';
 
 export const rideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -99,8 +100,24 @@ export const rideRequestHandler = eventHandler<any>(
       const roundedBreakdown = roundObjectNumbers(fareBreakdown);
       const estimatedDuration = actualDuration;
 
+      // ── Get driver's default vehicle ──────────────────────────────────────────────
+      let vehicleId = undefined;
+      if (driverId) {
+        const defaultVehicle = await Vehicle.findOne({
+          userId: driverId,
+          isDefault: true,
+          isDeleted: false,
+        })
+          .select('_id')
+          .lean();
+
+        vehicleId = defaultVehicle?._id;
+      }
+
       // Ride ডকুমেন্ট তৈরি
       const ride = await Ride.create({
+        driverId,
+        vehicleId,
         type,
         pickup: {
           address: pickup.address,
@@ -276,13 +293,15 @@ export const rideRequestHandler = eventHandler<any>(
 
         callback?.({
           success: true,
-          rideId: ride._id,
-          passengerId: passenger._id,
-          estimatedFare: roundedBreakdown.totalFare,
-          estimatedDistance: roundTo2(actualDistance),
-          estimatedDuration,
-          fareBreakdown: roundedBreakdown,
           message: 'Ride request sent to selected driver.',
+          data: {
+            rideId: ride._id,
+            passengerId: passenger._id,
+            estimatedFare: roundedBreakdown.totalFare,
+            estimatedDistance: roundTo2(actualDistance),
+            estimatedDuration,
+            fareBreakdown: roundedBreakdown,
+          },
         });
         return;
       }
@@ -311,13 +330,15 @@ export const rideRequestHandler = eventHandler<any>(
 
       callback?.({
         success: true,
-        rideId: ride._id,
-        passengerId: passenger._id,
-        estimatedFare: roundedBreakdown.totalFare,
-        estimatedDistance: roundTo2(actualDistance),
-        estimatedDuration,
-        fareBreakdown: roundedBreakdown,
         message: 'Ride requested successfully. Finding a driver...',
+        data: {
+          rideId: ride._id,
+          passengerId: passenger._id,
+          estimatedFare: roundedBreakdown.totalFare,
+          estimatedDistance: roundTo2(actualDistance),
+          estimatedDuration,
+          fareBreakdown: roundedBreakdown,
+        },
       });
     } catch (error) {
       console.error('Error in rideRequestHandler:', error);

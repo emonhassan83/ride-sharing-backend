@@ -104,7 +104,7 @@ export const driverStartTripHandler = eventHandler<any>(
       return callback?.({
         success:        true,
         message:        'Trip started successfully',
-        passengerCount: passengers.length,
+        data: {passengerCount: passengers.length,}
       });
  
     } catch (error) {
