@@ -2,7 +2,6 @@ import { StatusCodes } from 'http-status-codes';
 import catchAsync from '../../utils/catchAsync';
 import sendResponse from '../../utils/sendResponse';
 import { UserService } from './user.service';
-import { TUserRole } from './user.constant';
 import { config } from '../../config/env.config';
 
 const getAllUsers = catchAsync(async (req, res) => {
@@ -23,32 +22,6 @@ const getSingleUser = catchAsync(async (req, res) => {
     code: StatusCodes.OK,
     message: 'User retrieve successfully!',
     data: result,
-  });
-});
-
-const getUserBasics = catchAsync(async (req, res) => {
-  const result = await UserService.getUserBasics(req.params.id as string);
-
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'User retrieved successfully!',
-    data: result,
-  });
-});
-
-const getUsersInRadius = catchAsync(async (req, res) => {
-  const { radius, role } = req.params;
-
-  const result = await UserService.getUsersInRadius(
-    req.user.userId,
-    Number(radius),
-    role as TUserRole
-  );
-
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    data: result,
-    message: 'Users in radius fetched successfully',
   });
 });
 
@@ -132,11 +105,9 @@ const deleteUserProfile = catchAsync(async (req, res) => {
 export const UserController = {
   getAllUsers,
   getSingleUser,
-  getUserBasics,
   changedEmail,
   updateUserStatus,
   updateMyLocation,
-  getUsersInRadius,
   updateUserProfile,
   deleteUserProfile,
 };

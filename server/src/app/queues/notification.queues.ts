@@ -23,7 +23,7 @@ let notificationQueueInstance: Queue | null = null;
 export const getNotificationQueue = async (): Promise<Queue> => {
   if (!notificationQueueInstance) {
     notificationQueueInstance = new Queue('notification-queue', {
-      connection: getRedisClient(),
+      connection: getRedisClient() as any,
       defaultJobOptions: {
         attempts: 3,
         backoff: {

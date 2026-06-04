@@ -7,7 +7,7 @@ import eventHandler from "../../utils/eventHandler";
 export const getNearbyDriversHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const { pickup, destination, rideType, passengers, departureDate, departureTime } = data;
-
+    
     if (!pickup || !pickup.lat || !pickup.lng || !destination || !destination.lat || !destination.lng) {
       return callback?.({ success: false, message: 'Pickup and destination required' });
     }

@@ -66,14 +66,13 @@ savedPlacesSchema.index({ 'location.coordinates': '2dsphere' });
 savedPlacesSchema.index({ user: 1, isPinned: 1 });
 
 // Only one pinned place per user
-savedPlacesSchema.pre('save', async function (next) {
+savedPlacesSchema.pre('save', async function () {
   if (this.isPinned) {
     await mongoose.model('UserLocation').updateMany(
       { user: this.user, isPinned: true, _id: { $ne: this._id } },
       { isPinned: false }
     );
   }
-  next();
 });
 
 export const UserLocation = mongoose.model<TSavedPlaces, TSavedPlacesModel>(

@@ -23,7 +23,7 @@ import { Passenger } from '../passenger/passenger.model';
 import { Ride } from '../ride/ride.model';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
-  apiVersion: '2025-08-27.basil',
+  apiVersion: '2026-05-27.dahlia',
   typescript: true,
 });
 
@@ -107,119 +107,115 @@ const confirmPayment = async (query: Record<string, any>) => {
 
   const session = await startSession();
   let paymentIntentId: string | null = null;
-  let transactionStarted = false; // 🔥 ট্রানজাকশন শুরু হয়েছে কিনা ট্র্যাক করুন
+  let transactionStarted = false;
 
   try {
     const PaymentSession = await stripe.checkout.sessions.retrieve(sessionId);
     paymentIntentId = PaymentSession.payment_intent as string;
 
     if (PaymentSession.status !== 'complete') {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Payment session is not completed'
-      );
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Payment session is not completed');
     }
 
-    // ✅ ট্রানজাকশন শুরু করুন
     session.startTransaction();
     transactionStarted = true;
 
-    // 1. Payment রেকর্ড খোঁজা ও চেক (আগে পেইড কিনা)
+    // ── 1. Payment check ──────────────────────────────────────────────────────
     const payment = await Payment.findById(paymentId).session(session);
-    if (!payment) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Payment not found');
-    }
+    if (!payment) throw new ApiError(httpStatus.NOT_FOUND, 'Payment not found');
+
+    // ✅ Idempotency guard — already paid, skip everything
     if (payment.isPaid) {
       await session.commitTransaction();
       return payment;
     }
 
-    // 2. Booking চেক করুন
+    // ── 2. Booking check ──────────────────────────────────────────────────────
     const booking = await Booking.findById(payment.booking).session(session);
-    if (!booking) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
-    }
+    if (!booking) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
+
     if (booking.paymentStatus === PAYMENT_STATUS.paid) {
+      // Booking already paid but payment record not updated — sync it
       await Payment.findByIdAndUpdate(
         payment._id,
         { isPaid: true, status: PAYMENT_STATUS.paid, paymentIntentId },
-        { session }
+        { session },
       );
       await session.commitTransaction();
       return payment;
     }
 
-    // 3. পেমেন্ট আপডেট
+    // ── 3. Update payment ─────────────────────────────────────────────────────
     payment.isPaid = true;
     payment.status = PAYMENT_STATUS.paid;
     payment.paymentIntentId = paymentIntentId;
     await payment.save({ session });
 
-    // 4. বুকিং আপডেট
+    // ── 4. Update booking ─────────────────────────────────────────────────────
     booking.paymentStatus = PAYMENT_STATUS.paid;
     booking.bookingStatus = BOOKING_STATUS.accepted;
-    booking.amountPaid = booking.totalFare; // add amount paid to booking
+    booking.amountPaid    = booking.totalFare;
     await booking.save({ session });
 
-    // 5. প্যাসেঞ্জার ও রাইড আপডেট
-    const passenger = await Passenger.findById(booking.passengerId).session(
-      session
-    );
-    if (!passenger) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
-    }
+    // ── 5. Update passenger & ride ────────────────────────────────────────────
+    const passenger = await Passenger.findById(booking.passengerId).session(session);
+    if (!passenger) throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
 
     const ride = await Ride.findById(booking.rideId).session(session);
-    if (!ride) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Ride not found');
-    }
+    if (!ride) throw new ApiError(httpStatus.NOT_FOUND, 'Ride not found');
 
-    const newBookedSeats =
-      (ride.bookedSeats || 0) + (passenger.requestedSeats || 1);
+    const newBookedSeats = (ride.bookedSeats || 0) + (passenger.requestedSeats || 1);
     if (newBookedSeats > ride.totalSeats) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Not enough seats available in the ride'
-      );
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Not enough seats available in the ride');
     }
 
     await Ride.findByIdAndUpdate(
       ride._id,
       { $inc: { bookedSeats: passenger.requestedSeats } },
-      { session }
+      { session },
     );
 
-    // 6. চ্যাট তৈরি
-    const existingChat = await Chat.findOne({ booking: booking._id }).session(
-      session
-    );
+    // ── 6. Provider wallet update — duplicate safe ────────────────────────────
+    // Only increment wallet if providerEarning > 0 and not already credited
+    // We use paymentIntentId as the idempotency key stored on payment doc
+    // Since payment.isPaid was false above, this is guaranteed to run once only
+    if (payment.providerEarning && payment.providerEarning > 0) {
+      await User.findByIdAndUpdate(
+        payment.provider,
+        { $inc: { wallet: payment.providerEarning } },
+        { session, new: true },
+      );
+    }
+
+    // ── 7. Create chat ────────────────────────────────────────────────────────
+    const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
     if (!existingChat) {
       await Chat.create(
         [
           {
-            booking: booking._id,
+            booking:      booking._id,
             participants: [booking.userId, booking.driverId],
-            status: CHAT_STATUS.accepted,
+            status:       CHAT_STATUS.accepted,
           },
         ],
-        { session }
+        { session },
       );
     }
 
     await session.commitTransaction();
     return payment;
   } catch (error: any) {
-    // ✅ শুধুমাত্র ট্রানজাকশন শুরু হলে রোলব্যাক করুন
-    if (transactionStarted) {
-      await session.abortTransaction();
-    }
+    if (transactionStarted) await session.abortTransaction();
+
+    // Auto-refund on failure
     if (paymentIntentId) {
       try {
         await stripe.refunds.create({ payment_intent: paymentIntentId });
       } catch (refundError: any) {
-        console.error('Error processing refund:', refundError.message);
+        console.error('Refund failed:', refundError.message);
       }
     }
+
     throw new ApiError(httpStatus.BAD_GATEWAY, error.message);
   } finally {
     session.endSession();
@@ -269,11 +265,11 @@ const refundPayment = async (payload: any) => {
   session.startTransaction();
 
   try {
-    const refundData: Stripe.RefundCreateParams = {
+    const refundData = {
       payment_intent: payload.intendId,
       ...(payload.amount && {
         amount: payload.amount * 100,
-        reason: 'requested_by_customer',
+        reason: 'requested_by_customer' as const,
       }),
     };
 

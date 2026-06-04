@@ -7,16 +7,7 @@ import { UserValidation } from './user.validation';
 
 const router = express.Router();
 
-//main routes
 router.get('/', auth(USER_ROLE.admin), UserController.getAllUsers);
-router.get('/single/:id', auth(USER_ROLE.admin), UserController.getUserBasics);
-
-// get users in radius
-router.get(
-  '/radius/:role/:radius',
-  auth([USER_ROLE.user, USER_ROLE.provider]),
-  UserController.getUsersInRadius,
-);
 
 router.put(
   '/change-email',

@@ -73,7 +73,7 @@ export const rideRequestHandler = eventHandler<any>(
       }
 
       // ✅ রুট জ্যামিতি সংগ্রহ (উভয় টাইপের জন্যই)
-      let routeGeometry = null;
+      let routeGeometry = {};
       try {
         routeGeometry = await getRouteGeometry(pickup, destination);
         console.log(`✅ Route geometry obtained for ${type} ride`);
@@ -101,8 +101,6 @@ export const rideRequestHandler = eventHandler<any>(
 
       // Ride ডকুমেন্ট তৈরি
       const ride = await Ride.create({
-        driverId: null,
-        vehicleId: null,
         type,
         pickup: {
           address: pickup.address,

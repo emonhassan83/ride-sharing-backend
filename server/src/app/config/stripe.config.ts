@@ -1,25 +1,33 @@
-import { Stripe as StripeType } from 'stripe'
-import { config } from './env.config'
-import { User } from '../modules/user/user.model'
+import Stripe from 'stripe';
+import { config } from './env.config';
+import { User } from '../modules/user/user.model';
 
-class StripeService<T> {
-  private stripe() {
-    return new StripeType(config.pay?.secretKey as string, {
-      apiVersion: '2025-08-27.basil',
+class StripeService {
+  // Stripe class instance type
+  private stripeInstance: InstanceType<typeof Stripe>;
+
+  constructor() {
+    this.stripeInstance = new Stripe(config.pay?.secretKey as string, {
+      apiVersion: '2026-05-27.dahlia',
       typescript: true,
-    })
+    });
   }
+
+  private stripe(): InstanceType<typeof Stripe> {
+    return this.stripeInstance;
+  }
+
   private handleError(error: unknown, message: string): never {
-    if (error instanceof StripeType.errors.StripeError) {
-      console.error('Stripe Error:', error.message)
-      throw new Error(`Stripe Error: ${message} - ${error.message}`)
+    // StripeError type check and logging
+    if (error instanceof Error && 'type' in error && error.constructor.name === 'StripeError') {
+      console.error('Stripe Error:', error.message);
+      throw new Error(`Stripe Error: ${message} - ${error.message}`);
     } else if (error instanceof Error) {
-      console.error('Error:', error.message)
-      throw new Error(`${message} - ${error.message}`)
+      console.error('Error:', error.message);
+      throw new Error(`${message} - ${error.message}`);
     } else {
-      // Unknown error types
-      console.error('Unknown Error:', error)
-      throw new Error(`${message} - An unknown error occurred.`)
+      console.error('Unknown Error:', error);
+      throw new Error(`${message} - An unknown error occurred.`);
     }
   }
 
@@ -34,10 +42,10 @@ class StripeService<T> {
         return_url: returnUrl,
         refresh_url: refreshUrl,
         type: 'account_onboarding',
-      })
-      return accountLink
+      });
+      return accountLink;
     } catch (error) {
-      this.handleError(error, 'Error connecting account')
+      this.handleError(error, 'Error connecting account');
     }
   }
 
@@ -48,12 +56,12 @@ class StripeService<T> {
   ) {
     try {
       return await this.stripe().paymentIntents.create({
-        amount: amount * 100, // Convert amount to cents
+        amount: amount * 100,
         currency,
         payment_method_types,
-      })
+      });
     } catch (error) {
-      this.handleError(error, 'Error creating payment intent')
+      this.handleError(error, 'Error creating payment intent');
     }
   }
 
@@ -63,103 +71,103 @@ class StripeService<T> {
     currency: string = 'usd',
   ) {
     try {
-      const balance = await this.stripe().balance.retrieve()
+      const balance = await this.stripe().balance.retrieve();
+
+      // Fixed: 'bal' type defined for better type safety
       const availableBalance = balance.available.reduce(
-        (total, bal) => total + bal.amount,
+        (total: number, bal: { amount: number }) => total + bal.amount,
         0,
-      )
+      );
+
       if (availableBalance < amount) {
-        console.log('Insufficient funds to cover the transfer.')
-        throw new Error('Insufficient funds to cover the transfer.')
+        throw new Error('Insufficient funds to cover the transfer.');
       }
+
       return await this.stripe().transfers.create({
         amount,
         currency,
         destination: accountId,
-      })
+      });
     } catch (error) {
-      this.handleError(error, 'Error transferring funds')
+      this.handleError(error, 'Error transferring funds');
     }
   }
 
   public async refund(payment_intent: string, amount: number) {
     try {
       return await this.stripe().refunds.create({
-        payment_intent: payment_intent,
+        payment_intent,
         amount: Math.round(amount),
-      })
+      });
     } catch (error) {
-      this.handleError(error, 'Error processing refund')
+      this.handleError(error, 'Error processing refund');
     }
   }
 
   public async retrieve(session_id: string) {
     try {
-      // return await this.stripe().paymentIntents.retrieve(intents_id);
-      return await this.stripe().checkout.sessions.retrieve(session_id)
+      return await this.stripe().checkout.sessions.retrieve(session_id);
     } catch (error) {
-      this.handleError(error, 'Error retrieving session')
+      this.handleError(error, 'Error retrieving session');
     }
   }
 
   public async getPaymentStatus(session_id: string) {
     try {
-      return (await this.stripe().checkout.sessions.retrieve(session_id)).status
-      // return (await this.stripe().paymentIntents.retrieve(intents_id)).status;
+      const session = await this.stripe().checkout.sessions.retrieve(session_id);
+      return session.status;
     } catch (error) {
-      this.handleError(error, 'Error retrieving payment status')
+      this.handleError(error, 'Error retrieving payment status');
     }
   }
 
-  public async isPaymentSuccess(session_id: string) {
+  public async isPaymentSuccess(session_id: string): Promise<boolean> {
     try {
-      const status = (
-        await this.stripe().checkout.sessions.retrieve(session_id)
-      ).status
-      return status === 'complete'
+      const session = await this.stripe().checkout.sessions.retrieve(session_id);
+      return session.status === 'complete';
     } catch (error) {
-      this.handleError(error, 'Error checking payment success')
+      this.handleError(error, 'Error checking payment success');
+      return false; 
     }
   }
 
   public getStripe() {
-    return this.stripe()
+    return this.stripe();
   }
 
-  // ================== NEW: Connect Existing Account ==================
-public async connectExistingAccount(userId: string, payload: { stripeAccountId: string }) {
-  const { stripeAccountId } = payload;
+  public async connectExistingAccount(
+    userId: string,
+    payload: { stripeAccountId: string }
+  ) {
+    const { stripeAccountId } = payload;
 
-  if (!stripeAccountId || !stripeAccountId.startsWith('acct_')) {
-    throw new Error('Invalid Stripe Account ID. It must start with "acct_"');
-  }
+    if (!stripeAccountId || !stripeAccountId.startsWith('acct_')) {
+      throw new Error('Invalid Stripe Account ID. It must start with "acct_"');
+    }
 
-  try {
-    // Verify the account exists in Stripe
-    await this.stripe().accounts.retrieve(stripeAccountId);
+    try {
+      await this.stripe().accounts.retrieve(stripeAccountId);
 
-    // Save to database
-    await User.findByIdAndUpdate(userId, {
-      stripeAccountId: stripeAccountId,
-    });
+      await User.findByIdAndUpdate(userId, { stripeAccountId });
 
-    // Generate onboarding link using your existing connectAccount method
-    const refreshUrl = `${config.server.url}/stripe/refresh/${stripeAccountId}?userId=${userId}`;
-    const returnUrl = `${config.server.url}/stripe/return?userId=${userId}&stripeAccountId=${stripeAccountId}`;
+      const refreshUrl = `${config.server.url}/stripe/refresh/${stripeAccountId}?userId=${userId}`;
+      const returnUrl = `${config.server.url}/stripe/return?userId=${userId}&stripeAccountId=${stripeAccountId}`;
 
-    const accountLink = await this.connectAccount(returnUrl, refreshUrl, stripeAccountId);
+      const accountLink = await this.connectAccount(returnUrl, refreshUrl, stripeAccountId);
 
-    return {
-      success: true,
-      isNewAccount: false,
-      accountId: stripeAccountId,
-      url: accountLink.url,
-      message: 'Your existing Stripe account has been connected successfully!',
-    };
-  } catch (error) {
-    this.handleError(error, 'Error connecting existing Stripe account');
+      if (!accountLink) throw new Error('Failed to generate account onboarding link.');
+
+      return {
+        success: true,
+        isNewAccount: false,
+        accountId: stripeAccountId,
+        url: accountLink.url,
+        message: 'Your existing Stripe account has been connected successfully!',
+      };
+    } catch (error) {
+      this.handleError(error, 'Error connecting existing Stripe account');
+    }
   }
 }
-}
 
-export default new StripeService()
+export default new StripeService();

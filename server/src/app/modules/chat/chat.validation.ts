@@ -1,5 +1,6 @@
 import { Types } from 'mongoose'
 import { z } from 'zod'
+import { CHAT_STATUS } from './chat.constants'
 
 // reusable ObjectId validator
 const objectIdSchema = z.string().refine((val) => Types.ObjectId.isValid(val), {
@@ -11,16 +12,18 @@ const createValidation = z.object({
     booking: objectIdSchema,
     participants: z
       .array(z.string())
-      .length(2, 'must be add in the array user and receiver id'),
+      .length(2, { message: 'must be add in the array user and receiver id' }),
   }),
 })
 
 const updateValidation = z.object({
   body: z.object({
     name: z.string({
-      required_error: 'Chat name is required!',
+      message: 'Chat name is required!',
     }),
-    status: z.enum(['accepted', 'blocked']).optional(),
+    status: z.enum(Object.values(CHAT_STATUS) as [string, ...string[]], {
+      message: 'Invalid chat status.',
+    }).optional(),
   }),
 })
 

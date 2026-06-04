@@ -2,7 +2,6 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { Request, Response } from 'express';
 import path from 'path';
-import i18nextMiddleware from 'i18next-express-middleware';
 import { Morgan } from './app/utils/morgen';
 import i18next from './app/i18n/i18n';
 import router from './app/routes';
@@ -32,9 +31,6 @@ app.use(cookieParser());
 
 // file retrieve
 app.use('/uploads', express.static(path.join(__dirname, '../uploads/')));
-
-// Use i18next middleware
-app.use(i18nextMiddleware.handle(i18next));
 
 // router
 app.use('/api/v1', router);

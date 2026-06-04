@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { PROVIDER_STATUS } from './provider.constant';
 
 const imageUrlSchema = z
-  .string({ required_error: 'Image URL is required' })
-  .url('Must be a valid image URL')
+  .string({ message: 'Image URL is required' })
+  .url({ message: 'Must be a valid image URL' })
   .trim();
 
 // ─────────────────────────────────────────────────────────────
@@ -13,23 +13,23 @@ const createProviderZodSchema = z.object({
   body: z.object({
     companyName: z
       .string()
-      .min(3, 'Company name must be at least 3 characters')
-      .max(100, 'Company name is too long')
+      .min(3, { message: 'Company name must be at least 3 characters long' })
+      .max(100, { message: 'Company name is too long' })
       .trim(),
 
     companyReg: z
       .string()
-      .min(3, 'Company registration number is required')
+      .min(3, { message: 'Company registration number is required' })
       .trim(),
 
     vatNumber: z
       .string()
-      .min(3, 'VAT number is required')
+      .min(3, { message: 'VAT number is required' })
       .trim(),
 
     socialInsurance: z
       .string()
-      .min(3, 'Social insurance number is required')
+      .min(3, { message: 'Social insurance number is required' })
       .trim(),
 
     cnicFront: imageUrlSchema,
@@ -38,9 +38,9 @@ const createProviderZodSchema = z.object({
     licenseBack: imageUrlSchema,
 
     carPapers: z
-      .array(imageUrlSchema, { required_error: 'Car papers are required' })
-      .min(1, 'At least 1 car paper is required')
-      .max(10, 'Maximum 10 car papers allowed'),
+      .array(imageUrlSchema, { message: 'Car papers are required' })
+      .min(1, { message: 'At least 1 car paper is required' })
+      .max(10, { message: 'Maximum 10 car papers allowed' }),
   }),
 });
 
@@ -67,8 +67,8 @@ const updateProviderZodSchema = z.object({
 
     carPapers: z
       .array(imageUrlSchema)
-      .min(1, 'At least 1 car paper is required')
-      .max(10, 'Maximum 10 car papers allowed')
+      .min(1, { message: 'At least 1 car paper is required' })
+      .max(10, { message: 'Maximum 10 car papers allowed' })
       .optional(),
   })
     .refine((data) => Object.keys(data).length > 0, {
@@ -86,8 +86,8 @@ const updateStatusZodSchema = z.object({
     rejectionReason: z
       .string()
       .trim()
-      .min(10, 'Rejection reason must be at least 10 characters')
-      .max(1000)
+      .min(10, { message: 'Rejection reason must be at least 10 characters' })
+      .max(1000, { message: 'Rejection reason is too long' })
       .optional(),
   })
     .refine(

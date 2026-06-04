@@ -2,7 +2,7 @@ import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../errors/ApiError';
 import { TUser } from './user.interface';
 import { User } from './user.model';
-import { TUserRole, TUserStatus, USER_ROLE } from './user.constant';
+import { TUserStatus, USER_ROLE } from './user.constant';
 import mongoose from 'mongoose';
 import { sendUserStatusNotifYToUser } from './user.utils';
 import { Provider } from '../provider/provider.model';
@@ -19,11 +19,15 @@ import { REDIS_KEYS } from '../../redis/keys';
 import { createToken, TExpiresIn } from '../auth/auth.utils';
 import { config } from '../../config/env.config';
 import { Vehicle } from '../vehicle/vehicle.model';
+import { Ride } from '../ride/ride.model';
+import { RIDE_STATUS } from '../ride/ride.constant';
+import { Payment } from '../payment/payment.model';
+import { BOOKING_STATUS } from '../booking/booking.constant';
 
 const getAllUsersFromDB = async (query: Record<string, unknown>) => {
   const usersQuery = new QueryBuilder(
     User.find({ isDeleted: false, role: { $ne: USER_ROLE.admin } }).select(
-      '_id id name email photoUrl role address contractNumber categories status createdAt'
+      '_id id name email profileImage role address status isOnline createdAt'
     ),
     query
   )
@@ -31,26 +35,86 @@ const getAllUsersFromDB = async (query: Record<string, unknown>) => {
     .filter()
     .sort()
     .paginate()
-    .fields();
+    .fields()
 
-  const result = await usersQuery.modelQuery;
-  const meta = await usersQuery.countTotal();
+  const users = await usersQuery.modelQuery
+  const meta  = await usersQuery.countTotal()
 
-  return {
-    meta,
-    result,
-  };
-};
+  // ─── Provider IDs collect করো ────────────────────────────────────
+  const providerIds = users
+    .filter((u: any) => u.role === USER_ROLE.provider)
+    .map((u: any) => new mongoose.Types.ObjectId(u._id))
+
+  // ─── Provider data একবারেই batch fetch করো (N+1 এড়াতে) ──────────
+  let completedRidesMap: Record<string, number> = {}
+  let totalEarningMap:   Record<string, number> = {}
+
+  if (providerIds.length > 0) {
+    // Completed rides per provider — একটা aggregation এ সব
+    const completedRidesResult = await Ride.aggregate([
+      {
+        $match: {
+          driverId: { $in: providerIds },
+          status:   RIDE_STATUS.completed,
+        },
+      },
+      {
+        $group: {
+          _id:   '$driverId',
+          count: { $sum: 1 },
+        },
+      },
+    ])
+
+    completedRidesResult.forEach((r) => {
+      completedRidesMap[r._id.toString()] = r.count
+    })
+
+    // Total earning per provider — একটা aggregation এ সব
+    const totalEarningResult = await Payment.aggregate([
+      {
+        $match: {
+          provider: { $in: providerIds },
+          isPaid:   true,
+        },
+      },
+      {
+        $group: {
+          _id:   '$provider',
+          total: { $sum: '$providerEarning' },
+        },
+      },
+    ])
+
+    totalEarningResult.forEach((r) => {
+      totalEarningMap[r._id.toString()] = r.total
+    })
+  }
+
+  // ─── Result build করো ────────────────────────────────────────────
+  const result = users.map((user: any) => {
+    const u = user.toObject ? user.toObject() : user
+
+    if (u.role !== USER_ROLE.provider) return u
+
+    const uid = u._id.toString()
+    return {
+      ...u,
+      completedRides: completedRidesMap[uid] ?? 0,
+      totalEarning:   totalEarningMap[uid]   ?? 0,
+    }
+  })
+
+  return { meta, result }
+}
 
 const getSingleUser = async (userId: string): Promise<TUser | null> => {
   const result: any = await User.findById(userId).select('-wallet').lean();
   if (!result || result.isDeleted)
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
 
-  // calculate Redis to get unread notification count for the user
+  // ── Unread notification count (Redis-backed) ──────────────────────────────
   let unreadCount = await getUnreadCount(userId);
-
-  // Redis unread count set
   if (unreadCount === null) {
     unreadCount = await Notification.countDocuments({
       receiver: userId,
@@ -59,95 +123,79 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
     await setUnreadCountInRedis(userId, unreadCount);
   }
 
-  // ── Provider data (only if role is provider) ──────────────────────────────
-  let providerData = null;
-  if (result.role === 'provider') {
-    providerData = await Provider.findOne({ userId })
-      .select('-rejectionReason -approvedAt -__v')
-      .lean();
-  }
-
-  let isKycSubmitted = false;
-  let hasVehicle = false;
+  // ── Provider-only enrichment ──────────────────────────────────────────────
+  let providerData    = null;
+  let isKycSubmitted  = false;
+  let hasVehicle      = false;
+  let vehicles:    any[] = [];
+  let completedRides   = 0;
+  let todayEarning     = 0;
 
   if (result.role === USER_ROLE.provider) {
-    const provider = await Provider.findOne({ userId: result._id });
+    const userObjectId = new mongoose.Types.ObjectId(userId);
 
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    // ── Run all queries in parallel ───────────────────────────────────────
+    const [provider, vehicleList, completedRideCount, earningResult] =
+      await Promise.all([
+        // KYC / provider doc
+        Provider.findOne({ userId })
+          .select('-userId -rejectionReason -approvedAt -updatedAt -createdAt -__v')
+          .lean(),
+
+        // All vehicles for this provider
+        Vehicle.find({ userId: userObjectId, isDeleted: false })
+          .select('name number year seats isDefault')
+          .lean(),
+
+        // Completed rides count
+        Ride.countDocuments({
+          driverId: userObjectId,
+          status: RIDE_STATUS.completed,
+        }),
+
+        // Today's earnings from Payment
+        Payment.aggregate([
+          {
+            $match: {
+              provider: userObjectId,
+              isPaid: true,
+              createdAt: { $gte: todayStart, $lte: todayEnd },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: '$providerEarning' },
+            },
+          },
+        ]),
+      ]);
+
+    providerData   = provider;
     isKycSubmitted = !!provider;
-
-    const vehicle = await Vehicle.findOne({ userId: result._id });
-    hasVehicle = !!vehicle;
+    hasVehicle     = vehicleList.length > 0;
+    vehicles       = vehicleList;
+    completedRides = completedRideCount;
+    todayEarning   = earningResult[0]?.total ?? 0;
   }
 
   return {
     ...result,
     unreadCount,
     ...(providerData && { provider: providerData }),
+    ...(result.role === USER_ROLE.provider && {
+      vehicles,
+      completedRides,
+      todayEarning,
+    }),
     isKycSubmitted,
     hasVehicle,
   };
-};
-
-const getUserBasics = async (id: string) => {
-  const result = await User.findById(id)
-    .select(
-      'name email phone profileImage avgRating totalRating isProfileComplete isKycVerified createdAt'
-    )
-    .lean();
-
-  if (!result) throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
-  if (result.isDeleted)
-    throw new ApiError(StatusCodes.NOT_FOUND, 'User deleted');
-
-  return { ...result };
-};
-
-const getUsersInRadius = async (
-  userId: string,
-  radius: number,
-  role: TUserRole
-) => {
-  const currentUser = await User.findById(userId);
-  if (!currentUser || currentUser?.isDeleted) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
-  }
-
-  if (!radius) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, 'Radius is required');
-  }
-
-  if (!currentUser?.location?.coordinates) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, 'Please turn on your location');
-  }
-
-  const { coordinates } = currentUser.location;
-  const earthRadiusInMiles = 3963.2;
-
-  const users = await User.find({
-    location: {
-      $geoWithin: {
-        $centerSphere: [coordinates, radius / earthRadiusInMiles],
-      },
-    },
-    _id: { $ne: currentUser._id },
-    role,
-    status: 'active',
-  }).select('location name profileImage');
-
-  if (!users || users.length === 0) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'No users found in this radius');
-  }
-
-  return users.map((user) => {
-    const obj: any = { ...user.toObject() };
-    obj.location = undefined;
-    if (user.location?.coordinates) {
-      const [lng, lat] = user.location.coordinates;
-      obj.coordinates = [lng, lat];
-      obj._id = user._id;
-    }
-    return obj;
-  });
 };
 
 const changeEmail = async (userId: string, payload: { email: string }) => {
@@ -357,7 +405,7 @@ const deleteUserProfile = async (
 
     const activeBooking = await Booking.findOne({
       userId,
-      bookingStatus: { $in: ['accepted', 'ongoing'] },
+      bookingStatus: { $in: [BOOKING_STATUS.accepted, BOOKING_STATUS.running] },
     });
     if (activeBooking) {
       throw new ApiError(
@@ -417,11 +465,9 @@ const deleteUserProfile = async (
 export const UserService = {
   getAllUsersFromDB,
   getSingleUser,
-  getUserBasics,
   changeEmail,
   updateUserStatus,
   updateUserProfile,
-  getUsersInRadius,
   updateLocationFromDB,
   deleteUserProfile,
 };
