@@ -1,6 +1,6 @@
 // handlers/driver/pickUpRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
-import { RIDE_TYPE } from '../../../modules/ride/ride.constant';
+import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
@@ -35,7 +35,7 @@ export const pickUpRideHandler = eventHandler<any>(
           message: 'You are not assigned to this ride',
         });
       }
-      if (ride.status !== 'in_progress') {
+      if (ride.status !== RIDE_STATUS.started) {
         return callback?.({
           success: false,
           message: 'Trip must be started before picking up passengers',

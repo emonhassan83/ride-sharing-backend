@@ -222,7 +222,7 @@ export const rideRequestHandler = eventHandler<any>(
         // ৬. টাইমআউট সেট করুন
         setTimeout(async () => {
           console.log(
-            `⏰ Checking ride ${ride._id} status after 30 seconds...`
+            `⏰ Checking ride ${ride._id} status after 30 minutes...`
           );
           const stillPending = await Ride.findById(ride._id);
           if (stillPending && stillPending.status === RIDE_STATUS.pending) {
@@ -252,7 +252,7 @@ export const rideRequestHandler = eventHandler<any>(
               `✅ Ride ${ride._id} was accepted or completed before timeout.`
             );
           }
-        }, 10 * 60000);
+        }, 30 * 60000);
 
         // রেডিসে রাইড ডাটা রাখুন
         await redis.zadd(

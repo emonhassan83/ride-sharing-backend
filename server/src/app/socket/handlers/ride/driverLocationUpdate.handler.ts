@@ -74,7 +74,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     // ── 5. Arrival check — only for accepted/driver_assigned rides ────────────
     const canCheckArrival =
       ride.status === RIDE_STATUS.accepted ||
-      ride.status === RIDE_STATUS.driver_assigned || ride.status === RIDE_STATUS.driver_arrived;
+      ride.status === RIDE_STATUS.started;
 
     if (!canCheckArrival) {
       console.log(`⏭️ Skipping arrival check — ride status: ${ride.status}`);
@@ -95,8 +95,8 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.private) {
       const passenger = await Passenger.findOne({
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
-        arrivedNotified: false, // ← $exists: false এর চেয়ে নির্ভরযোগ্য
+        status: { $in: [PASSENGER_STATUS.in_progress] },
+        arrivedNotified: false, 
       });
 
       if (!passenger) {
@@ -132,7 +132,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.split) {
       const passengers = await Passenger.find({
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+        status: { $in: [PASSENGER_STATUS.in_progress] },
         arrivedNotified: false,
       });
 

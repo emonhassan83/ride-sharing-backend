@@ -24,7 +24,7 @@ export const checkNoShowPassengers = async () => {
 
     // ✅ সীমিত সংখ্যক রাইড একবারে প্রসেস
     const rides = await Ride.find({
-      status: RIDE_STATUS.driver_arrived,
+      status: RIDE_STATUS.started,
       arrivedAt: { $lt: cutoff },
     })
       .select('_id driverId')
@@ -39,7 +39,7 @@ export const checkNoShowPassengers = async () => {
     const updateResult = await Passenger.updateMany(
       {
         rideId: { $in: rideIds },
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+        status: { $in: [PASSENGER_STATUS.confirmed] },
         arrivedNotified: true,
         pickedUpAt: null,
       },
@@ -107,7 +107,7 @@ export const checkNoShowPassengers = async () => {
     const noPassengerRideIds = rideIds.filter(rid => !remainingPassengers.find(r => r._id.toString() === rid.toString()));
     if (noPassengerRideIds.length) {
       await Ride.updateMany(
-        { _id: { $in: noPassengerRideIds }, status: RIDE_STATUS.driver_arrived },
+        { _id: { $in: noPassengerRideIds }, status: RIDE_STATUS.started },
         { status: RIDE_STATUS.cancelled, cancellationReason: 'all_passengers_no_show' }
       );
       const multi = redis.multi();

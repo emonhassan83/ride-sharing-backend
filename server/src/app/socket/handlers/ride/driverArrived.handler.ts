@@ -27,8 +27,7 @@ export const driverArrivedHandler = eventHandler<any>(
     // ── Guard: only allow arrived trigger for valid statuses ─────────────────
     const validStatuses = [
       RIDE_STATUS.accepted,
-      RIDE_STATUS.driver_assigned,
-      RIDE_STATUS.driver_arrived, // re-notify যদি কেউ miss করে
+      RIDE_STATUS.started,
     ];
     if (!validStatuses.includes(ride.status as any)) {
       console.log(`⏭️ Cannot trigger arrived — ride status: ${ride.status}`);
@@ -88,19 +87,13 @@ export const driverArrivedHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.private) {
       const passenger = await Passenger.findOne({
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+        status: { $in: [PASSENGER_STATUS.in_progress] },
       });
 
       if (!passenger) {
         console.log(`⚠️ No active passenger for private ride ${rideId}`);
         return;
       }
-
-      // Update ride status
-      await Ride.findByIdAndUpdate(rideId, {
-        status: RIDE_STATUS.driver_arrived,
-        arrivedAt: new Date(),
-      });
 
       await notifyPassenger(passenger, true);
       return;
@@ -111,7 +104,7 @@ export const driverArrivedHandler = eventHandler<any>(
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+        status: { $in: [PASSENGER_STATUS.in_progress] },
       });
 
       if (!passenger) {
@@ -121,21 +114,6 @@ export const driverArrivedHandler = eventHandler<any>(
 
       await notifyPassenger(passenger);
 
-      // Check if ALL passengers are now notified
-      const remaining = await Passenger.countDocuments({
-        rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
-        arrivedNotified: false,
-      });
-
-      if (remaining === 0) {
-        await Ride.findByIdAndUpdate(rideId, {
-          status: RIDE_STATUS.driver_arrived,
-          arrivedAt: new Date(),
-        });
-        console.log(`✅ All passengers notified — ride ${rideId} → driver_arrived`);
-      }
-
       return;
     }
 
@@ -143,7 +121,7 @@ export const driverArrivedHandler = eventHandler<any>(
     if (arriveAll) {
       const passengers = await Passenger.find({
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+        status: { $in: [PASSENGER_STATUS.in_progress] },
         arrivedNotified: false, // শুধু unnotified দের
       });
 
@@ -156,11 +134,6 @@ export const driverArrivedHandler = eventHandler<any>(
         const isLast = i === passengers.length - 1;
         await notifyPassenger(passengers[i], isLast);
       }
-
-      await Ride.findByIdAndUpdate(rideId, {
-        status: RIDE_STATUS.driver_arrived,
-        arrivedAt: new Date(),
-      });
 
       console.log(`✅ All ${passengers.length} passengers notified for ride ${rideId}`);
     }

@@ -60,8 +60,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       // শুধুমাত্র accepted স্টেটে ক্যানসেল করা যাবে
       const cancellableStatuses = [
         RIDE_STATUS.accepted,
-        RIDE_STATUS.driver_assigned,
-        RIDE_STATUS.driver_arrived,
+        RIDE_STATUS.started
       ];
       if (!cancellableStatuses.includes(ride.status as any)) {
         return callback?.({
@@ -80,7 +79,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
 
       // শুধুমাত্র running স্টেটে ক্যানসেল করা যাবে
       const passengerCancellableStatuses = [
-        PASSENGER_STATUS.matched,
+        PASSENGER_STATUS.confirmed,
         PASSENGER_STATUS.in_progress,
         PASSENGER_STATUS.driver_arrived,
       ];

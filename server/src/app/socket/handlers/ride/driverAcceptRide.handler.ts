@@ -121,7 +121,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
           paymentStatus:  PAYMENT_STATUS.pending,
         })
 
-        passenger.status = PASSENGER_STATUS.matched
+        passenger.status = PASSENGER_STATUS.confirmed
         await passenger.save()
 
         await redis.hset(`ride:active:${rideId}`, {
@@ -197,7 +197,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
           })
           bookings.push(booking)
 
-          passenger.status = PASSENGER_STATUS.matched
+          passenger.status = PASSENGER_STATUS.confirmed
           await passenger.save()
 
           // ✅ প্রতিটি rider কে ride room এ join করাও
@@ -271,7 +271,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
           paymentStatus: PAYMENT_STATUS.pending,
         })
 
-        passenger.status = PASSENGER_STATUS.matched
+        passenger.status = PASSENGER_STATUS.confirmed
         await passenger.save()
 
         if (!hasOtherPassengers) {

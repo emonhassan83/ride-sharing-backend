@@ -71,17 +71,13 @@ export async function triggerArrival(
     // ── Check if all passengers notified ──────────────────────────────────
     const remaining = await Passenger.countDocuments({
       rideId,
-      status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+      status: { $in: [PASSENGER_STATUS.confirmed] },
       arrivedNotified: false, // ✅ fixed — was arriveAt: { $exists: false }
     });
 
     console.log(`📊 Remaining unnotified passengers: ${remaining}`);
 
     if (remaining === 0) {
-      await Ride.findByIdAndUpdate(rideId, {
-        status: RIDE_STATUS.driver_arrived,
-        arrivedAt: new Date(),
-      });
       console.log(`✅ Ride ${rideId} → driver_arrived`);
 
       io.to(`ride:${rideId}`).emit('ride:all-passengers-arrived', {

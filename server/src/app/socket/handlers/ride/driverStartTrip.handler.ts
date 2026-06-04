@@ -32,14 +32,14 @@ export const driverStartTripHandler = eventHandler<any>(
         return callback?.({ success: false, message: 'You are not assigned to this ride' });
       }
  
-      const allowedStates = [RIDE_STATUS.accepted, RIDE_STATUS.driver_arrived];
+      const allowedStates = [RIDE_STATUS.accepted];
       if (!allowedStates.includes(ride.status as any)) {
         return callback?.({ success: false, message: 'Ride cannot be started in current state' });
       }
  
-      // ─── Update Ride status → in_progress ────────────────────────
+      // ─── Update Ride status → started ────────────────────────
       await Ride.findByIdAndUpdate(rideId, {
-        status:        RIDE_STATUS.in_progress,
+        status:        RIDE_STATUS.started,
         tripStartedAt: new Date(),
         ...(startOdometer && { startOdometer }),
       });
@@ -47,9 +47,8 @@ export const driverStartTripHandler = eventHandler<any>(
       // ─── Update ALL matched/arrived passengers → in_progress ─────
       const passengers = await Passenger.find({
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.driver_arrived] },
+        status: { $in: [PASSENGER_STATUS.confirmed] },
       });
- 
       if (!passengers.length) {
         return callback?.({ success: false, message: 'No matched passengers found' });
       }
@@ -96,7 +95,7 @@ export const driverStartTripHandler = eventHandler<any>(
       // ─── Broadcast ride status update to room ─────────────────────
       io.to(`ride:${rideId}`).emit('ride:status-update', {
         rideId,
-        status:    RIDE_STATUS.in_progress,
+        status:    RIDE_STATUS.started,
         startedAt: new Date(),
       });
  

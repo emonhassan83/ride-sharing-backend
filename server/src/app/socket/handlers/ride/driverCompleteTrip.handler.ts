@@ -57,7 +57,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
         success: false,
         message: 'You are not assigned to this ride',
       });
-    if (ride.status !== RIDE_STATUS.in_progress)
+    if (ride.status !== RIDE_STATUS.started)
       return callback?.({
         success: false,
         message: `Ride cannot be completed in current state: ${ride.status}`,

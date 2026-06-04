@@ -45,6 +45,15 @@ export const driverRejectRideHandler = eventHandler<any>(
         // ড্রাইভারকে রিজেক্ট লিস্টে যোগ করুন (যাতে আবার এই রাইড না পায়)
         await redis.sadd(`ride:rejected:${rideId}`, driverId);
         await redis.expire(`ride:rejected:${rideId}`, 300);
+
+        // রাইড স্ট্যাটাস রিজেক্টেড করুন
+        await Ride.findByIdAndUpdate(rideId, {
+          status: RIDE_STATUS.rejected,
+          cancellationReason: reason || 'Driver rejected entire ride',
+          cancelledBy: CANCELLED_BY.driver,
+          cancelledAt: new Date(),
+        });
+        
         return callback?.({ success: true, message: 'Private ride rejected', passengerCount: passenger ? 1 : 0 });
       }
 
