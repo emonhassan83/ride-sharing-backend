@@ -103,8 +103,10 @@ export const pickUpRideHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'All passengers picked up successfully',
-          passengerCount: passengers.length,
+          data: {
+            passengerCount: passengers.length,
           allPickedUp: true,
+          }
         });
       }
 
@@ -189,9 +191,11 @@ export const pickUpRideHandler = eventHandler<any>(
           return callback?.({
             success: true,
             message: `Passenger picked up. ${remainingCount} passenger(s) remaining.`,
-            passengerId: passenger._id,
+            data: {
+              passengerId: passenger._id,
             remainingPassengers: remainingCount,
             allPickedUp: false,
+            }
           });
         }
 
@@ -206,9 +210,11 @@ export const pickUpRideHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'Last passenger picked up. All passengers on board!',
-          passengerId: passenger._id,
-          remainingPassengers: 0,
-          allPickedUp: true,
+          data: {
+            passengerId: passenger._id,
+            remainingPassengers: 0,
+            allPickedUp: true,
+          }
         });
       }
 

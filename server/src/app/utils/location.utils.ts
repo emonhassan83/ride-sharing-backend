@@ -107,27 +107,51 @@ export function calculateFareFromDistance(
 export async function calculateETAForRide(
   rideId: string,
   currentLat: number,
-  currentLng: number
+  currentLng: number,
+  rideStatus?: string,
 ): Promise<{ etaMinutes: number; distanceKm: number }> {
-  // This requires Ride model - import dynamically to avoid circular dependency
-  const { Ride } = await import('../modules/ride/ride.model');
+  const { Ride }        = await import('../modules/ride/ride.model');
+  const { RIDE_STATUS } = await import('../modules/ride/ride.constant');
+  const { getRealDistanceAndETA } = await import('./maps.utils');
 
-  const ride = await Ride.findById(rideId).select('destination.coordinates');
-  if (!ride) {
-    return { etaMinutes: 0, distanceKm: 0 };
+  const ride = await Ride.findById(rideId).select('pickup destination status');
+  if (!ride) return { etaMinutes: 0, distanceKm: 0 };
+
+  const status = rideStatus || ride.status;
+
+  // accepted → driver is heading to PICKUP
+  // started  → driver is heading to DESTINATION
+  const isHeadingToPickup = status === RIDE_STATUS.accepted;
+
+  const targetLat = isHeadingToPickup
+    ? ride.pickup.coordinates[1]
+    : ride.destination.coordinates[1];
+
+  const targetLng = isHeadingToPickup
+    ? ride.pickup.coordinates[0]
+    : ride.destination.coordinates[0];
+
+  try {
+    const { distanceKm, durationMinutes } = await getRealDistanceAndETA(
+      { lat: currentLat, lng: currentLng },
+      { lat: targetLat,  lng: targetLng  },
+    );
+
+    console.log(
+      `📍 ETA (${isHeadingToPickup ? 'to pickup' : 'to destination'}): ${distanceKm.toFixed(2)}km, ${durationMinutes}min`,
+    );
+
+    return { etaMinutes: durationMinutes, distanceKm };
+  } catch (err) {
+    // Fallback to Haversine if Google Maps fails
+    console.warn('⚠️ Google Maps ETA failed, using Haversine fallback');
+    const distance    = calculateDistance(
+      { lat: currentLat, lng: currentLng },
+      { lat: targetLat,  lng: targetLng  },
+    );
+    const etaMinutes = calculateETAFromDistance(distance, 30);
+    return { etaMinutes, distanceKm: distance };
   }
-
-  const destLat = ride.destination.coordinates[1];
-  const destLng = ride.destination.coordinates[0];
-
-  const distance = calculateDistance(
-    { lat: currentLat, lng: currentLng },
-    { lat: destLat, lng: destLng }
-  );
-
-  const etaMinutes = calculateETAFromDistance(distance, 30);
-
-  return { etaMinutes, distanceKm: distance };
 }
 
 // =============== Fare Calculation ===============

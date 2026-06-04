@@ -48,10 +48,7 @@ export const driverCancelRideHandler = eventHandler<any>(
         });
 
       // শুধুমাত্র accepted স্টেটে ক্যানসেল করা যাবে
-      const cancellableStatuses = [
-        RIDE_STATUS.accepted,
-        RIDE_STATUS.started
-      ];
+      const cancellableStatuses = [RIDE_STATUS.accepted, RIDE_STATUS.started];
       if (!cancellableStatuses.includes(ride.status as any)) {
         return callback?.({
           success: false,
@@ -66,7 +63,13 @@ export const driverCancelRideHandler = eventHandler<any>(
       if (ride.type === RIDE_TYPE.private) {
         const passenger = await Passenger.findOne({
           rideId,
-          status: { $in: [PASSENGER_STATUS.confirmed, PASSENGER_STATUS.in_progress, PASSENGER_STATUS.driver_arrived] },
+          status: {
+            $in: [
+              PASSENGER_STATUS.confirmed,
+              PASSENGER_STATUS.in_progress,
+              PASSENGER_STATUS.driver_arrived,
+            ],
+          },
         });
         if (!passenger)
           return callback?.({
@@ -127,8 +130,10 @@ export const driverCancelRideHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'Private ride cancelled',
-          passengerCount: 1,
-          rideCancelled: true,
+          data: {
+            passengerCount: 1,
+            rideCancelled: true,
+          },
         });
       }
 
@@ -223,8 +228,10 @@ export const driverCancelRideHandler = eventHandler<any>(
             remainingPassengers.length === 0
               ? 'Last passenger cancelled. Ride cancelled.'
               : 'Passenger cancelled.',
-          remainingPassengers: remainingPassengers.length,
-          rideCancelled,
+          data: {
+            remainingPassengers: remainingPassengers.length,
+            rideCancelled,
+          },
         });
       }
 
@@ -299,8 +306,10 @@ export const driverCancelRideHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'Ride cancelled. All passengers refunded.',
-          passengerCount: passengers.length,
-          rideCancelled: true,
+          data: {
+            passengerCount: passengers.length,
+            rideCancelled: true,
+          },
         });
       }
 
