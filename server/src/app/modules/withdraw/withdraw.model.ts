@@ -11,7 +11,6 @@ const withdrawSchema = new Schema<TWithdraw>(
       default: () => generateCryptoString(10),
     },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    booking: { type: Schema.Types.ObjectId, ref: 'Booking', required: true },
     amount: { type: Number, required: true },
     stripeTransferId: { type: String },
     status: {
@@ -19,7 +18,9 @@ const withdrawSchema = new Schema<TWithdraw>(
       enum: Object.values(WITHDRAW_STATUS),
       default: WITHDRAW_STATUS.proceed,
     },
-    proceedAt: { type: Date },
+    proceedAt:   { type: Date, default: null },
+    completedAt: { type: Date, default: null },
+    note:        { type: String, default: null },
   },
   {
     timestamps: true,

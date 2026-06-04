@@ -24,7 +24,7 @@ router.patch(
 router.get(
   '/my-withdraws',
   auth(USER_ROLE.provider),
-  WithdrawControllers.getConsultWithdraw,
+  WithdrawControllers.getMyWithdraws,
 )
 
 router.get('/', auth(USER_ROLE.admin), WithdrawControllers.getAllWithdraw)
