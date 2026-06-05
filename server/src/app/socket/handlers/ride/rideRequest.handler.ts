@@ -16,6 +16,7 @@ import {
   getRouteGeometry,
   startMatchingForRide,
 } from '../../../utils/maps.utils';
+import { Vehicle } from '../../../modules/vehicle/vehicle.model';
 
 export const rideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -73,7 +74,7 @@ export const rideRequestHandler = eventHandler<any>(
       }
 
       // ✅ রুট জ্যামিতি সংগ্রহ (উভয় টাইপের জন্যই)
-      let routeGeometry = null;
+      let routeGeometry = {};
       try {
         routeGeometry = await getRouteGeometry(pickup, destination);
         console.log(`✅ Route geometry obtained for ${type} ride`);
@@ -86,7 +87,7 @@ export const rideRequestHandler = eventHandler<any>(
       const fareType = getFareType(departureDateTime);
 
       // ফেয়ার ব্রেকডাউন ক্যালকুলেট (প্রকৃত দূরত্ব ব্যবহার করে)
-      const fareBreakdown = calculateFareBreakdown({
+      const fareBreakdown = await calculateFareBreakdown({
         distanceKm: actualDistance,
         departureDate: departureDateTime,
         departureTime: scheduledTime || new Date().toLocaleTimeString(),
@@ -99,10 +100,24 @@ export const rideRequestHandler = eventHandler<any>(
       const roundedBreakdown = roundObjectNumbers(fareBreakdown);
       const estimatedDuration = actualDuration;
 
+      // ── Get driver's default vehicle ──────────────────────────────────────────────
+      let vehicleId = undefined;
+      if (driverId) {
+        const defaultVehicle = await Vehicle.findOne({
+          userId: driverId,
+          isDefault: true,
+          isDeleted: false,
+        })
+          .select('_id')
+          .lean();
+
+        vehicleId = defaultVehicle?._id;
+      }
+
       // Ride ডকুমেন্ট তৈরি
       const ride = await Ride.create({
-        driverId: null,
-        vehicleId: null,
+        driverId,
+        vehicleId,
         type,
         pickup: {
           address: pickup.address,
@@ -224,7 +239,7 @@ export const rideRequestHandler = eventHandler<any>(
         // ৬. টাইমআউট সেট করুন
         setTimeout(async () => {
           console.log(
-            `⏰ Checking ride ${ride._id} status after 30 seconds...`
+            `⏰ Checking ride ${ride._id} status after 30 minutes...`
           );
           const stillPending = await Ride.findById(ride._id);
           if (stillPending && stillPending.status === RIDE_STATUS.pending) {
@@ -254,7 +269,7 @@ export const rideRequestHandler = eventHandler<any>(
               `✅ Ride ${ride._id} was accepted or completed before timeout.`
             );
           }
-        }, 10 * 60000);
+        }, 30 * 60000);
 
         // রেডিসে রাইড ডাটা রাখুন
         await redis.zadd(
@@ -278,13 +293,15 @@ export const rideRequestHandler = eventHandler<any>(
 
         callback?.({
           success: true,
-          rideId: ride._id,
-          passengerId: passenger._id,
-          estimatedFare: roundedBreakdown.totalFare,
-          estimatedDistance: roundTo2(actualDistance),
-          estimatedDuration,
-          fareBreakdown: roundedBreakdown,
           message: 'Ride request sent to selected driver.',
+          data: {
+            rideId: ride._id,
+            passengerId: passenger._id,
+            estimatedFare: roundedBreakdown.totalFare,
+            estimatedDistance: roundTo2(actualDistance),
+            estimatedDuration,
+            fareBreakdown: roundedBreakdown,
+          },
         });
         return;
       }
@@ -313,13 +330,15 @@ export const rideRequestHandler = eventHandler<any>(
 
       callback?.({
         success: true,
-        rideId: ride._id,
-        passengerId: passenger._id,
-        estimatedFare: roundedBreakdown.totalFare,
-        estimatedDistance: roundTo2(actualDistance),
-        estimatedDuration,
-        fareBreakdown: roundedBreakdown,
         message: 'Ride requested successfully. Finding a driver...',
+        data: {
+          rideId: ride._id,
+          passengerId: passenger._id,
+          estimatedFare: roundedBreakdown.totalFare,
+          estimatedDistance: roundTo2(actualDistance),
+          estimatedDuration,
+          fareBreakdown: roundedBreakdown,
+        },
       });
     } catch (error) {
       console.error('Error in rideRequestHandler:', error);

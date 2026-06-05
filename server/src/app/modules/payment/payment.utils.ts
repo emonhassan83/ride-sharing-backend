@@ -4,8 +4,8 @@ import { config } from '../../config/env.config'
 console.log(config.server.url);
 
 
-const stripe: Stripe = new Stripe(config.pay?.secretKey as string, {
-  apiVersion: '2025-08-27.basil',
+const stripe = new Stripe(config.pay?.secretKey as string, {
+  apiVersion: '2026-05-27.dahlia',
   typescript: true,
 })
 interface TPayload {

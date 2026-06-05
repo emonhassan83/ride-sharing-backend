@@ -1,4 +1,4 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose, { Query, Schema } from 'mongoose';
 import { TVehicle } from './vehicle.interface';
 
 const vehicleSchema = new Schema<TVehicle>(
@@ -51,8 +51,7 @@ const vehicleSchema = new Schema<TVehicle>(
 vehicleSchema.index({ userId: 1, isDeleted: 1 });
 
 // Soft delete middleware
-vehicleSchema.pre(/^find/, function () {
-  // @ts-ignore
+vehicleSchema.pre(/^find/, function (this: Query<any, any>) {
   this.where({ isDeleted: false });
 });
 

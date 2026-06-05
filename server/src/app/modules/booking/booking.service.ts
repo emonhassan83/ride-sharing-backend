@@ -3,6 +3,8 @@ import ApiError from '../../errors/ApiError';
 import { Booking } from './booking.model';
 import { User } from '../user/user.model';
 import { USER_ROLE } from '../user/user.constant';
+import QueryBuilder from '../../builder/QueryBuilder';
+import { PAYMENT_STATUS } from './booking.constant';
 
 // ==================== COMMON ====================
 const getBookingById = async (bookingId: string) => {
@@ -27,50 +29,74 @@ const getBookingById = async (bookingId: string) => {
 };
 
 // ==================== ADMIN ====================
-const getAllBookings = async (filters: any = {}) => {
-  const query: any = {};
+const getAllBookings = async (query: Record<string, unknown>) => {
+  const bookingQuery = new QueryBuilder(
+    Booking.find({ paymentStatus: { $ne: PAYMENT_STATUS.pending } }).populate([
+      { path: 'userId', select: 'name ' },
+      { path: 'driverId', select: 'name' },
+      {
+        path: 'passengerId',
+        select: 'pickup destination departureDate departureTime requestedSeats',
+      },
+      {
+        path: 'rideId',
+        select: 'type vehicleId',
+        populate: { path: 'vehicleId', select: 'name number seats year' },
+      },
+    ]),
+    query
+  )
+    .search(['id'])
+    .filter()
+    .sort()
+    .paginate()
+    .fields();
 
-  if (filters.bookingStatus) query.bookingStatus = filters.bookingStatus;
-  if (filters.paymentStatus) query.paymentStatus = filters.paymentStatus;
-  if (filters.tripStatus) query.tripStatus = filters.tripStatus;
+  const bookings = await bookingQuery.modelQuery;
+  const meta = await bookingQuery.countTotal();
 
-  return Booking.find(query)
-    .populate('userId', 'name')
-    .populate('driverId', 'name')
-    .populate(
-      'passengerId',
-      'pickup destination departureDate departureTime requestedSeats'
-    )
-    .sort({ createdAt: -1 });
+  return { data: bookings, meta };
 };
 
 // ==================== USER & DRIVER ====================
-const getMyBookings = async (
-  userId: string,
-  filters: any = {}
-) => {
-  const query: any = {};
-
-  const user = await User.findById(userId);
-  if (!user || user?.isDeleted) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+const getMyBookings = async (userId: string, query: Record<string, unknown>) => {
+  const user = await User.findById(userId).select('role isDeleted').lean()
+  if (!user || user.isDeleted) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found')
   }
 
-  if (user.role === USER_ROLE.user) query.userId = userId;
-  else query.driverId = userId;
+  const baseFilter =
+    user.role === USER_ROLE.user
+      ? { userId }
+      : { driverId: userId }
 
-  if (filters.bookingStatus) query.bookingStatus = filters.bookingStatus;
-  if (filters.tripStatus) query.tripStatus = filters.tripStatus;
+  const bookingQuery = new QueryBuilder(
+    Booking.find(baseFilter).populate([
+      { path: 'userId',      select: 'name' },
+      { path: 'driverId',    select: 'name' },
+      {
+        path:   'passengerId',
+        select: 'pickup destination departureDate departureTime requestedSeats',
+      },
+      {
+        path:     'rideId',
+        select:   'type vehicleId',
+        populate: { path: 'vehicleId', select: 'name number seats year' },
+      },
+    ]),
+    query
+  )
+    .search(['id'])
+    .filter()
+    .sort()
+    .paginate()
+    .fields()
 
-  return Booking.find(query)
-    .populate('userId', 'name')
-    .populate('driverId', 'name')
-    .populate(
-      'passengerId',
-      'pickup destination departureDate departureTime requestedSeats'
-    )
-    .sort({ createdAt: -1 });
-};
+  const bookings = await bookingQuery.modelQuery
+  const meta     = await bookingQuery.countTotal()
+
+  return { data: bookings, meta }
+}
 
 // ==================== STATUS UPDATE ====================
 const updateBookingStatus = async (bookingId: string, payload: any) => {

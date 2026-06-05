@@ -13,8 +13,7 @@ const riderHistorySchema = new Schema<IRiderHistory>(
     rideId: {
       type: Schema.Types.ObjectId,
       ref: 'Ride',
-      required: true,
-      unique: true,
+      required: true
     },
     summary: {
       pickupAddress: { type: String, required: true },
@@ -32,9 +31,8 @@ const riderHistorySchema = new Schema<IRiderHistory>(
       driverName: { type: String, required: true },
       driverPhone: { type: String, required: true },
       driverPhoto: String,
-      carModel: { type: String, required: true },
-      carNumber: { type: String, required: true },
-      carColor: String,
+      carModel: { type: String, default: 'Standard' },
+      carNumber: { type: String, default: null }
     },
     paymentStatus: {
       type: String,

@@ -17,7 +17,13 @@ const addMultipleCars = async (userId: string, payloads: Partial<TVehicle>[]) =>
   }
 
   // Normalize plate numbers
-  const numbers = payloads.map(p => p.number?.toUpperCase());
+  const numbers = payloads
+    .map(p => p.number?.toUpperCase())
+    .filter((n): n is string => !!n);
+
+  if (!numbers.length) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Valid vehicle numbers are required');
+  }
 
   // Check duplicates in DB
   const existing = await Vehicle.find({ number: { $in: numbers } });

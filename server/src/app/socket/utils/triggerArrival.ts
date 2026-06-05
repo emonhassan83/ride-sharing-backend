@@ -38,6 +38,7 @@ export async function triggerArrival(
     // ── Update passenger ───────────────────────────────────────────────────
     passenger.arriveAt = new Date();
     passenger.arrivedNotified = true;
+    passenger.status = PASSENGER_STATUS.driver_arrived;
     await passenger.save();
     console.log(`✅ Passenger ${passengerId} → arrivedNotified: true`);
 
@@ -63,24 +64,20 @@ export async function triggerArrival(
       passengerId: passenger._id,
       driverId,
       message: 'Your driver has arrived at your pickup location',
-      waitingTime: 2,
+      waitingTime: 0,
       autoDetected: true,
     });
 
     // ── Check if all passengers notified ──────────────────────────────────
     const remaining = await Passenger.countDocuments({
       rideId,
-      status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+      status: { $in: [PASSENGER_STATUS.confirmed] },
       arrivedNotified: false, // ✅ fixed — was arriveAt: { $exists: false }
     });
 
     console.log(`📊 Remaining unnotified passengers: ${remaining}`);
 
     if (remaining === 0) {
-      await Ride.findByIdAndUpdate(rideId, {
-        status: RIDE_STATUS.driver_arrived,
-        arrivedAt: new Date(),
-      });
       console.log(`✅ Ride ${rideId} → driver_arrived`);
 
       io.to(`ride:${rideId}`).emit('ride:all-passengers-arrived', {

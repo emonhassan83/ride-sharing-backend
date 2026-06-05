@@ -13,7 +13,7 @@ const locationPointSchema = new Schema<ILocationPoint>({
   timestamp: { type: Date, default: Date.now },
   event: {
     type: String,
-    enum: ['TRIP_STARTED', 'ARRIVED_AT_PICKUP', 'WAYPOINT'],
+    enum: ['TRIP_STARTED', 'ARRIVED_AT_PICKUP', 'WAYPOINT', 'PASSENGER_DROPPED_OFF'],
   },
 });
 
@@ -23,7 +23,6 @@ const locationHistorySchema = new Schema<ILocationHistory>(
       type: Schema.Types.ObjectId,
       ref: 'Ride',
       required: true,
-      unique: true,
       index: true,
     },
     driverId: {

@@ -9,43 +9,44 @@ import eventHandler from '../../utils/eventHandler';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 
 export const driverArrivedHandler = eventHandler<any>(
-  async (socket: TSocket, data: any) => {
+  async (socket: TSocket, data: any, callback?: any) => {
     const { rideId, passengerId, arriveAll = false, lat, lng } = data;
     const driverId = socket.auth?._id?.toString();
 
-    if (!rideId) {
-      console.error('❌ Missing rideId');
-      return;
-    }
+    if (!driverId)
+      return callback?.({ success: false, message: 'Unauthorized' });
+
+    if (!rideId)
+      return callback?.({ success: false, message: 'Missing rideId' });
 
     const ride = await Ride.findById(rideId);
-    if (!ride) {
-      console.error(`❌ Ride not found: ${rideId}`);
-      return;
-    }
+    if (!ride) return callback?.({ success: false, message: 'Ride not found' });
 
-    // ── Guard: only allow arrived trigger for valid statuses ─────────────────
-    const validStatuses = [
-      RIDE_STATUS.accepted,
-      RIDE_STATUS.driver_assigned,
-      RIDE_STATUS.driver_arrived, // re-notify যদি কেউ miss করে
-    ];
-    if (!validStatuses.includes(ride.status as any)) {
-      console.log(`⏭️ Cannot trigger arrived — ride status: ${ride.status}`);
-      return;
-    }
+    if (ride.driverId?.toString() !== driverId)
+      return callback?.({
+        success: false,
+        message: 'You are not assigned to this ride',
+      });
+
+    // ── Status guard ──────────────────────────────────────────────────────────
+    const validStatuses = [RIDE_STATUS.accepted, RIDE_STATUS.started];
+    if (!validStatuses.includes(ride.status as any))
+      return callback?.({
+        success: false,
+        message: `Cannot trigger arrived — ride status: ${ride.status}`,
+      });
 
     const io = getIO();
     const redis = getRedisClient();
 
+    // ── Helper: notify single passenger ──────────────────────────────────────
     const notifyPassenger = async (passenger: any, isLastArrival = false) => {
-      // Update passenger
       await Passenger.findByIdAndUpdate(passenger._id, {
         arriveAt: new Date(),
         arrivedNotified: true,
+        status: PASSENGER_STATUS.driver_arrived,
       });
 
-      // Redis log
       await redis.rpush(
         `ride:${rideId}:live`,
         JSON.stringify({
@@ -55,10 +56,9 @@ export const driverArrivedHandler = eventHandler<any>(
           lat,
           lng,
           timestamp: Date.now(),
-        }),
+        })
       );
 
-      // Notify passenger
       io.to(`user:${passenger.userId}`).emit('ride:driver-arrived', {
         rideId,
         passengerId: passenger._id,
@@ -70,7 +70,7 @@ export const driverArrivedHandler = eventHandler<any>(
 
       console.log(`✅ Notified passenger ${passenger._id}`);
 
-      // Waiting charge timer (3 min)
+      // Waiting charge timer
       setTimeout(async () => {
         const p = await Passenger.findById(passenger._id);
         if (p?.arriveAt && !p?.pickedUpAt) {
@@ -87,22 +87,22 @@ export const driverArrivedHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.private) {
       const passenger = await Passenger.findOne({
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+        status: PASSENGER_STATUS.confirmed,
       });
 
-      if (!passenger) {
-        console.log(`⚠️ No active passenger for private ride ${rideId}`);
-        return;
-      }
-
-      // Update ride status
-      await Ride.findByIdAndUpdate(rideId, {
-        status: RIDE_STATUS.driver_arrived,
-        arrivedAt: new Date(),
-      });
+      if (!passenger)
+        return callback?.({
+          success: false,
+          message: 'No active passenger found for this ride',
+        });
 
       await notifyPassenger(passenger, true);
-      return;
+
+      return callback?.({
+        success: true,
+        message: 'Driver arrived notification sent',
+        data: { passengerId: passenger._id },
+      });
     }
 
     // ── SPLIT RIDE — specific passenger ──────────────────────────────────────
@@ -110,58 +110,61 @@ export const driverArrivedHandler = eventHandler<any>(
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+        status: PASSENGER_STATUS.confirmed,
       });
 
-      if (!passenger) {
-        console.log(`⚠️ Passenger ${passengerId} not found or invalid status`);
-        return;
-      }
+      if (!passenger)
+        return callback?.({
+          success: false,
+          message: 'Passenger not found or already notified',
+        });
 
       await notifyPassenger(passenger);
 
-      // Check if ALL passengers are now notified
+      // Check remaining unnotified
       const remaining = await Passenger.countDocuments({
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+        status: PASSENGER_STATUS.confirmed,
         arrivedNotified: false,
       });
 
-      if (remaining === 0) {
-        await Ride.findByIdAndUpdate(rideId, {
-          status: RIDE_STATUS.driver_arrived,
-          arrivedAt: new Date(),
-        });
-        console.log(`✅ All passengers notified — ride ${rideId} → driver_arrived`);
-      }
-
-      return;
+      return callback?.({
+        success: true,
+        message: 'Driver arrived notification sent to passenger',
+        data: { passengerId: passenger._id, remainingUnnotified: remaining },
+      });
     }
 
     // ── SPLIT RIDE — all passengers ───────────────────────────────────────────
     if (arriveAll) {
       const passengers = await Passenger.find({
         rideId,
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
-        arrivedNotified: false, // শুধু unnotified দের
+        status: PASSENGER_STATUS.confirmed,
+        arrivedNotified: false,
       });
 
-      if (!passengers.length) {
-        console.log(`⚠️ No unnotified passengers for ride ${rideId}`);
-        return;
-      }
+      if (!passengers.length)
+        return callback?.({
+          success: false,
+          message: 'No unnotified passengers found for this ride',
+        });
 
       for (let i = 0; i < passengers.length; i++) {
         const isLast = i === passengers.length - 1;
         await notifyPassenger(passengers[i], isLast);
       }
 
-      await Ride.findByIdAndUpdate(rideId, {
-        status: RIDE_STATUS.driver_arrived,
-        arrivedAt: new Date(),
+      return callback?.({
+        success: true,
+        message: `Driver arrived notification sent to ${passengers.length} passenger(s)`,
+        data: { notifiedCount: passengers.length },
       });
-
-      console.log(`✅ All ${passengers.length} passengers notified for ride ${rideId}`);
     }
-  },
+
+    return callback?.({
+      success: false,
+      message:
+        'Invalid request: provide passengerId or set arriveAll=true for split ride',
+    });
+  }
 );

@@ -2,12 +2,11 @@ import { z } from 'zod'
 
 const sendMessageValidation = z.object({
   body: z.object({
-    chat: z.string({ required_error: 'chat id is required' }).optional(),
+    chat: z.string({ message: 'chat id is required' }).optional(),
     text: z
-      .string({ required_error: 'text is required' })
-      .default('')
+      .string({ message: 'text is required' })
       .optional(),
-    receiver: z.string({ required_error: 'receiver id is required' }),
+    receiver: z.string({ message: 'receiver id is required' }),
     seen: z.boolean().default(false),
   }),
 })
@@ -15,8 +14,7 @@ const sendMessageValidation = z.object({
 const updateMessageValidation = z.object({
   body: z.object({
     text: z
-      .string({ required_error: 'text is required' })
-      .default('')
+      .string({ message: 'text is required' })
       .optional()
   }),
 })
