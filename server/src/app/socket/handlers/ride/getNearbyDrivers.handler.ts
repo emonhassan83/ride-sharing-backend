@@ -85,8 +85,10 @@ export const getNearbyDriversHandler = eventHandler<any>(
           return {
             driverId:    driver.driverId,
             driverName:  driver.driverName,
-            driverRating: driver.driverRating,
+            driverEmail: driver.driverEmail,
+            driverPhone: driver.driverPhone,
             driverPhoto: driver.driverPhoto,
+            driverRating: driver.driverRating,
             vehicle:     driver.vehicle,
             // Driver current location
             location: driverLat !== null && driverLng !== null
