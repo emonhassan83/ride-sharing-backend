@@ -157,8 +157,8 @@ userSchema.statics.isMatchPassword = async function (
 };
 
 // Middleware to hash password before saving
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
 
   if (!this.password) return next(); // prevents Google crash
 
@@ -167,7 +167,7 @@ userSchema.pre('save', async function (next) {
     Number(config.bcrypt.saltRounds)
   );
 
-  next();
+  // next();
 });
 
 // for location and auto expire inactive users

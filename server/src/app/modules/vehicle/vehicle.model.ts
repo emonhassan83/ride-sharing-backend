@@ -49,13 +49,11 @@ const vehicleSchema = new Schema<TVehicle>(
 
 // Indexes
 vehicleSchema.index({ userId: 1, isDeleted: 1 });
-vehicleSchema.index({ number: 1 }, { unique: true });
 
 // Soft delete middleware
-vehicleSchema.pre(/^find/, function (next) {
+vehicleSchema.pre(/^find/, function () {
   // @ts-ignore
   this.where({ isDeleted: false });
-  next();
 });
 
 export const Vehicle = mongoose.model<TVehicle>('Vehicle', vehicleSchema);

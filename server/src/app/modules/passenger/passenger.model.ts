@@ -90,7 +90,6 @@ const passengerSchema = new Schema<TPassenger>(
 // Indexes for performance
 passengerSchema.index({ userId: 1, status: 1 });
 passengerSchema.index({ rideId: 1, status: 1 });
-passengerSchema.index({ 'pickup.coordinates': '2dsphere' });
 
 export const Passenger = mongoose.model<TPassenger, TPassengerModel>(
   'Passenger',

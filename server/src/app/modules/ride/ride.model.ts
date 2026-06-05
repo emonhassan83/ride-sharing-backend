@@ -81,6 +81,5 @@ rideSchema.index({ driverId: 1, status: 1 });
 rideSchema.index({ departureDate: 1, departureTime: 1, status: 1 });
 rideSchema.index({ status: 1, createdAt: 1 });
 rideSchema.index({ status: 1, arrivedAt: 1 });
-rideSchema.index({ 'pickup.coordinates': '2dsphere' });
 
 export const Ride = mongoose.model<TRide, TRideModel>('Ride', rideSchema);
