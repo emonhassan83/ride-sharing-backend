@@ -27,7 +27,7 @@ export const driverGoOnlineHandler = eventHandler<any>(
       }
 
       const driver = await User.findById(driverId)
-        .select('name phone avgRating profileImage')
+        .select('name email phone avgRating profileImage')
         .lean();
       if (!driver) {
         return callback?.({ success: false, message: 'Driver not found' });
@@ -72,6 +72,7 @@ export const driverGoOnlineHandler = eventHandler<any>(
 
       const driverHash: any = {
         name: driver.name || '',
+        email: driver.email || '',
         phone: driver.phone || '',
         rating: driver.avgRating?.toString() || '0',
         photo: driver.profileImage || '',

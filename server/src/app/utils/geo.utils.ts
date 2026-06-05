@@ -7,7 +7,7 @@ import { Vehicle } from '../modules/vehicle/vehicle.model';
 import { calculateDistance, calculateFareFromDistance } from './location.utils';
 import { getRealDistanceAndETA } from './maps.utils';
 
-const DESTINATION_MATCH_RADIUS_KM = 5; 
+const DESTINATION_MATCH_RADIUS_KM = 5;
 
 export interface LatLng {
   lat: number;
@@ -17,7 +17,11 @@ export interface LatLng {
 /**
  * Driver location set in Redis (GEOSET)
  */
-export async function saveDriverLocation(driverId: string, lat: number, lng: number): Promise<void> {
+export async function saveDriverLocation(
+  driverId: string,
+  lat: number,
+  lng: number
+): Promise<void> {
   const redis = getRedisClient();
   await redis.geoadd('drivers:location', lng, lat, driverId);
 
@@ -26,7 +30,7 @@ export async function saveDriverLocation(driverId: string, lat: number, lng: num
 }
 
 /**
- * Driver location removed from Redis 
+ * Driver location removed from Redis
  */
 export async function removeDriverLocation(driverId: string): Promise<void> {
   const redis = getRedisClient();
@@ -43,34 +47,44 @@ export async function isDriverNearPickup(
   thresholdMeters: number = 100
 ): Promise<{ isNear: boolean; distanceMeters: number } | null> {
   const redis = getRedisClient();
-  
+
   const driverLocation = await redis.get(`driver:${driverId}:current`);
   if (!driverLocation) return null;
-  
+
   const { lat, lng } = JSON.parse(driverLocation);
-  const distanceMeters = calculateDistanceInMeters(lat, lng, pickupLat, pickupLng);
-  
+  const distanceMeters = calculateDistanceInMeters(
+    lat,
+    lng,
+    pickupLat,
+    pickupLng
+  );
+
   return {
     isNear: distanceMeters <= thresholdMeters,
-    distanceMeters: Math.round(distanceMeters)
+    distanceMeters: Math.round(distanceMeters),
   };
 }
 
 /**
  * Haversine formula: use for use calculation distance meters
  */
-export function calculateDistanceInMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+export function calculateDistanceInMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
   const R = 6371e3;
-  const φ1 = lat1 * Math.PI / 180;
-  const φ2 = lat2 * Math.PI / 180;
-  const Δφ = (lat2 - lat1) * Math.PI / 180;
-  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lng2 - lng1) * Math.PI) / 180;
 
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
   return R * c;
 }
 
@@ -83,19 +97,19 @@ export async function findNearbyDrivers(
   radiusMeters: number = 5000
 ): Promise<Array<{ driverId: string; distanceMeters: number }>> {
   const redis = getRedisClient();
-  
-  const nearbyDrivers = await redis.georadius(
+
+  const nearbyDrivers = (await redis.georadius(
     'drivers:location',
     pickupLng,
     pickupLat,
     radiusMeters,
     'm',
     'WITHDIST'
-  ) as Array<[driverId: string, distance: string]>;
-  
+  )) as Array<[driverId: string, distance: string]>;
+
   return nearbyDrivers.map(([driverId, distance]) => ({
     driverId,
-    distanceMeters: Math.round(parseFloat(distance))
+    distanceMeters: Math.round(parseFloat(distance)),
   }));
 }
 
@@ -103,14 +117,14 @@ export async function findNearbyDrivers(
  * Result of driver availability check
  */
 interface DriverAvailability {
-  available: boolean;      // true if driver can be shown to passenger
-  rideId?: string;         // if joining an existing split ride, the ride ID
-  reason?: string;         // optional debug info
+  available: boolean; // true if driver can be shown to passenger
+  rideId?: string; // if joining an existing split ride, the ride ID
+  reason?: string; // optional debug info
 }
 
 /**
  * Check driver availability for a ride request (new ride or join existing ride)
- * 
+ *
  * @param driverId - Driver's user ID
  * @param requestedDate - Date string 'YYYY-MM-DD'
  * @param requestedTime - Time string 'HH:MM'
@@ -143,21 +157,35 @@ export async function hasDriverRideAtDateTime(
   const driverRides = await Ride.find({
     driverId,
     departureDate: requestedDate,
-    status: { $nin: [RIDE_STATUS.rejected, RIDE_STATUS.cancelled, RIDE_STATUS.completed] }
+    status: {
+      $nin: [
+        RIDE_STATUS.rejected,
+        RIDE_STATUS.cancelled,
+        RIDE_STATUS.completed,
+      ],
+    },
   }).lean();
 
   // --- Case: Joining an existing ride (split only) ---
   if (existingRideId) {
     const targetRide = await Ride.findById(existingRideId).lean();
     if (!targetRide || targetRide.driverId?.toString() !== driverId) {
-      return { available: false, reason: 'Ride not found or not owned by driver' };
+      return {
+        available: false,
+        reason: 'Ride not found or not owned by driver',
+      };
     }
     if (targetRide.type !== RIDE_TYPE.split) {
       return { available: false, reason: 'Cannot join non-split ride' };
     }
-    const availableSeats = targetRide.totalSeats - (targetRide.bookedSeats || 0);
+    const availableSeats =
+      targetRide.totalSeats - (targetRide.bookedSeats || 0);
     if (availableSeats >= requestedSeats) {
-      return { available: true, rideId: targetRide._id.toString(), reason: 'Join existing ride' };
+      return {
+        available: true,
+        rideId: targetRide._id.toString(),
+        reason: 'Join existing ride',
+      };
     } else {
       return { available: false, reason: 'Not enough seats' };
     }
@@ -167,16 +195,23 @@ export async function hasDriverRideAtDateTime(
   // Check for any conflicting ride within buffer window
   for (const ride of driverRides) {
     const rideMinutes = toMinutes(ride.departureTime);
-    const isWithinBuffer = rideMinutes >= startMinutes && rideMinutes <= endMinutes;
+    const isWithinBuffer =
+      rideMinutes >= startMinutes && rideMinutes <= endMinutes;
     if (!isWithinBuffer) continue;
 
     // Conflict detected
     if (ride.type === RIDE_TYPE.private) {
       // Private ride blocks everything
-      return { available: false, reason: 'Driver has private ride within buffer' };
+      return {
+        available: false,
+        reason: 'Driver has private ride within buffer',
+      };
     } else if (ride.type === RIDE_TYPE.split) {
       // Split ride conflict: cannot start another new ride at overlapping time
-      return { available: false, reason: 'Driver has split ride within buffer' };
+      return {
+        available: false,
+        reason: 'Driver has split ride within buffer',
+      };
     }
   }
 
@@ -199,14 +234,14 @@ export async function fetchDriversWithinRadius(
   departureTime: string
 ): Promise<any[]> {
   type GeoRadiusResult = Array<[driverId: string, distance: string]>;
-  const nearbyDrivers = await redis.georadius(
+  const nearbyDrivers = (await redis.georadius(
     'drivers:location',
     lng,
     lat,
     radiusKm,
     'km',
     'WITHDIST'
-  ) as GeoRadiusResult;
+  )) as GeoRadiusResult;
 
   if (!nearbyDrivers || nearbyDrivers.length === 0) return [];
 
@@ -222,7 +257,7 @@ export async function fetchDriversWithinRadius(
       departureTime,
       rideType,
       requestedSeats,
-      undefined  // new ride
+      undefined // new ride
     );
 
     if (!availability.available) continue; // driver busy
@@ -230,6 +265,8 @@ export async function fetchDriversWithinRadius(
     // Driver details from Redis/DB (same as before)
     let driverDetails = await redis.hgetall(`driver:${driverId}:details`);
     let driverName = 'Unknown';
+    let driverEmail = '';
+    let driverPhone = '';
     let driverRating = 5;
     let driverPhoto = null;
     let vehicleModel = 'Standard';
@@ -242,19 +279,30 @@ export async function fetchDriversWithinRadius(
 
     if (driverDetails && Object.keys(driverDetails).length > 0) {
       driverName = driverDetails.name || 'Unknown';
+      driverEmail   = driverDetails.email         || '';   // ✅ যোগ করুন
+      driverPhone   = driverDetails.phone         || '';   // ✅ যোগ করুন
       driverRating = parseFloat(driverDetails.rating) || 5;
       driverPhoto = driverDetails.photo;
       vehicleModel = driverDetails.vehicleModel || 'Standard';
       vehicleNumber = driverDetails.vehicleNumber || '';
       totalSeats = parseInt(driverDetails.seats) || 4;
       bookedSeats = parseInt(driverDetails.bookedSeats) || 0;
-      if (driverDetails.destination) driverDestination = JSON.parse(driverDetails.destination);
+      if (driverDetails.destination)
+        driverDestination = JSON.parse(driverDetails.destination);
       driverLastLat = parseFloat(driverDetails.lastLat) || lat;
       driverLastLng = parseFloat(driverDetails.lastLng) || lng;
     } else {
-      const driver = await User.findById(driverId).select('name avgRating profileImage location').lean();
-      const vehicle = await Vehicle.findOne({ userId: driverId, isDefault: true }).lean();
+      const driver = await User.findById(driverId)
+        .select('name email phone avgRating profileImage location')
+        .lean();
+      const vehicle = await Vehicle.findOne({
+        userId: driverId,
+        isDefault: true,
+      }).lean();
+
       driverName = driver?.name || 'Unknown';
+      driverEmail = driver?.email || '';
+      driverPhone = driver?.phone || '';
       driverRating = driver?.avgRating || 5;
       driverPhoto = driver?.profileImage;
       vehicleModel = vehicle?.name || 'Standard';
@@ -280,18 +328,22 @@ export async function fetchDriversWithinRadius(
         { lat: driverDestination.lat, lng: driverDestination.lng },
         { lat: passengerDestination.lat, lng: passengerDestination.lng }
       );
-      if (distanceToPassengerDest > DESTINATION_MATCH_RADIUS_KM) destinationValid = false;
+      if (distanceToPassengerDest > DESTINATION_MATCH_RADIUS_KM)
+        destinationValid = false;
     }
     if (!destinationValid) continue;
 
     // Distance, ETA, fare (same as before)
     let realDistance = geoDistanceKm;
-    let etaMinutes = Math.round(geoDistanceKm / 30 * 60);
+    let etaMinutes = Math.round((geoDistanceKm / 30) * 60);
     let estimatedFare = calculateFareFromDistance(geoDistanceKm);
     try {
       const driverLocation = { lat: driverLastLat, lng: driverLastLng };
       const pickupPoint = { lat, lng };
-      const { distanceKm, durationMinutes } = await getRealDistanceAndETA(driverLocation, pickupPoint);
+      const { distanceKm, durationMinutes } = await getRealDistanceAndETA(
+        driverLocation,
+        pickupPoint
+      );
       realDistance = distanceKm;
       etaMinutes = durationMinutes;
       estimatedFare = calculateFareFromDistance(realDistance);
@@ -302,6 +354,8 @@ export async function fetchDriversWithinRadius(
     driversData.push({
       driverId,
       driverName,
+      driverEmail,
+      driverPhone,
       driverRating,
       driverPhoto,
       vehicle: {
