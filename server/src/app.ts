@@ -3,7 +3,6 @@ import cors from 'cors';
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { Morgan } from './app/utils/morgen';
-import i18next from './app/i18n/i18n';
 import router from './app/routes';
 import globalErrorHandler from './app/middlewares/globalErrorHandler';
 import notFound from './app/middlewares/notFount';
@@ -37,19 +36,13 @@ app.use('/api/v1', router);
 
 // live response
 app.get('/', (req: Request, res: Response) => {
-  res.status(201).json({ message: req.t('welcome') });
-});
-
-app.get('/test/:lang', (req: Request, res: Response) => {
-  const { lang } = req.params;
-
-  // Change the language dynamically for the current request
-  i18next.changeLanguage(lang as string); // Switch language
-
-  console.log(`Current language: ${i18next.language}`); // Log the current language
-
-  // Send the translated response
-  res.status(200).json({ message: req.t('welcome') }); // Get translated 'welcome' message
+  res
+    .status(201)
+    .json({
+      message: 'Welcome to SplitRide!',
+      status: 'success',
+      timestamp: new Date().toISOString()
+    });
 });
 
 // global error handle
