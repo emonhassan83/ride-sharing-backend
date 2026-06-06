@@ -1,6 +1,5 @@
 export const REFUND_STATUS = {
   pending: 'pending',
-  underReview: 'underReview',
   confirmed: 'confirmed',
   rejected: 'rejected'
  } as const
