@@ -280,7 +280,7 @@ const getAPaymentsFromDB = async (id: string) => {
   return payment;
 };
 
-const refundPayment = async (payload: any) => {
+const refundPayment = async (payload: { intendId: string; amount: number }) => {
   if (!payload?.intendId) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Payment intent ID is required');
   }
