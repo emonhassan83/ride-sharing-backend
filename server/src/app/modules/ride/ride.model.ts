@@ -14,6 +14,11 @@ const rideSchema = new Schema<TRide>(
       ref: 'Vehicle',
       required: false,
     },
+    rideCreatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
     type: {
       type: String,
       enum: Object.values(RIDE_TYPE),

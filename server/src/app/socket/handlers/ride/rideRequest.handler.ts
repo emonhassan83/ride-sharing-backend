@@ -26,6 +26,8 @@ export const rideRequestHandler = eventHandler<any>(
       destination,
       type,
       seats,
+      malePassengers,
+      femalePassengers,
       scheduledDate,
       scheduledTime,
       luggageCounts,
@@ -123,6 +125,7 @@ export const rideRequestHandler = eventHandler<any>(
           address: pickup.address,
           coordinates: [pickup.lng, pickup.lat],
         },
+        rideCreatedBy: userId,
         destination: {
           address: destination.address,
           coordinates: [destination.lng, destination.lat],
@@ -165,6 +168,8 @@ export const rideRequestHandler = eventHandler<any>(
         luggageCounts: luggageCounts || 0,
         note: note ?? '',
         status: PASSENGER_STATUS.searching,
+        malePassengers: malePassengers || 0,
+        femalePassengers: femalePassengers || 0,
       });
 
       const redis = getRedisClient();

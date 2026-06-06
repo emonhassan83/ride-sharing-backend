@@ -39,7 +39,8 @@ const passengerSchema = new Schema<TPassenger>(
     departureTime: { type: String, required: true },
 
     requestedSeats: { type: Number, required: true, min: 1 },
-
+    malePassengers: { type: Number, default: 0, required: true },
+    femalePassengers: { type: Number, default: 0, required: true },
     fareType: {
       type: String,
       enum: Object.values(FARE_TYPE),
