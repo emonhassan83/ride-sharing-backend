@@ -35,19 +35,19 @@ const getAllUsersFromDB = async (query: Record<string, unknown>) => {
     .filter()
     .sort()
     .paginate()
-    .fields()
+    .fields();
 
-  const users = await usersQuery.modelQuery
-  const meta  = await usersQuery.countTotal()
+  const users = await usersQuery.modelQuery;
+  const meta = await usersQuery.countTotal();
 
   // ─── Provider IDs collect করো ────────────────────────────────────
   const providerIds = users
     .filter((u: any) => u.role === USER_ROLE.provider)
-    .map((u: any) => new mongoose.Types.ObjectId(u._id))
+    .map((u: any) => new mongoose.Types.ObjectId(u._id));
 
   // ─── Provider data একবারেই batch fetch করো (N+1 এড়াতে) ──────────
-  let completedRidesMap: Record<string, number> = {}
-  let totalEarningMap:   Record<string, number> = {}
+  let completedRidesMap: Record<string, number> = {};
+  let totalEarningMap: Record<string, number> = {};
 
   if (providerIds.length > 0) {
     // Completed rides per provider — একটা aggregation এ সব
@@ -55,61 +55,63 @@ const getAllUsersFromDB = async (query: Record<string, unknown>) => {
       {
         $match: {
           driverId: { $in: providerIds },
-          status:   RIDE_STATUS.completed,
+          status: RIDE_STATUS.completed,
         },
       },
       {
         $group: {
-          _id:   '$driverId',
+          _id: '$driverId',
           count: { $sum: 1 },
         },
       },
-    ])
+    ]);
 
     completedRidesResult.forEach((r) => {
-      completedRidesMap[r._id.toString()] = r.count
-    })
+      completedRidesMap[r._id.toString()] = r.count;
+    });
 
     // Total earning per provider — একটা aggregation এ সব
     const totalEarningResult = await Payment.aggregate([
       {
         $match: {
           provider: { $in: providerIds },
-          isPaid:   true,
+          isPaid: true,
         },
       },
       {
         $group: {
-          _id:   '$provider',
+          _id: '$provider',
           total: { $sum: '$providerEarning' },
         },
       },
-    ])
+    ]);
 
     totalEarningResult.forEach((r) => {
-      totalEarningMap[r._id.toString()] = r.total
-    })
+      totalEarningMap[r._id.toString()] = r.total;
+    });
   }
 
   // ─── Result build করো ────────────────────────────────────────────
   const result = users.map((user: any) => {
-    const u = user.toObject ? user.toObject() : user
+    const u = user.toObject ? user.toObject() : user;
 
-    if (u.role !== USER_ROLE.provider) return u
+    if (u.role !== USER_ROLE.provider) return u;
 
-    const uid = u._id.toString()
+    const uid = u._id.toString();
     return {
       ...u,
       completedRides: completedRidesMap[uid] ?? 0,
-      totalEarning:   totalEarningMap[uid]   ?? 0,
-    }
-  })
+      totalEarning: totalEarningMap[uid] ?? 0,
+    };
+  });
 
-  return { meta, result }
-}
+  return { meta, result };
+};
 
 const getSingleUser = async (userId: string): Promise<TUser | null> => {
-  const result: any = await User.findById(userId).select('-wallet').lean();
+  const result: any = await User.findById(userId)
+    .select('-wallet -expireAt -updatedAt -__v')
+    .lean();
   if (!result || result.isDeleted)
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
 
@@ -124,12 +126,12 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
   }
 
   // ── Provider-only enrichment ──────────────────────────────────────────────
-  let providerData    = null;
-  let isKycSubmitted  = false;
-  let hasVehicle      = false;
-  let vehicles:    any[] = [];
-  let completedRides   = 0;
-  let todayEarning     = 0;
+  let providerData = null;
+  let isKycSubmitted = false;
+  let hasVehicle = false;
+  let vehicles: any[] = [];
+  let completedRides = 0;
+  let todayEarning = 0;
 
   if (result.role === USER_ROLE.provider) {
     const userObjectId = new mongoose.Types.ObjectId(userId);
@@ -144,7 +146,9 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
       await Promise.all([
         // KYC / provider doc
         Provider.findOne({ userId })
-          .select('-userId -rejectionReason -approvedAt -updatedAt -createdAt -__v')
+          .select(
+            '-userId -rejectionReason -approvedAt -updatedAt -createdAt -__v'
+          )
           .lean(),
 
         // All vehicles for this provider
@@ -176,12 +180,12 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
         ]),
       ]);
 
-    providerData   = provider;
+    providerData = provider;
     isKycSubmitted = !!provider;
-    hasVehicle     = vehicleList.length > 0;
-    vehicles       = vehicleList;
+    hasVehicle = vehicleList.length > 0;
+    vehicles = vehicleList;
     completedRides = completedRideCount;
-    todayEarning   = earningResult[0]?.total ?? 0;
+    todayEarning = earningResult[0]?.total ?? 0;
   }
 
   return {
@@ -195,6 +199,7 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
     }),
     isKycSubmitted,
     hasVehicle,
+    isConnectedStripe: !!result.stripeAccountId,
   };
 };
 
