@@ -4,22 +4,12 @@ import catchAsync from '../../utils/catchAsync';
 import sendResponse from '../../utils/sendResponse';
 import { RideService } from './ride.service';
 
-const findNearbyAvailableDrivers = catchAsync(async (req: Request, res: Response) => {
-  const result = await RideService.findNearbyAvailableDrivers(req.body, req.query);
+const getAllRides = catchAsync(async (req: Request, res: Response) => {
+  const result = await RideService.getAllIntoDB(req.user?.userId, req.query);
 
   sendResponse(res, {
-    code: StatusCodes.CREATED,
-    message: 'Nearby rider find successfully!',
-    data: result,
-  });
-});
-
-const createRideRequest = catchAsync(async (req: Request, res: Response) => {
-  const result = await RideService.createRideRequest(req.user?.userId, req.body);
-
-  sendResponse(res, {
-    code: StatusCodes.CREATED,
-    message: 'Ride request created successfully',
+    code: StatusCodes.OK,
+    message: 'Available ride requests retrieved',
     data: result,
   });
 });
@@ -44,20 +34,8 @@ const getARides = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const getAvailableRequestsForDriver = catchAsync(async (req: Request, res: Response) => {
-  const result = await RideService.getAvailableRideRequests(req.user?.userId, req.query);
-
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Available ride requests retrieved',
-    data: result,
-  });
-});
-
 export const RideController = {
-  findNearbyAvailableDrivers,
-  createRideRequest,
+  getAllRides,
   getMyRides,
   getARides,
-  getAvailableRequestsForDriver
 };

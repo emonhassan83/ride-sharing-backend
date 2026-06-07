@@ -30,6 +30,7 @@ import { rideCancelBeforeAcceptHandler } from './handlers/ride/rideCancelBeforeA
 import { rideCancelAfterAcceptHandler } from './handlers/ride/rideCancelAfterAccept.handler';
 import { submitRatingHandler } from './handlers/ride/submitRating.handler';
 import { findNearbySplitRideHandler } from './handlers/ride/findNearBySplitRide.handler';
+import { joinSplitRideRequestHandler } from './handlers/ride/splitRideRequest.handler';
 
 // Disconnect handler
 import disconnectHandler from './handlers/disconnect.handler';
@@ -123,6 +124,9 @@ export const registerSocketEvents = (socket: Socket) => {
 
   tSocket.on('ride:find-nearby-split-ride', (data, callback) =>
     findNearbySplitRideHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('ride:join-split-ride', (data, callback) =>
+    joinSplitRideRequestHandler.call(tSocket, data, callback)
   );
 
 
