@@ -117,7 +117,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.private) {
       const passenger = await Passenger.findOne({
         rideId,
-        status: PASSENGER_STATUS.searching,
+        status: PASSENGER_STATUS.pending,
       });
       if (!passenger)
         return callback?.({ success: false, message: 'No pending passenger found' });
@@ -190,7 +190,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
     if (acceptType === 'all') {
       const passengers = await Passenger.find({
         rideId,
-        status: PASSENGER_STATUS.searching,
+        status: PASSENGER_STATUS.pending,
       });
       if (!passengers.length)
         return callback?.({ success: false, message: 'No pending passengers' });
@@ -266,7 +266,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       const passenger = await Passenger.findOne({
         _id:    passengerId,
         rideId,
-        status: PASSENGER_STATUS.searching,
+        status: PASSENGER_STATUS.pending,
       });
       if (!passenger)
         return callback?.({ success: false, message: 'Passenger not found or already processed' });
@@ -286,7 +286,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       const otherCount        = await Passenger.countDocuments({
         rideId,
         _id:    { $ne: passenger._id },
-        status: PASSENGER_STATUS.searching,
+        status: PASSENGER_STATUS.pending,
       });
       const hasOthers = otherCount > 0;
 

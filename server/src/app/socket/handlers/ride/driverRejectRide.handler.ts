@@ -41,7 +41,7 @@ export const driverRejectRideHandler = eventHandler<any>(
       if (ride.type === RIDE_TYPE.private) {
         const passenger = await Passenger.findOne({
           rideId,
-          status: PASSENGER_STATUS.searching,
+          status: PASSENGER_STATUS.pending,
         });
         if (passenger) {
           io.to(`user:${passenger.userId}`).emit('ride:driver-rejected', {
@@ -77,7 +77,7 @@ export const driverRejectRideHandler = eventHandler<any>(
       if (rejectType === 'all') {
         const passengers = await Passenger.find({
           rideId,
-          status: PASSENGER_STATUS.searching,
+          status: PASSENGER_STATUS.pending,
         });
         if (passengers.length === 0) {
           return callback?.({
@@ -130,7 +130,7 @@ export const driverRejectRideHandler = eventHandler<any>(
         const passenger = await Passenger.findOne({
           _id: passengerId,
           rideId,
-          status: PASSENGER_STATUS.searching,
+          status: PASSENGER_STATUS.pending,
         });
         if (!passenger) {
           return callback?.({
@@ -160,7 +160,7 @@ export const driverRejectRideHandler = eventHandler<any>(
         // ✅ কর্নার কেস: চেক করুন এই রাইডে অন্য কোনো pending প্যাসেঞ্জার আছে কিনা
         const remainingPassengers = await Passenger.countDocuments({
           rideId,
-          status: PASSENGER_STATUS.searching,
+          status: PASSENGER_STATUS.pending,
         });
 
         if (remainingPassengers === 0) {

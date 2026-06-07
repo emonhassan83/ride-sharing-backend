@@ -11,7 +11,7 @@ const router = Router();
 
 // Create new ride request to a specific driver
 router.post(
-  '/request',
+  '/',
   auth(USER_ROLE.user),
   validateRequest(RideValidation.createRideZodSchema),
   RideController.createRideRequest

@@ -17,32 +17,54 @@ export const getNearbyDriversHandler = eventHandler<any>(
     } = data;
 
     if (!pickup?.lat || !pickup?.lng || !destination?.lat || !destination?.lng)
-      return callback?.({ success: false, message: 'Pickup and destination required' });
+      return callback?.({
+        success: false,
+        message: 'Pickup and destination required',
+      });
 
     if (!departureDate || !departureTime)
-      return callback?.({ success: false, message: 'Departure date and time are required' });
+      return callback?.({
+        success: false,
+        message: 'Departure date and time are required',
+      });
 
-    const redis          = getRedisClient();
-    const requestedSeats = rideType === 'split' && passengers > 0 ? passengers : 1;
+    const redis = getRedisClient();
+    const requestedSeats =
+      rideType === 'split' && passengers > 0 ? passengers : 1;
 
     try {
       // ── Find nearby drivers (5km first, expand to 10km if none) ────────────
       let drivers = await fetchDriversWithinRadius(
-        redis, pickup.lng, pickup.lat, 5,
-        rideType, requestedSeats, destination, departureDate, departureTime,
+        redis,
+        pickup.lng,
+        pickup.lat,
+        5,
+        rideType,
+        requestedSeats,
+        destination,
+        departureDate,
+        departureTime
       );
 
       if (drivers.length === 0) {
         drivers = await fetchDriversWithinRadius(
-          redis, pickup.lng, pickup.lat, 10,
-          rideType, requestedSeats, destination, departureDate, departureTime,
+          redis,
+          pickup.lng,
+          pickup.lat,
+          10,
+          rideType,
+          requestedSeats,
+          destination,
+          departureDate,
+          departureTime
         );
       }
 
       if (drivers.length === 0) {
         return callback?.({
           success: true,
-          message: 'No drivers available within 10 km for the selected date and time.',
+          message:
+            'No drivers available within 10 km for the selected date and time.',
           data: [],
         });
       }
@@ -55,7 +77,9 @@ export const getNearbyDriversHandler = eventHandler<any>(
           let driverLng: number | null = null;
 
           try {
-            const currentRaw = await redis.get(`driver:${driver.driverId}:current`);
+            const currentRaw = await redis.get(
+              `driver:${driver.driverId}:current`
+            );
             if (currentRaw) {
               const current = JSON.parse(currentRaw);
               driverLat = current.lat;
@@ -66,39 +90,40 @@ export const getNearbyDriversHandler = eventHandler<any>(
           }
 
           // Google Maps real distance & ETA from driver → pickup
-          let distanceKm    = driver.distance;
-          let etaMinutes    = Math.round((distanceKm / 30) * 60);
+          let distanceKm = driver.distance;
+          let etaMinutes = Math.round((distanceKm / 30) * 60);
 
           if (driverLat !== null && driverLng !== null) {
             try {
               const result = await getRealDistanceAndETA(
                 { lat: driverLat, lng: driverLng },
-                { lat: pickup.lat,  lng: pickup.lng  },
+                { lat: pickup.lat, lng: pickup.lng }
               );
-              distanceKm  = result.distanceKm;
-              etaMinutes  = result.durationMinutes;
+              distanceKm = result.distanceKm;
+              etaMinutes = result.durationMinutes;
             } catch {
               // keep fallback values
             }
           }
 
           return {
-            driverId:    driver.driverId,
-            driverName:  driver.driverName,
+            driverId: driver.driverId,
+            driverName: driver.driverName,
             driverEmail: driver.driverEmail,
             driverPhone: driver.driverPhone,
             driverPhoto: driver.driverPhoto,
             driverRating: driver.driverRating,
-            vehicle:     driver.vehicle,
+            vehicle: driver.vehicle,
             // Driver current location
-            location: driverLat !== null && driverLng !== null
-              ? { lat: driverLat, lng: driverLng }
-              : null,
+            location:
+              driverLat !== null && driverLng !== null
+                ? { lat: driverLat, lng: driverLng }
+                : null,
             // Google Maps distance & ETA
-            distance:    parseFloat(distanceKm.toFixed(2)),
-            eta:         etaMinutes,
+            distance: parseFloat(distanceKm.toFixed(2)),
+            eta: etaMinutes,
           };
-        }),
+        })
       );
 
       // Sort by distance ascending
@@ -107,11 +132,16 @@ export const getNearbyDriversHandler = eventHandler<any>(
       callback?.({
         success: true,
         message: 'Drivers found successfully.',
-        data:    enriched,
+        data: {
+          pickup,
+          destination,
+          driverCount: enriched.length,
+          drivers: enriched,
+        },
       });
     } catch (error) {
       console.error('Error in getNearbyDriversHandler:', error);
       callback?.({ success: false, message: 'Internal server error' });
     }
-  },
+  }
 );

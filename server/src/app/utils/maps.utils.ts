@@ -3,6 +3,7 @@ import axios from 'axios';
 import polyline from '@mapbox/polyline';
 import { getRedisClient } from '../config/redis.config';
 import { calculateDistance } from './location.utils';
+import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
@@ -23,7 +24,7 @@ export async function startMatchingForRide(rideId: string): Promise<void> {
     if (!ride) return;
 
     // Get all searching passengers for this ride
-    const passengers = await Passenger.find({ rideId, status: 'searching' });
+    const passengers = await Passenger.find({ rideId, status: PASSENGER_STATUS.pending });
     if (passengers.length === 0) return;
 
     // Use first passenger's pickup for driver matching
@@ -87,7 +88,7 @@ export async function startMatchingForRide(rideId: string): Promise<void> {
     setTimeout(async () => {
       const stillSearching = await Passenger.countDocuments({
         rideId,
-        status: 'searching',
+        status: PASSENGER_STATUS.pending,
       });
       if (stillSearching > 0) {
         console.log(
