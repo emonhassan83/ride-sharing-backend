@@ -27,7 +27,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     if (!passenger)
       return callback?.({ success: false, message: 'You are not a passenger in this ride' });
 
-    if (passenger.status !== PASSENGER_STATUS.searching)
+    if (passenger.status !== PASSENGER_STATUS.pending)
       return callback?.({ success: false, message: 'Already cancelled or confirmed' });
 
     const redis = getRedisClient();

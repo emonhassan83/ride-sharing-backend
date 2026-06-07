@@ -64,7 +64,7 @@ const passengerSchema = new Schema<TPassenger>(
     status: {
       type: String,
       enum: Object.values(PASSENGER_STATUS),
-      default: PASSENGER_STATUS.searching,
+      default: PASSENGER_STATUS.pending,
     },
 
     cancellationReason: { type: String },

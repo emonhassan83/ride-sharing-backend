@@ -122,7 +122,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
         )
         .lean();
       const ridesIds = rides.map((r: any) => r._id.toString());
-      const passengersInfos: Record<string, number>[] = await Passenger.find({
+      const passengersInfos = await Passenger.find({
         rideId: { $in: ridesIds },
       })
         .select('rideId requestedSeats malePassengers femalePassengers')
