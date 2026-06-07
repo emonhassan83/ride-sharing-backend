@@ -43,7 +43,9 @@ const getDriverRideRequest = async (driverUserId: string) => {
 // Get all passengers for a ride
 const getPassengersByRide = async (rideId: string) => {
   const passengers = await Passenger.find({ rideId })
-    .populate('userId', 'name phone profileImage')
+    .populate('userId', 'name phone profileImage').select(
+      'userId pickup destination departureDate departureTime requestedSeats estimatedFare status createdAt'
+    )
     .sort({ createdAt: -1 });
 
   if (!passengers.length) {

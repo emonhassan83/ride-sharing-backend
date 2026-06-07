@@ -14,7 +14,7 @@ router.get(
 
 // Get all passengers by rideId
 router.get(
-  '/ride/:rideId/passengers',
+  '/ride/:rideId',
   auth([USER_ROLE.user, USER_ROLE.provider]),
   PassengerController.getPassengersByRide
 );
