@@ -20,7 +20,6 @@ import { WithdrawRoutes } from '../modules/withdraw/withdraw.route';
 import { RefundRoutes } from '../modules/refund/refund.route';
 import { MetaRoutes } from '../modules/meta/meta.routes';
 import { UserLocationRoutes } from '../modules/savedPlaces/savedPlaces.routes';
-import { RiderHistoryRoutes } from '../modules/riderHistory/riderHistory.route';
 import { LocationHistoryRoutes } from '../modules/locationHistory/locationHistory.route';
 import { AccountDeletionRoutes } from '../modules/accountDeletion/accountDeletion.routes';
 import { PassengerRoutes } from '../modules/passenger/passenger.routes';
@@ -59,10 +58,6 @@ const apiRoutes = [
   {
     path: '/bookings',
     route: BookingRoutes,
-  },
-  {
-    path: '/rider-histories',
-    route: RiderHistoryRoutes,
   },
   {
     path: '/location-histories',

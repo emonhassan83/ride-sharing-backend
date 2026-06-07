@@ -1,8 +1,8 @@
 // handlers/ride/submitRating.handler.ts
 import { User } from '../../../modules/user/user.model';
-import { RiderHistory } from '../../../modules/riderHistory/riderHistory.model';
 import { Review } from '../../../modules/review/review.model';
 import { Ride } from '../../../modules/ride/ride.model';
+import { Passenger } from '../../../modules/passenger/passenger.model';
 import { getRedisClient } from '../../../config/redis.config';
 import { TSocket } from '../../interface/socket.interface';
 import { getIO } from '../../socket.init';
@@ -10,16 +10,12 @@ import eventHandler from '../../utils/eventHandler';
 
 /**
  * ride:submit-rating Handler
- *
- * Client payload:
- * { rideId, rating, feedback? }
- *
- * driverId is resolved from the Ride document — client doesn't need to send it.
+ * Client Payload: { rideId, rating, feedback? }
  */
 export const submitRatingHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const { rideId, rating, feedback } = data;
-    const reviewerId = socket.auth?._id?.toString();
+    const reviewerId = socket.auth?._id?.toString(); // Passenger who is rating
 
     // ─── Validation ──────────────────────────────────────────────────
     if (!rideId || !rating) {
@@ -28,10 +24,16 @@ export const submitRatingHandler = eventHandler<any>(
     if (rating < 1 || rating > 5) {
       return callback?.({ success: false, message: 'Rating must be between 1 and 5' });
     }
+    if (!reviewerId) {
+      return callback?.({ success: false, message: 'Unauthorized' });
+    }
 
     try {
-      // ─── 1. Get driverId from Ride document ───────────────────────
-      const ride = await Ride.findById(rideId).select('driverId status').lean();
+      // 1. Get Ride details
+      const ride = await Ride.findById(rideId)
+        .select('driverId rideCreatedBy status')
+        .lean();
+
       if (!ride) {
         return callback?.({ success: false, message: 'Ride not found' });
       }
@@ -41,80 +43,80 @@ export const submitRatingHandler = eventHandler<any>(
 
       const driverId = ride.driverId.toString();
 
-      // ─── 2. Verify rider completed this ride ──────────────────────
-      const rideHistory = await RiderHistory.findOne({
+      // 2. Verify reviewer is a valid passenger of this ride
+      const passengerRecord = await Passenger.findOne({
         rideId,
         userId: reviewerId,
       }).lean();
 
-      if (!rideHistory) {
-        return callback?.({ success: false, message: 'Ride not found or unauthorized' });
-      }
-      if (rideHistory.status !== 'completed') {
-        return callback?.({ success: false, message: 'Cannot rate an incomplete ride' });
+      if (!passengerRecord) {
+        return callback?.({ success: false, message: 'You are not a passenger of this ride' });
       }
 
-      // ─── 3. Prevent duplicate rating ─────────────────────────────
+      // 3. Check if ride is completed
+      if (ride.status !== 'completed') {
+        return callback?.({ success: false, message: 'You can only rate completed rides' });
+      }
+
+      // 4. Prevent duplicate review
       const existingReview = await Review.findOne({
-        user:     driverId,
-        reviewer: reviewerId,
-        ride:     rideId,
+        user: driverId,           // Driver being reviewed
+        reviewer: reviewerId,     // Passenger giving rating
+        ride: rideId,
       }).lean();
 
       if (existingReview) {
         return callback?.({ success: false, message: 'You have already rated this ride' });
       }
 
-      // ─── 4. Create Review ─────────────────────────────────────────
+      // 5. Create Review
       const review = await Review.create({
-        user:     driverId,
-        reviewer: reviewerId,
-        ride:     rideId,
+        user: driverId,           // Driver (being reviewed)
+        reviewer: reviewerId,     // Passenger (reviewer)
+        ride: rideId,
         rating,
-        comment:  feedback || '',
+        comment: feedback || '',
       });
 
-      // ─── 5. Update driver's average rating in DB ──────────────────
+      // 6. Update Driver's Average Rating
       const driver = await User.findById(driverId);
-      let newAvgRating = rating;
-
       if (driver) {
-        const prevTotal  = driver.totalRating || 0;
-        const prevAvg    = driver.avgRating   || 0;
-        const newTotal   = prevTotal + 1;
-        newAvgRating     = Math.round(((prevAvg * prevTotal + rating) / newTotal) * 10) / 10;
+        const prevTotal = driver.totalRating || 0;
+        const prevAvg = driver.avgRating || 0;
+        const newTotal = prevTotal + 1;
+        const newAvgRating = Math.round(((prevAvg * prevTotal + rating) / newTotal) * 10) / 10;
 
         await User.findByIdAndUpdate(driverId, {
-          avgRating:   newAvgRating,
+          avgRating: newAvgRating,
           totalRating: newTotal,
         });
 
-        // ─── 6. Update driver rating in Redis cache ────────────────
+        // Update Redis cache
         const redis = getRedisClient();
-        const driverCacheExists = await redis.exists(`driver:${driverId}:details`);
-        if (driverCacheExists) {
-          await redis.hset(`driver:${driverId}:details`, 'rating', newAvgRating.toString());
+        const cacheKey = `driver:${driverId}:details`;
+        if (await redis.exists(cacheKey)) {
+          await redis.hset(cacheKey, 'rating', newAvgRating.toString());
         }
       }
 
-      // ─── 7. Notify driver via socket ──────────────────────────────
+      // 7. Notify Driver in real-time
       const io = getIO();
       io.to(`driver:${driverId}`).emit('ride:rating-received', {
         rideId,
         rating,
-        feedback:     feedback || '',
-        yourNewRating: newAvgRating,
+        feedback: feedback || '',
+        newAverageRating: driver?.avgRating,
       });
 
       callback?.({
-        success:  true,
-        message:  'Thank you for your rating!',
+        success: true,
+        message: 'Thank you for your feedback!',
         reviewId: review._id,
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error in submitRatingHandler:', error);
       callback?.({ success: false, message: 'Internal server error' });
     }
-  },
+  }
 );

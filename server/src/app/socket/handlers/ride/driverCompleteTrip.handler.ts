@@ -9,7 +9,6 @@ import {
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
-import { RiderHistory } from '../../../modules/riderHistory/riderHistory.model';
 import {
   calculateTotalDistance,
   calculateDuration,
@@ -19,10 +18,6 @@ import { saveLocationsToDatabase } from '../../../utils/location.db.utils';
 import { TSocket } from '../../interface/socket.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
-import {
-  RIDE_HISTORY_PAYMENT_STATUS,
-  RIDE_HISTORY_STATUS,
-} from '../../../modules/riderHistory/riderHistory.constant';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 
 /**
@@ -115,40 +110,6 @@ export const driverCompleteTripHandler = eventHandler<any>(
       }
     };
 
-    // ── Helper: create RiderHistory ───────────────────────────────────────────
-    const createRiderHistory = async (
-      passenger: any,
-      totalFare: number,
-      distanceKm: number,
-      durationSeconds: number
-    ) => {
-      await RiderHistory.create({
-        userId: passenger.userId,
-        rideId: ride._id,
-        summary: {
-          pickupAddress: passenger.pickup.address,
-          pickupCoordinates: passenger.pickup.coordinates,
-          destinationAddress: passenger.destination.address,
-          destinationCoordinates: passenger.destination.coordinates,
-          date: new Date(),
-          fare: totalFare,
-          distance: distanceKm,
-          duration: durationSeconds,
-          rideType: ride.type,
-        },
-        driver: {
-          driverId: ride.driverId,
-          driverName,
-          driverPhone,
-          driverPhoto,
-          carModel,
-          carNumber,
-        },
-        paymentStatus: RIDE_HISTORY_PAYMENT_STATUS.paid,
-        status: RIDE_HISTORY_STATUS.completed,
-      });
-    };
-
     // ── Helper: complete a single passenger ───────────────────────────────────
     const completePassenger = async (passenger: any) => {
       const {
@@ -174,13 +135,6 @@ export const driverCompleteTripHandler = eventHandler<any>(
           bookingStatus: BOOKING_STATUS.completed,
           paymentStatus: PAYMENT_STATUS.paid,
         }
-      );
-
-      await createRiderHistory(
-        passenger,
-        totalFare,
-        distanceKm,
-        durationSeconds
       );
 
       io.to(`user:${passenger.userId}`).emit('ride:trip-completed', {

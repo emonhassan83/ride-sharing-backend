@@ -1,55 +1,12 @@
 import mongoose from 'mongoose';
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../errors/ApiError';
-import { calculateDistance, calculateDuration } from '../../utils/location.utils';
 import { ILocationHistory, ILocationPoint } from './locationHistory.interface';
 import { LocationHistory } from './locationHistory.model';
 
 const validateObjectId = (id: string, label = 'ID') => {
   if (!mongoose.Types.ObjectId.isValid(id))
     throw new ApiError(StatusCodes.BAD_REQUEST, `Invalid ${label}`);
-};
-
-// ── Create location history after trip completion ──────────────────────────────
-const createLocationHistory = async (
-  rideId: string,
-  driverId: string,
-  userId: string,
-  locations: ILocationPoint[],
-  startTime: Date,
-  endTime: Date,
-): Promise<ILocationHistory> => {
-  if (!locations.length)
-    throw new ApiError(StatusCodes.BAD_REQUEST, 'At least one location point is required');
-
-  let totalDistance = 0;
-  let maxSpeed = 0;
-  let totalSpeed = 0;
-
-  for (let i = 1; i < locations.length; i++) {
-    totalDistance += calculateDistance(
-      { lat: locations[i - 1].lat, lng: locations[i - 1].lng },
-      { lat: locations[i].lat, lng: locations[i].lng },
-    );
-    if (locations[i].speed > maxSpeed) maxSpeed = locations[i].speed;
-    totalSpeed += locations[i].speed;
-  }
-
-  const averageSpeed = totalSpeed / locations.length;
-  const totalDuration = calculateDuration(locations);
-
-  return await LocationHistory.create({
-    rideId,
-    driverId,
-    passengerIds: [userId],
-    locations,
-    startTime,
-    endTime,
-    totalDistance,
-    totalDuration,
-    averageSpeed,
-    maxSpeed,
-  });
 };
 
 // ── Get location history by rideId (dispute resolution) ───────────────────────
@@ -110,33 +67,7 @@ const getDriverLocationHistory = async (
   };
 };
 
-// ── Get ride route points for map display ─────────────────────────────────────
-const getRideRoute = async (rideId: string): Promise<ILocationPoint[]> => {
-  validateObjectId(rideId, 'ride ID');
-
-  const history = await LocationHistory.findOne({ rideId }).select('locations').lean();
-  if (!history)
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Ride route not found');
-
-  return history.locations;
-};
-
-// ── Delete old location history (cron job) ────────────────────────────────────
-const deleteOldLocationHistory = async (daysOld: number = 90): Promise<number> => {
-  if (daysOld < 1)
-    throw new ApiError(StatusCodes.BAD_REQUEST, 'daysOld must be at least 1');
-
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-
-  const result = await LocationHistory.deleteMany({ startTime: { $lt: cutoffDate } });
-  return result.deletedCount;
-};
-
 export const LocationHistoryService = {
-  createLocationHistory,
   getLocationHistoryByRideId,
-  getDriverLocationHistory,
-  getRideRoute,
-  deleteOldLocationHistory,
+  getDriverLocationHistory
 };

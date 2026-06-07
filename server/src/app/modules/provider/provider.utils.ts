@@ -1,105 +1,61 @@
-import { sendEmail } from '../../config/nodemailer.config';
-import { sendNotification } from '../../utils/sentPushNotification';
-import { modeType } from '../notification/notification.interface';
 import { TUser } from '../user/user.interface';
-import { PROVIDER_STATUS } from './provider.constant';
 import { TProvider } from './provider.interface';
+import { PROVIDER_STATUS } from './provider.constant';
+import { modeType } from '../notification/notification.interface';
+import { addNotificationJob } from '../../queues/notification.queues';
+
 
 export const sendKycStatusNotification = async (
   verification: TProvider,
   user: TUser,
   reason?: string | null
 ) => {
-  if (!user || !user?.fcmToken) return;
+  if (!user || !user?._id || !user?.fcmToken) return;
 
   const { status } = verification;
 
-  let message;
-  let description;
+  let title: string;
+  let message: string;
 
   switch (status) {
-    case PROVIDER_STATUS.pending: {
-      message = 'KYC Verification Submitted';
-      description = 'Your KYC verification is under review.';
+    case PROVIDER_STATUS.pending:
+      title = '📄 KYC Verification Submitted';
+      message = 'Your KYC verification documents have been received and are under review.';
       break;
-    }
-    case PROVIDER_STATUS.verified: {
-      message = 'KYC Verification Update';
-      description = 'Your KYC verification has been approved.';
+
+    case PROVIDER_STATUS.verified:
+      title = '✅ KYC Verification Approved';
+      message = 'Congratulations! Your KYC verification has been successfully approved.';
       break;
-    }
-    case PROVIDER_STATUS.rejected: {
-      message = 'KYC Verification Update';
-      description =
-        'Your KYC verification has been denied. Reason: ' +
-        (reason || 'No reason provided.');
+
+    case PROVIDER_STATUS.rejected:
+      title = '❌ KYC Verification Rejected';
+      message = `Your KYC verification has been rejected. Reason: ${reason || 'No reason provided.'}`;
       break;
-    }
+
+    default:
+      title = 'KYC Status Update';
+      message = 'Your KYC status has been updated.';
   }
 
-  // Notify User
-  const payload = {
-    receiver: user._id,
+  const jobData = {
+    userId: user._id.toString(),
+    fcmToken: user.fcmToken,
+    title,
     message,
-    description,
-    reference: verification._id,
-    model_type: modeType.Provider,
+    data: {
+      status,
+      reference: verification._id,
+      modelType: modeType.Provider,
+      type: 'KYC_STATUS',
+    },
+    priority: 2 as 2, // Medium priority
   };
 
   try {
-    await sendNotification([user.fcmToken], payload);
-  } catch (err) {
-    console.error('Failed to notify user:', err);
+    await addNotificationJob(jobData);
+    console.log(`📤 KYC status notification queued for user: ${user._id} | Status: ${status}`);
+  } catch (error) {
+    console.error('Failed to queue KYC status notification:', error);
   }
-};
-
-// Success Email
-export const sendKycSuccessEmail = async (user: any) => {
-  const subject = '✅ Your KYC Verification Has Been Approved!';
-
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-      <h2 style="color: #28a745;">Congratulations! 🎉</h2>
-      <p>Dear ${user.name || 'Valued User'},</p>
-      <p>Your KYC verification has been successfully <strong>approved</strong>.</p>
-      <p>You can now enjoy full features including vendor payments, withdrawals, and more.</p>
-      
-      <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Status:</strong> Approved</p>
-        <p><strong>Verified On:</strong> ${new Date().toLocaleDateString()}</p>
-      </div>
-
-      <p>Thank you for completing the verification process.</p>
-      <p>Best regards,<br/><strong>Your App Team</strong></p>
-    </div>
-  `;
-
-  await sendEmail({ to: user.email, subject, html });
-};
-
-// Rejection Email with Reason
-export const sendKycRejectionEmail = async (user: any, reason: string) => {
-  const subject = '❌ Your KYC Verification Was Not Approved';
-
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-      <h2 style="color: #dc3545;">KYC Verification Update</h2>
-      <p>Dear ${user.name || 'Valued User'},</p>
-      
-      <p>Unfortunately, your KYC verification has been <strong>denied</strong>.</p>
-      
-      <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
-        <p><strong>Reason for Rejection:</strong></p>
-        <p style="color: #856404;">${reason}</p>
-      </div>
-
-      <p>Please review the issues mentioned above and <strong>resubmit</strong> your verification with correct information.</p>
-      
-      <p>If you need any assistance, feel free to contact our support team.</p>
-      
-      <p>Best regards,<br/><strong>Your App Support Team</strong></p>
-    </div>
-  `;
-
-  await sendEmail({ to: user.email, subject, html });
 };
