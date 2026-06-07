@@ -25,6 +25,7 @@ import { driverCompleteTripHandler } from './handlers/ride/driverCompleteTrip.ha
 
 // Passenger/Ride events
 import { getNearbyDriversHandler } from './handlers/ride/getNearbyDrivers.handler';
+import { fareBreakdownHandler } from './handlers/ride/fareBreakdown.handler';
 import { rideRequestHandler } from './handlers/ride/rideRequest.handler';
 import { rideCancelBeforeAcceptHandler } from './handlers/ride/rideCancelBeforeAccept.handler';
 import { rideCancelAfterAcceptHandler } from './handlers/ride/rideCancelAfterAccept.handler';
@@ -100,6 +101,9 @@ export const registerSocketEvents = (socket: Socket) => {
   // Ride Search & Request
   tSocket.on('ride:get-nearby-drivers', (data, callback) =>
     getNearbyDriversHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('ride:fare-breakdown', (data, callback) =>
+    fareBreakdownHandler.call(tSocket, data, callback)
   );
   tSocket.on('ride:request', (data, callback) =>
     rideRequestHandler.call(tSocket, data, callback)
