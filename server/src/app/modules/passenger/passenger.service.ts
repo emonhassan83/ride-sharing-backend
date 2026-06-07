@@ -2,40 +2,57 @@ import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../errors/ApiError';
 import { Passenger } from './passenger.model';
 import { Ride } from '../ride/ride.model';
+import { PASSENGER_STATUS } from './passenger.constant';
+import { RIDE_STATUS } from '../ride/ride.constant';
 
-const createPassenger = async (userId: string, payload: any) => {
-  // 1️⃣ Check if ride exists
-  const ride = await Ride.findById(payload.rideId);
-  if (!ride) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
-  }
+const getDriverRideRequest = async (driverUserId: string) => {
+  // Find rides where the user is a passenger and the ride is pending
+  const pendingRides = await Ride.find({
+    driverId: driverUserId,
+    status: RIDE_STATUS.pending,
+  })
+    .select('_id')
+    .lean();
 
-  // 2️⃣ Check if requested seats are available
-  if (payload.requestedSeats > (ride.totalSeats - ride.bookedSeats)) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, 'Not enough seats available');
-  }
+  if (!pendingRides.length) return [];
 
-  // 3️⃣ Create passenger record
-  const passenger = await Passenger.create({
-    ...payload,
-    userId
-  });
+  const rideIds = pendingRides.map((ride) => ride._id);
+  const passengerRides = await Passenger.find({
+    rideId: { $in: rideIds },
+    status: PASSENGER_STATUS.pending,
+  })
+    .populate([
+      {
+        path: 'rideId',
+        select: 'type',
+      },
+      {
+        path: 'userId',
+        select: 'name profileImage',
+      }
+    ])
+    .select(
+      'userId rideId pickup destination departureDate departureTime requestedSeats estimatedFare status createdAt'
+    )
+    .sort({ createdAt: -1 })
+    .lean();
 
-  // 4️⃣ Update ride bookedSeats
-  ride.bookedSeats += payload.requestedSeats;
-  await ride.save();
-
-  return passenger;
+  return passengerRides;
 };
 
 // Get all passengers for a ride
 const getPassengersByRide = async (rideId: string) => {
   const passengers = await Passenger.find({ rideId })
-    .populate('userId', 'name phone profileImage')
+    .populate('userId', 'name phone profileImage').select(
+      'userId pickup destination departureDate departureTime requestedSeats estimatedFare status createdAt'
+    )
     .sort({ createdAt: -1 });
 
   if (!passengers.length) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'No passengers found for this ride');
+    throw new ApiError(
+      StatusCodes.NOT_FOUND,
+      'No passengers found for this ride'
+    );
   }
 
   return passengers;
@@ -55,7 +72,7 @@ const getPassengerById = async (passengerId: string) => {
 };
 
 export const PassengerService = {
-  createPassenger,
+  getDriverRideRequest,
   getPassengersByRide,
   getPassengerById,
 };

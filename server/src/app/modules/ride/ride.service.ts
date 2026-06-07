@@ -1,161 +1,178 @@
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../errors/ApiError';
 import { Ride } from './ride.model';
-import { User } from '../user/user.model';
-import { FareUtils } from './ride.utils';
-import { getRedisClient } from '../../config/redis.config';
-import { calculateETAFromDistance } from '../../utils/location.utils';
-import { GeoLocation, NearbyDriver } from './ride.interface';
+import QueryBuilder from '../../builder/QueryBuilder';
+import { RIDE_STATUS } from './ride.constant';
+import { Passenger } from '../passenger/passenger.model';
+import { PASSENGER_STATUS } from '../passenger/passenger.constant';
 
-// ==================== USER SIDE ====================
-const findNearbyDrivers = async (
-  location: GeoLocation,
-  radiusKm: number = 5
-): Promise<NearbyDriver[]> => {
-  const redis = getRedisClient();
-  
-  try {
-    // Type-safe geosearch
-    const results = await redis.call(
-      'GEOSEARCH',
-      'drivers:location',
-      'FROMLONLAT',
-      location.lng.toString(),
-      location.lat.toString(),
-      'BYRADIUS',
-      radiusKm.toString(),
-      'km',
-      'WITHDIST'
-    ) as string[];
-    
-    if (!results || !results.length) return [];
-    
-    const drivers: NearbyDriver[] = [];
-    
-    // Results format: [driverId, distance, driverId, distance, ...]
-    for (let i = 0; i < results.length; i += 2) {
-      const driverId = results[i];
-      const distance = parseFloat(results[i + 1]);
-      
-      const details = await redis.hgetall(`driver:${driverId}:details`);
-      if (details && details.status === 'available') {
-        drivers.push({ driverId, distance, details });
-      }
-    }
-    
-    return drivers.sort((a, b) => a.distance - b.distance);
-  } catch (error) {
-    console.error('GEOSEARCH error:', error);
-    return [];
+const getAllIntoDB = async (query: Record<string, unknown>) => {
+  // ── Filter type: scheduled | completed | all (default) ───────────────────
+  const filterType = query.filterType as string | undefined;
+  delete query.filterType;
+
+  let statusFilter: any;
+
+  if (filterType === 'scheduled') {
+    statusFilter = {
+      status: { $in: [RIDE_STATUS.accepted, RIDE_STATUS.started] },
+    };
+  } else if (filterType === 'completed') {
+    statusFilter = {
+      status: RIDE_STATUS.completed,
+    };
+  } else {
+    // default — exclude pending, cancelled, rejected
+    statusFilter = {
+      status: {
+        $nin: [
+          RIDE_STATUS.pending,
+          RIDE_STATUS.cancelled,
+          RIDE_STATUS.rejected,
+        ],
+      },
+    };
   }
+
+  const rideQuery = new QueryBuilder(
+    Ride.find(statusFilter)
+      .populate([
+        { path: 'driverId', select: 'name' },
+        { path: 'rideCreatedBy', select: 'name' },
+      ])
+      .select(
+        'pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
+      ),
+    query
+  )
+    .filter()
+    .sort()
+    .paginate()
+    .fields();
+
+  const [result, meta] = await Promise.all([
+    rideQuery.modelQuery,
+    rideQuery.countTotal(),
+  ]);
+
+  return { meta, result };
 };
 
-// Main function using the utility
-const findNearbyAvailableDrivers = async (
-  payload: { pickupLat: number; pickupLng: number },
-  query: { radiusKm?: number }
+const getDriverRides = async (
+  userId: string,
+  query: Record<string, unknown>
 ) => {
-  const { pickupLat, pickupLng } = payload;
-  const { radiusKm = 5 } = query;
-  
-  const nearbyDrivers = await findNearbyDrivers(
-    { lat: pickupLat, lng: pickupLng },
-    radiusKm
-  );
-  
-  return nearbyDrivers.map((driver) => ({
-    driverId: driver.driverId,
-    name: driver.details.name,
-    phone: driver.details.phone,
-    rating: parseFloat(driver.details.rating),
-    photo: driver.details.photo,
-    vehicleModel: driver.details.vehicleModel,
-    vehicleNumber: driver.details.vehicleNumber,
-    seats: parseInt(driver.details.seats),
-    distance: driver.distance,
-    lastLat: parseFloat(driver.details.lastLat),
-    lastLng: parseFloat(driver.details.lastLng),
-    eta: calculateETAFromDistance(driver.distance, 30),
-  }));
+  const rideQuery = new QueryBuilder(
+    Ride.find({
+      driverId: userId,
+      status: {
+        $nin: [
+          RIDE_STATUS.pending,
+          RIDE_STATUS.cancelled,
+          RIDE_STATUS.rejected,
+        ],
+      },
+    })
+      .populate([
+        { path: 'driverId', select: 'name' },
+        { path: 'rideCreatedBy', select: 'name' },
+      ])
+      .select(
+        'pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
+      ),
+    query
+  )
+    .filter()
+    .sort()
+    .paginate()
+    .fields();
+
+  const [result, meta] = await Promise.all([
+    rideQuery.modelQuery,
+    rideQuery.countTotal(),
+  ]);
+
+  return { meta, result };
 };
 
-const createRideRequest = async (userId: string, payload: any) => {
-  const { driverId, ...rest } = payload;
-
-  // Driver Validation
-  const driver = await User.findById(driverId);
-  if (!driver) throw new ApiError(StatusCodes.NOT_FOUND, 'Driver not found');
-
-  // Fare Calculation
-  const fareData = await FareUtils.calculateFare({
-    estimatedDistanceKm: rest.estimatedDistanceKm,
-    rideType: rest.rideType,
-    requestedSeats: rest.requestedSeats,
-    isNightTrip: rest.isNightTrip || false,
-    waitingMinutes: rest.waitingMinutes || 0,
-    isPublicHoliday: rest.isPublicHoliday || false,
-    luggageBackpackCount: rest.luggagePolicy?.backpackCounts || 0,
-  });
-
-  const ride = await Ride.create({
-    ...rest,
+const getRiderRides = async (
+  userId: string,
+  query: Record<string, unknown>
+) => {
+  // ── Find rideIds where this user is a passenger ───────────────────────────
+  const passengerRideIds = await Passenger.find({
     userId,
-    driverId,
-    estimatedFare: fareData.userPayable,
-    status: 'pending',
-    tripStatus: 'upcoming',
-    bookedSeats: 0,
-  });
+    status: {
+      $nin: [
+        PASSENGER_STATUS.pending,
+        PASSENGER_STATUS.cancelled,
+        PASSENGER_STATUS.rejected,
+      ],
+    },
+  })
+    .select('rideId')
+    .lean();
 
-  return ride;
-};
+  const rideIds = passengerRideIds.map((p) => p.rideId);
+  if (!rideIds.length)
+    return { meta: { page: 1, limit: 10, total: 0, totalPage: 0 }, result: [] };
 
-const getMyRideRequests = async (userId: string, status?: string) => {
-  const query: any = { userId };
+  const rideQuery = new QueryBuilder(
+    Ride.find({
+      _id: { $in: rideIds },
+    })
+      .populate([
+        { path: 'driverId', select: 'name' },
+        { path: 'rideCreatedBy', select: 'name' },
+      ])
+      .select(
+        'pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
+      ),
+    query
+  )
+    .filter()
+    .sort()
+    .paginate()
+    .fields();
 
-  if (status) {
-    query.status = status;
-  }
+  const [result, meta] = await Promise.all([
+    rideQuery.modelQuery,
+    rideQuery.countTotal(),
+  ]);
 
-  return Ride.find(query)
-    .populate('driverId', 'name phone profileImage avgRating')
-    .populate('vehicleId', 'name number year')
-    .sort({ createdAt: -1 });
-};
-
-// ==================== DRIVER SIDE ====================
-
-const getAvailableRideRequests = async (
-  driverId: string,
-  filters: any = {}
-) => {
-  const query: any = {
-    driverId,
-    status: 'pending',
-  };
-
-  if (filters.rideType) query.rideType = filters.rideType;
-
-  return Ride.find(query)
-    .populate('userId', 'name phone profileImage avgRating')
-    .sort({ createdAt: -1 });
+  return { meta, result };
 };
 
 const getRideById = async (rideId: string) => {
   const ride = await Ride.findById(rideId)
-    .populate('userId', 'name phone')
-    .populate('driverId', 'name phone profileImage')
-    .populate('vehicleId');
+    .populate([
+      { path: 'driverId', select: 'name email phone profileImage' },
+      { path: 'vehicleId', select: 'name number year seats' },
+      { path: 'rideCreatedBy', select: 'name email phone profileImage' },
+    ])
+    .select(
+      'pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
+    )
+    .lean();
 
   if (!ride) throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
 
-  return ride;
+  const passengers = await Passenger.find({ rideId })
+    .populate('userId', 'name phone profileImage avgRating')
+    .select(
+      'userId status estimatedFare requestedSeats malePassengers femalePassengers pickup destination fareType estimatedDistanceKm estimatedDurationMinutes luggageCounts note arriveAt pickedUpAt droppedOffAt createdAt'
+    )
+    .lean();
+
+  return {
+    ...ride,
+    passengers,
+  };
 };
 
 export const RideService = {
-  findNearbyAvailableDrivers,
-  createRideRequest,
-  getMyRideRequests,
-  getAvailableRideRequests,
+  getAllIntoDB,
+  getDriverRides,
+  getRiderRides,
   getRideById,
 };

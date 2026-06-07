@@ -1,5 +1,5 @@
 export const PASSENGER_STATUS = {
-    searching: 'searching',
+    pending: 'pending',
     rejected: 'rejected',
     confirmed: 'confirmed',
     driver_arrived: 'driver_arrived',

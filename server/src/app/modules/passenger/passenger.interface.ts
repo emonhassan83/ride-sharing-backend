@@ -18,6 +18,8 @@ export interface TPassenger {
   departureTime: string;
   departureDate: string;
   requestedSeats: number;
+  malePassengers: number;
+  femalePassengers: number;
 
   fareType: TFareType;
   initialCharge: number;

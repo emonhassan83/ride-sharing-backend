@@ -55,7 +55,7 @@ const initializeSocketIO = (server: HttpServer) => {
               userId,
               status: {
                 $in: [
-                  PASSENGER_STATUS.searching,
+                  PASSENGER_STATUS.pending,
                   PASSENGER_STATUS.confirmed,
                   PASSENGER_STATUS.driver_arrived,
                   PASSENGER_STATUS.in_progress,

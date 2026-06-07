@@ -37,7 +37,7 @@ export const checkNoDriverFound = async () => {
 
   // প্যাসেঞ্জার আপডেট (একসাথে সব রাইডের জন্য)
   await Passenger.updateMany(
-    { rideId: { $in: expiredRideIds }, status: PASSENGER_STATUS.searching },
+    { rideId: { $in: expiredRideIds }, status: PASSENGER_STATUS.pending },
     {
       status: PASSENGER_STATUS.cancelled,
       cancellationReason: 'no_driver_found',

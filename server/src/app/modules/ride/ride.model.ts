@@ -1,9 +1,15 @@
 import mongoose, { Schema } from 'mongoose';
 import { TRide, TRideModel } from './ride.interface';
 import { CANCELLED_BY, RIDE_STATUS, RIDE_TYPE } from './ride.constant';
+import { generateCryptoString } from '../../utils/generateCryptoString';
 
 const rideSchema = new Schema<TRide>(
   {
+    id: {
+      type: String,
+      unique: true,
+      default: () => generateCryptoString(10),
+    },
     driverId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -13,6 +19,11 @@ const rideSchema = new Schema<TRide>(
       type: Schema.Types.ObjectId,
       ref: 'Vehicle',
       required: false,
+    },
+    rideCreatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
     },
     type: {
       type: String,
@@ -56,6 +67,8 @@ const rideSchema = new Schema<TRide>(
 
     totalSeats: { type: Number, required: true, min: 1 },
     bookedSeats: { type: Number, default: 0 },
+    malePassengers: { type: Number, default: 0, required: true },
+    femalePassengers: { type: Number, default: 0, required: true },
 
     status: {
       type: String,

@@ -16,6 +16,7 @@ router.patch(
 
 router.delete('/:id', auth(USER_ROLE.admin), RefundControllers.deleteARefund)
 
+router.get('/my-refund', auth(USER_ROLE.user), RefundControllers.getMyRefunds)
 router.get('/', auth(USER_ROLE.admin), RefundControllers.getAllRefunds)
 
 router.get('/:id', auth(USER_ROLE.admin), RefundControllers.getARefund)

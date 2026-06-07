@@ -14,8 +14,10 @@ export interface NearbyDriver {
 
 export interface TRide {
   _id: Types.ObjectId;
+  id: string;
   driverId: Types.ObjectId;
   vehicleId?: Types.ObjectId;
+  rideCreatedBy: Types.ObjectId;
   type: TRideType;
 
   pickup: {
@@ -32,6 +34,9 @@ export interface TRide {
 
   totalSeats: number;
   bookedSeats: number;
+  malePassengers: number;
+  femalePassengers: number;
+  
   startOdometer: number;
   endOdometer: number;
   routeGeometry?: {

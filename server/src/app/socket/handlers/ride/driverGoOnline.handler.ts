@@ -11,7 +11,6 @@ export const driverGoOnlineHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const driverId = socket.auth?._id?.toString();
     const { lat, lng, destination, departureTime, vehicleId } = data;
-
     if (!driverId || !lat || !lng) {
       callback?.({ success: false, message: 'Location required' });
       return;
@@ -21,10 +20,13 @@ export const driverGoOnlineHandler = eventHandler<any>(
       const redis = getRedisClient();
       const io = getIO();
 
-      const existingPos = await redis.geopos('drivers:location', driverId);
-      if (existingPos && existingPos[0] && existingPos[0][0] !== null) {
-        return callback?.({ success: false, message: 'Driver is already online' });
-      }
+      // const existingPos = await redis.geopos('drivers:location', driverId);
+      // if (existingPos && existingPos[0] && existingPos[0][0] !== null) {
+      //   return callback?.({
+      //     success: false,
+      //     message: 'Driver is already online',
+      //   });
+      // }
 
       const driver = await User.findById(driverId)
         .select('name email phone avgRating profileImage')

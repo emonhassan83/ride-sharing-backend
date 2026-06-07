@@ -8,7 +8,19 @@ const getAllRefunds = catchAsync(async (req, res) => {
 
   sendResponse(res, {
     code: httpStatus.OK,
-    message: 'Sender refund requests retrieved successfully!',
+    message: 'Refund requests retrieved successfully!',
+    pagination: result.meta,
+    data: result.result,
+  })
+})
+
+const getMyRefunds = catchAsync(async (req, res) => {
+  req.query.user = req.user?.userId
+  const result = await RefundServices.getAllRefundsFromDB(req.query)
+
+  sendResponse(res, {
+    code: httpStatus.OK,
+    message: 'My refund requests retrieved successfully!',
     pagination: result.meta,
     data: result.result,
   })
@@ -49,6 +61,7 @@ const deleteARefund = catchAsync(async (req, res) => {
 
 export const RefundControllers = {
   getAllRefunds,
+  getMyRefunds,
   getARefund,
   changeRefundStatus,
   deleteARefund,
