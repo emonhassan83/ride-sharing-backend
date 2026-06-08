@@ -8,8 +8,6 @@ import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { TSocket } from '../../interface/socket.interface';
 import eventHandler from '../../utils/eventHandler';
 import { Ride } from '../../../modules/ride/ride.model';
-import { User } from '../../../modules/user/user.model';
-import { Vehicle } from '../../../modules/vehicle/vehicle.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { TUser } from '../../../modules/user/user.interface';
 import { TVehicle } from '../../../modules/vehicle/vehicle.interface';
@@ -183,61 +181,104 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
         {}
       );
 
+      // helpers
+      const addMinutesToTime = (time: string, minutes: number): string => {
+        const [hourStr, minuteStr] = time.split(':');
+        const totalMinutes =
+          parseInt(hourStr) * 60 + parseInt(minuteStr) + minutes;
+        const h = Math.floor(totalMinutes / 60) % 24;
+        const m = totalMinutes % 60;
+        return `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}`;
+      };
+
       // Shape final response
-      const result = directionFilteredRides.map((ride: any) => {
-        const driver = ride.driverId as TUser & { _id: any };
-        const vehicle = ride.vehicleId as TVehicle & { _id: any };
-        const ridePassengers = passengersByRideId[ride._id.toString()] ?? [];
+      const result = await Promise.all(
+        directionFilteredRides.map(async (ride: any) => {
+          const driver = ride.driverId as TUser & { _id: any };
+          const vehicle = ride.vehicleId as TVehicle & { _id: any };
+          const ridePassengers = passengersByRideId[ride._id.toString()] ?? [];
 
-        const totalRequestedSeats = ridePassengers.reduce(
-          (sum: number, p: any) => sum + (p.requestedSeats ?? 0),
-          0
-        );
-        const totalMale = ridePassengers.reduce(
-          (sum: number, p: any) => sum + (p.malePassengers ?? 0),
-          0
-        );
-        const totalFemale = ridePassengers.reduce(
-          (sum: number, p: any) => sum + (p.femalePassengers ?? 0),
-          0
-        );
+          const totalRequestedSeats = ridePassengers.reduce(
+            (sum: number, p: any) => sum + (p.requestedSeats ?? 0),
+            0
+          );
+          const totalMale = ridePassengers.reduce(
+            (sum: number, p: any) => sum + (p.malePassengers ?? 0),
+            0
+          );
+          const totalFemale = ridePassengers.reduce(
+            (sum: number, p: any) => sum + (p.femalePassengers ?? 0),
+            0
+          );
 
-        return {
-          ride: {
-            _id: ride._id,
-            type: ride.type,
-            status: ride.status,
-            pickup: ride.pickup,
-            destination: ride.destination,
-            departureDate: ride.departureDate,
-            departureTime: ride.departureTime,
-            totalSeats: ride.totalSeats,
-            bookedSeats: ride.bookedSeats,
-          },
-          driver: {
-            _id: driver?._id,
-            name: driver?.name,
-            profileImage: driver?.profileImage,
-            avgRating: driver?.avgRating,
-            phone: driver?.phone,
-            gender: driver?.gender,
-            currentLocation: driverLocationMap[driver?._id?.toString()] ?? null,
-          },
-          vehicle: {
-            _id: vehicle?._id,
-            name: vehicle?.name,
-            number: vehicle?.number,
-            year: vehicle?.year,
-            seats: vehicle?.seats,
-          },
-          passengers: {
-            count: ridePassengers.length,
-            totalRequestedSeats,
-            totalMale,
-            totalFemale,
-          },
-        };
-      });
+          // ETA: ride departure point → user requested pickup point
+          const { distanceKm, durationMinutes } = await getRealDistanceAndETA(
+            {
+              lat: ride.pickup.coordinates[1],
+              lng: ride.pickup.coordinates[0],
+            },
+            {
+              lat: pickup.lat,
+              lng: pickup.lng,
+            }
+          );
+
+          // add ETA minutes to ride departure time → user's estimated pickup time
+          const estimatedPickupTime = addMinutesToTime(
+            ride.departureTime,
+            durationMinutes
+          );
+
+          return {
+            ride: {
+              _id: ride._id,
+              type: ride.type,
+              status: ride.status,
+              departureDate: ride.departureDate,
+              departureTime: ride.departureTime, // driver's actual departure time
+              estimatedPickupTime, // user's pickup time = departureTime + ETA
+              distanceFromRidePickupToUserPickupKm: distanceKm,
+              totalSeats: ride.totalSeats,
+              bookedSeats: ride.bookedSeats,
+              pickup: ride.pickup, // driver's origin
+              destination: ride.destination, // driver's destination
+            },
+            requestedPickup: {
+              // user given input
+              address: pickup.address ?? null,
+              coordinates: [pickup.lng, pickup.lat],
+            },
+            requestedDestination: {
+              // user given input
+              address: destination.address ?? null,
+              coordinates: [destination.lng, destination.lat],
+            },
+            driver: {
+              _id: driver?._id,
+              name: driver?.name,
+              profileImage: driver?.profileImage,
+              avgRating: driver?.avgRating,
+              phone: driver?.phone,
+              gender: driver?.gender,
+              currentLocation:
+                driverLocationMap[driver?._id?.toString()] ?? null,
+            },
+            vehicle: {
+              _id: vehicle?._id,
+              name: vehicle?.name,
+              number: vehicle?.number,
+              year: vehicle?.year,
+              seats: vehicle?.seats,
+            },
+            passengers: {
+              count: ridePassengers.length,
+              totalRequestedSeats,
+              totalMale,
+              totalFemale,
+            },
+          };
+        })
+      );
       callback?.({
         success: true,
         message: 'All Nearby split rides fetched successfully',
