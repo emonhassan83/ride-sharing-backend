@@ -122,6 +122,8 @@ export const getNearbyDriversHandler = eventHandler<any>(
             // Google Maps distance & ETA
             distance: parseFloat(distanceKm.toFixed(2)),
             eta: etaMinutes,
+            departureTime,
+            departureDate
           };
         })
       );
