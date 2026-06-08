@@ -94,25 +94,30 @@ const updateRefundStatusFromDB = async (
     let updatedRefund: TRefund | null = null;
 
     if (status === REFUND_STATUS.confirmed) {
-      if (!refund.paymentIntentId) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Payment Intent ID not found for refund');
-      }
+      // === ALWAYS REFUND TO WALLET (No Stripe Refund) ===
+      
+      // Add money back to user's wallet
+      const user = await User.findByIdAndUpdate(
+        refund.user,
+        { $inc: { wallet: refund.amount } },
+        { session, new: true }
+      );
 
-      // Process Stripe Refund
-      await PaymentService.refundPayment({
-        intendId: refund.paymentIntentId,
-        amount: refund.amount,
-      });
+      if (!user) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+      }
 
       updatedRefund = await Refund.findByIdAndUpdate(
         id,
         {
           status: REFUND_STATUS.confirmed,
-          note: note || 'Refund processed successfully via Stripe',
+          note: note || `Refunded ${refund.amount} to wallet`,
           processedAt: new Date(),
         },
         { new: true, session }
       );
+
+      console.log(`💰 Refunded ${refund.amount} to wallet | User: ${refund.user}`);
     } 
     else if (status === REFUND_STATUS.rejected) {
       updatedRefund = await Refund.findByIdAndUpdate(
@@ -125,18 +130,17 @@ const updateRefundStatusFromDB = async (
       );
     }
 
-    // ✅ Null Check
     if (!updatedRefund) {
       throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update refund record');
     }
 
-    // Notify user
-    const user = await User.findById(refund.user).session(session);
-    if (user) {
+    // Notify User
+    const notifiedUser = await User.findById(refund.user).session(session);
+    if (notifiedUser) {
       await refundChangeStatusNotifyToUser(
         'CHANGED_STATUS',
-        user,
-        updatedRefund,           // Now safe
+        notifiedUser,
+        updatedRefund,
         note || ''
       );
     }

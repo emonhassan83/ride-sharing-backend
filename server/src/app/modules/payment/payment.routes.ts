@@ -1,40 +1,42 @@
-import express from 'express'
-import { USER_ROLE } from '../user/user.constant'
-import { PaymentValidation } from './payment.validation'
-import { PaymentControllers } from './payment.controllers'
-import validateRequest from '../../utils/validateRequest'
-import auth from '../../middlewares/auth'
+import express from 'express';
+import { USER_ROLE } from '../user/user.constant';
+import { PaymentValidation } from './payment.validation';
+import { PaymentControllers } from './payment.controllers';
+import validateRequest from '../../utils/validateRequest';
+import auth from '../../middlewares/auth';
 
-const router = express.Router()
+const router = express.Router();
 
 router.post(
   '/checkout',
   validateRequest(PaymentValidation.createValidationSchema),
-  PaymentControllers.checkout,
-)
+  PaymentControllers.checkout
+);
 
-router.get(
-  '/confirm-payment',
-  PaymentControllers.confirmPayment,
-)
+router.post(
+  '/pay-with-wallet',
+  auth(USER_ROLE.user),
+  PaymentControllers.payWithWallet
+);
 
-router.get('/', auth(USER_ROLE.admin), PaymentControllers.getAllPayments)
+router.get('/confirm-payment', PaymentControllers.confirmPayment);
+
+router.get('/', auth(USER_ROLE.admin), PaymentControllers.getAllPayments);
 
 router.get(
   '/dashboard-data',
   auth(USER_ROLE.admin),
-  PaymentControllers.getDashboardData,
-)
+  PaymentControllers.getDashboardData
+);
 
-router.get('/booking/:bookingId', PaymentControllers.getAPaymentByBookingId)
+router.get('/booking/:bookingId', PaymentControllers.getAPaymentByBookingId);
 
 router.get(
   '/:id',
   auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
-  PaymentControllers.getAPayment,
-)
+  PaymentControllers.getAPayment
+);
 
-router.patch('/refund-payment', PaymentControllers.refundPayment)
+router.patch('/refund-payment', PaymentControllers.refundPayment);
 
-export const PaymentRoutes = router
-
+export const PaymentRoutes = router;

@@ -1,7 +1,7 @@
 import { model, Schema } from 'mongoose'
 import { TPayment } from './payment.interface'
 import { generateCryptoString } from '../../utils/generateCryptoString'
-import { PAYMENT_STATUS } from './payment.constant'
+import { PAYMENT_METHOD, PAYMENT_STATUS } from './payment.constant'
 
 const paymentSchema = new Schema<TPayment>(
   {
@@ -13,6 +13,11 @@ const paymentSchema = new Schema<TPayment>(
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     provider: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     booking: { type: Schema.Types.ObjectId, ref: 'Booking', required: true },
+    method: {
+      type: String,
+      enum: Object.values(PAYMENT_METHOD),
+      required: true,
+    },
     transactionId: { type: String, required: true },
     platformCommission: { type: Number, default: 0 },
     providerEarning: { type: Number, default: 0 },
