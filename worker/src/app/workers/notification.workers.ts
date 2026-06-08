@@ -36,6 +36,7 @@ export const createNotificationWorker = (): Worker => {
           // 2. Save Notification to Database via Server API
           if (pushResult.success) {
             try {
+              // TODO: Import the model(USER, NOTIFICATION, CHAT)
               await axios.post(`${SERVER_API_BASE}/notifications`, {
                 receiver: userId,
                 message: title,

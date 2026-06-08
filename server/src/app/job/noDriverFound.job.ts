@@ -6,8 +6,8 @@ import { CANCELLED_BY, RIDE_STATUS } from '../modules/ride/ride.constant';
 import { Ride } from '../modules/ride/ride.model';
 import { getIO } from '../socket/socket.init';
 
-const MATCHING_TIMEOUT_MS = 10 * 60000; // 10 minutes
-const BATCH_SIZE = 50; // প্রতি ব্যাচে কত রাইড প্রসেস করব
+const MATCHING_TIMEOUT_MS = 30 * 60000; // 30 minutes
+const BATCH_SIZE = 50;
 
 export const checkNoDriverFound = async () => {
   const redis = getRedisClient();
