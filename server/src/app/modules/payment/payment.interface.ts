@@ -1,5 +1,5 @@
 import { Model, Types } from 'mongoose'
-import { TPaymentStatus } from './payment.constant'
+import { TPaymentMethod, TPaymentStatus } from './payment.constant'
 
 export type TPayment = {
   _id: string
@@ -7,6 +7,7 @@ export type TPayment = {
   user: Types.ObjectId
   provider: Types.ObjectId
   booking: Types.ObjectId
+  method: TPaymentMethod
   transactionId: string
   paymentIntentId: string
   providerEarning: number

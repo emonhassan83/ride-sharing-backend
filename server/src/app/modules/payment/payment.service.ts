@@ -3,7 +3,7 @@ import httpStatus from 'http-status';
 import QueryBuilder from '../../builder/QueryBuilder';
 import { Payment } from './payment.model';
 import mongoose, { startSession } from 'mongoose';
-import { PAYMENT_STATUS } from './payment.constant';
+import { PAYMENT_METHOD, PAYMENT_STATUS } from './payment.constant';
 import { BOOKING_STATUS } from '../booking/booking.constant';
 import { User } from '../user/user.model';
 import { Chat } from '../chat/chat.models';
@@ -82,6 +82,7 @@ const createPaymentIntent = async (payload: {
       user: userId,
       provider: booking.driverId,
       booking: bookingId,
+      method: PAYMENT_METHOD.stripe,
       transactionId,
       amount: totalFare,
       platformCommission,
@@ -246,6 +247,132 @@ const confirmPayment = async (query: Record<string, any>) => {
   }
 };
 
+/* =====================================================
+   🔹 PAY WITH WALLET (Direct Deduction)
+===================================================== */
+const payWithWallet = async (payload: {
+  booking: string;
+  user: string;
+}) => {
+  const { booking: bookingId, user: userId } = payload;
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // ── 1. Validate Booking ─────────────────────────────────────
+    const booking = await Booking.findById(bookingId).session(session);
+    if (!booking) throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found');
+
+    if (booking.userId.toString() !== userId) {
+      throw new ApiError(StatusCodes.FORBIDDEN, 'This booking does not belong to you');
+    }
+
+    if (booking.paymentStatus === PAYMENT_STATUS.paid) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'Payment already completed');
+    }
+
+    // ── 2. Validate User & Wallet Balance ───────────────────────
+    const user = await User.findById(userId).session(session);
+    if (!user || user.isDeleted) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+    }
+
+    const totalFare = booking.totalFare;
+
+    if (user.wallet < totalFare) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        `Insufficient wallet balance. Required: ${totalFare}, Available: ${user.wallet}`
+      );
+    }
+
+    // ── 3. Calculate Commission ────────────────────────────────
+    const commissionSetting = await Setting.findOne({ key: 'platformCommissionPercent' }).lean();
+    const commissionPercent = Number(commissionSetting?.value ?? 10);
+
+    const platformCommission = Math.round((totalFare * commissionPercent) / 100 * 100) / 100;
+    const providerEarning = Math.round((totalFare - platformCommission) * 100) / 100;
+
+    const transactionId = generateTransactionId();
+
+    // ── 4. Create Payment Record ───────────────────────────────
+    const payment = await Payment.create([{
+      user: userId,
+      provider: booking.driverId,
+      booking: bookingId,
+      method: PAYMENT_METHOD.wallet,
+      transactionId,
+      amount: totalFare,
+      platformCommission,
+      providerEarning,
+      status: PAYMENT_STATUS.paid,
+      isPaid: true,
+      paymentIntentId: null as any, // No Stripe
+    }], { session });
+
+    // ── 5. Deduct from User Wallet ─────────────────────────────
+    await User.findByIdAndUpdate(
+      userId,
+      { $inc: { wallet: -totalFare } },
+      { session, new: true }
+    );
+
+    // ── 6. Update Booking ───────────────────────────────────────
+    booking.paymentStatus = PAYMENT_STATUS.paid;
+    booking.bookingStatus = BOOKING_STATUS.accepted;
+    booking.amountPaid = totalFare;
+    await booking.save({ session });
+
+    // ── 7. Credit Provider Wallet ───────────────────────────────
+    if (providerEarning > 0) {
+      await User.findByIdAndUpdate(
+        booking.driverId,
+        { $inc: { wallet: providerEarning } },
+        { session }
+      );
+    }
+
+    // ── 8. Update Ride & Passenger (if needed) ─────────────────
+    const passenger = await Passenger.findById(booking.passengerId).session(session);
+    if (passenger) {
+      const ride = await Ride.findById(booking.rideId).session(session);
+      if (ride) {
+        await Ride.findByIdAndUpdate(
+          ride._id,
+          { $inc: { bookedSeats: passenger.requestedSeats || 1 } },
+          { session }
+        );
+      }
+    }
+
+    // ── 9. Create Chat ─────────────────────────────────────────
+    const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
+    if (!existingChat) {
+      await Chat.create([{
+        booking: booking._id,
+        participants: [booking.userId, booking.driverId],
+        status: CHAT_STATUS.accepted,
+      }], { session });
+    }
+
+    await session.commitTransaction();
+
+    return {
+      success: true,
+      message: 'Payment successful via Wallet',
+      payment: payment[0],
+      booking,
+    };
+
+  } catch (error: any) {
+    await session.abortTransaction();
+    throw new ApiError(StatusCodes.BAD_REQUEST, error.message || 'Wallet payment failed');
+  } finally {
+    session.endSession();
+  }
+};
+
 const getAllPaymentsFromDB = async (query: Record<string, any>) => {
   const paymentModel = new QueryBuilder(
     Payment.find({ isDeleted: false, paymentStatus: PAYMENT_STATUS.paid }),
@@ -360,6 +487,7 @@ const refundPayment = async (payload: { intendId: string; amount: number }) => {
 export const PaymentService = {
   createPaymentIntent,
   confirmPayment,
+  payWithWallet,
   getAllPaymentsFromDB,
   getDashboardDataFromDB,
   getAPaymentsFromDB,
