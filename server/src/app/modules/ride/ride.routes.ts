@@ -5,25 +5,22 @@ import { USER_ROLE } from '../user/user.constant';
 
 const router = Router();
 
-// Get my own ride 
+// Get my own ride
 router.get(
-  '/my-rides',
-  auth([USER_ROLE.user, USER_ROLE.provider]),
-  RideController.getMyRides
+  '/driver-rides',
+  auth(USER_ROLE.provider),
+  RideController.getDriverRides
 );
+router.get('/rider-rides', auth(USER_ROLE.user), RideController.getRiderRides);
 
 // Get available all ride
-router.get(
-  '/',
-  auth(USER_ROLE.admin),
-  RideController.getAllRides
-);
+router.get('/', auth(USER_ROLE.admin), RideController.getAllRides);
 
 // Get single ride details (both user & driver can access)
 router.get(
   '/:id',
   auth([USER_ROLE.provider, USER_ROLE.user]),
-  RideController.getARides
+  RideController.getARide
 );
 
 export const RideRoutes = router;

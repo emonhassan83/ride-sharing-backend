@@ -1,14 +1,14 @@
 import { Job, Worker } from 'bullmq';
 import { compile } from 'handlebars';
-import { getRedisClient } from '@/app/configs/redis.configs';
 import { requestContext } from '@/app/configs/requestContext.configs';
+import { getRedisClient } from '@/app/configs/redis.configs';
 import { logger } from '../configs/logger.configs';
 import { sendEmail } from '../configs/nodemailer.config';
-import sendVerificationEmail from '../templates/sendVeificationEmailTemplete';
-import sendSupportReplyEmail from '../templates/sendSupportReplyEmailTemplete';
-import sendResetPasswordEmail from '../templates/sendResetPasswordEmailTemplete';
-import sendKycSuccessEmail from '../templates/sendKycVerifiedEmailTemplete';
 import sendKycRejectionEmail from '../templates/sendKycRejectEmailTemplete';
+import sendKycSuccessEmail from '../templates/sendKycVerifiedEmailTemplete';
+import sendResetPasswordEmail from '../templates/sendResetPasswordEmailTemplete';
+import sendSupportReplyEmail from '../templates/sendSupportReplyEmailTemplete';
+import sendVerificationEmail from '../templates/sendVeificationEmailTemplete';
 
 export const createEmailWorker = (): Worker => {
   const EmailWorker = new Worker(

@@ -14,5 +14,6 @@ export const env: TEnv = {
   S3_SECRET_KEY: getEnv('S3_SECRET_KEY'),
   S3_REGION: getEnv('S3_REGION'),
   S3_BUCKET_NAME: getEnv('S3_BUCKET_NAME'),
-  timeZone: getEnv('TIME_ZONE')
+  timeZone: getEnv('TIME_ZONE'),
+  SERVER_URL: getEnv('SERVER_URL'),
 };
