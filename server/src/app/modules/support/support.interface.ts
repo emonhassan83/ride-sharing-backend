@@ -1,13 +1,16 @@
 import { Model, Types } from 'mongoose';
-import { TSupportStatus } from './support.constant';
+import { TContractBy, TSupportStatus } from './support.constant';
 
 export interface TSupport {
   _id: Types.ObjectId;
+  id: string
+  user: Types.ObjectId;
   name: string
   phone: string
   email: string
   booking: Types.ObjectId;
   reason: string;
+  contractBy: TContractBy
   status: TSupportStatus;
 }
 

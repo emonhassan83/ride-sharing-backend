@@ -1,9 +1,20 @@
 import mongoose, { Schema } from 'mongoose';
 import { TSupport, TSupportModel } from './support.interface';
-import { SUPPORT_STATUS } from './support.constant';
+import { CONTRACT_BY, SUPPORT_STATUS } from './support.constant';
+import { generateCryptoString } from '../../utils/generateCryptoString';
 
 const supportSchema = new Schema<TSupport>(
   {
+    id: {
+      type: String,
+      unique: true,
+      default: () => generateCryptoString(10),
+    },
+    user: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
     name: {
       type: String,
       required: [true, 'Name is required'],
@@ -33,7 +44,11 @@ const supportSchema = new Schema<TSupport>(
     status: {
       type: String,
       enum: Object.values(SUPPORT_STATUS),
-      default: 'pending',
+      default: SUPPORT_STATUS.pending,
+    },
+    contractBy: {
+      type: String,
+      enum: Object.values(CONTRACT_BY)
     },
   },
   {
@@ -47,4 +62,7 @@ supportSchema.index({ jobId: 1 });
 supportSchema.index({ status: 1 });
 supportSchema.index({ phone: 1 });
 
-export const Support = mongoose.model<TSupport, TSupportModel>('Support', supportSchema);
+export const Support = mongoose.model<TSupport, TSupportModel>(
+  'Support',
+  supportSchema
+);

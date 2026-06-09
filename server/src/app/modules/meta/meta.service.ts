@@ -4,23 +4,37 @@ import { Payment } from '../payment/payment.model';
 import { User } from '../user/user.model';
 import { Booking } from '../booking/booking.model';
 import { PAYMENT_STATUS } from '../payment/payment.constant';
+import { USER_ROLE, USER_STATUS } from '../user/user.constant';
 
 /**
  * Dashboard Meta Data Service
  */
-export const fetchDashboardMetaData = async (query: Record<string, unknown>) => {
+export const fetchDashboardMetaData = async (
+  query: Record<string, unknown>
+) => {
   const { revenue_year } = query;
 
   const currentYear = new Date().getFullYear();
-  const selectedYear = revenue_year ? parseInt(revenue_year as string) : currentYear;
+  const selectedYear = revenue_year
+    ? parseInt(revenue_year as string)
+    : currentYear;
 
   // ====================== TOTAL COUNTS ======================
-  const [totalUsers, totalRiders, totalDrivers, totalBookings] = await Promise.all([
-    User.countDocuments({ isDeleted: false, role: { $ne: 'admin' } }),
-    User.countDocuments({ role: 'user', isDeleted: false, status: 'active' }),
-    User.countDocuments({ role: 'provider', isDeleted: false, status: 'active' }),
-    Booking.countDocuments({}),
-  ]);
+  const [totalUsers, totalRiders, totalDrivers, totalBookings] =
+    await Promise.all([
+      User.countDocuments({ isDeleted: false, role: { $ne: 'admin' } }),
+      User.countDocuments({
+        role: USER_ROLE.user,
+        isDeleted: false,
+        status: USER_STATUS.active,
+      }),
+      User.countDocuments({
+        role: USER_ROLE.provider,
+        isDeleted: false,
+        status: USER_STATUS.active,
+      }),
+      Booking.countDocuments({}),
+    ]);
 
   // ====================== FINANCIAL METRICS ======================
   const paymentPipeline = [
@@ -48,11 +62,12 @@ export const fetchDashboardMetaData = async (query: Record<string, unknown>) => 
   const recentTransactions = await Payment.find({
     isDeleted: false,
   })
-    .populate('user', 'name email')
+    .populate('user', 'name profileImage')
     .populate('provider', 'name')
+    .populate('booking', 'id')
     .sort({ createdAt: -1 })
     .limit(5)
-    .select('transactionId amount status createdAt')
+    .select('id method transactionId amount status createdAt')
     .lean();
 
   // Sales Report Summary (Current Year)
@@ -76,14 +91,18 @@ export const fetchDashboardMetaData = async (query: Record<string, unknown>) => 
     },
   ]);
 
-  const salesData = salesReport[0] || { totalIncome: 0, totalPlatformCommission: 0, totalRefunded: 0 };
+  const salesData = salesReport[0] || {
+    totalIncome: 0,
+    totalPlatformCommission: 0,
+    totalRefunded: 0,
+  };
 
   return {
     // Main Stats
     totalUsers,
     totalRiders,
     totalDrivers,
-    totalBookings,           // Total Rides
+    totalBookings, // Total Rides
 
     // Financial Overview
     totalEarning: financialData?.totalEarning || 0,
@@ -95,16 +114,25 @@ export const fetchDashboardMetaData = async (query: Record<string, unknown>) => 
       totalIncome: salesData.totalIncome,
       platformCommission: salesData.totalPlatformCommission,
       refunded: salesData.totalRefunded,
-      netIncome: (salesData.totalIncome || 0) - (salesData.totalPlatformCommission || 0),
+      netIncome: Number(
+        (
+          (salesData.totalIncome || 0) -
+          (salesData.totalPlatformCommission || 0)
+        ).toFixed(2)
+      ),
     },
 
     // Recent Transactions
     recentTransactions: recentTransactions.map((t: any) => ({
+      id: t.id,
       transactionId: t.transactionId,
-      date: t.createdAt,
       customer: t.user?.name || 'Unknown',
+      customerPhoto: t.user.profileImage || "",
+      bookingId: t.booking.id,
       amount: t.amount,
+      method: t.method,
       status: t.status,
+      createdAt: t.createdAt,
     })),
   };
 };

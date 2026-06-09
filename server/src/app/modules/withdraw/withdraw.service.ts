@@ -7,7 +7,6 @@ import { Withdraw } from './withdraw.model';
 import { TWithdrawStatus, WITHDRAW_STATUS } from './withdraw.constant';
 import { sendWithdrawNotify } from './withdraw.utils';
 import { User } from '../user/user.model';
-import dayjs from 'dayjs';
 import ApiError from '../../errors/ApiError';
 import stripeService from '../../config/stripe.config'
 
@@ -81,12 +80,50 @@ const addWithdraw = async (
 
 // ── Get all withdrawals (admin) ───────────────────────────────────────────────
 const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
+  const filter: any = {};
+
+  // ── Status Filter ─────────────────────────────────────────────
+  if (query.status) {
+    filter.status = query.status;
+  }
+
+  // ── Date Range Filter (createdAt) ─────────────────────────────
+  if (query.dateFrom || query.dateTo) {
+    filter.createdAt = {};
+    if (query.dateFrom) {
+      filter.createdAt.$gte = new Date(query.dateFrom + 'T00:00:00.000Z');
+    }
+    if (query.dateTo) {
+      filter.createdAt.$lte = new Date(query.dateTo + 'T23:59:59.999Z');
+    }
+  }
+
+  // ── Amount Range Filter ───────────────────────────────────────
+  if (query.minAmount || query.maxAmount) {
+    filter.amount = {};
+    if (query.minAmount) {
+      filter.amount.$gte = Number(query.minAmount);
+    }
+    if (query.maxAmount) {
+      filter.amount.$lte = Number(query.maxAmount);
+    }
+  }
+
+  // ── User Filter (by userId) ───────────────────────────────────
+  if (query.userId) {
+    filter.user = query.userId;
+  }
+
+  console.log('🔍 Withdraw Filter Applied:', JSON.stringify(filter, null, 2));
+
   const withdrawQuery = new QueryBuilder(
-    Withdraw.find().populate([{ path: 'user', select: 'name profileImage' }]),
-    query,
+    Withdraw.find(filter).populate([
+      { path: 'user', select: 'name profileImage phone email' }
+    ]),
+    query
   )
-    .search([])
-    .filter()
+    .search(['id'])
+    // .filter()                      
     .sort()
     .paginate()
     .fields();
@@ -96,7 +133,10 @@ const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
     withdrawQuery.countTotal(),
   ]);
 
-  return { meta, result };
+  return { 
+    meta, 
+    result 
+  };
 };
 
 // ── Get my withdrawals (provider) ─────────────────────────────────────────────

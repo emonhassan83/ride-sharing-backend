@@ -82,7 +82,7 @@ const createPaymentIntent = async (payload: {
       user: userId,
       provider: booking.driverId,
       booking: bookingId,
-      method: PAYMENT_METHOD.stripe,
+      method: PAYMENT_METHOD.card,
       transactionId,
       amount: totalFare,
       platformCommission,
@@ -250,10 +250,7 @@ const confirmPayment = async (query: Record<string, any>) => {
 /* =====================================================
    🔹 PAY WITH WALLET (Direct Deduction)
 ===================================================== */
-const payWithWallet = async (payload: {
-  booking: string;
-  user: string;
-}) => {
+const payWithWallet = async (payload: { booking: string; user: string }) => {
   const { booking: bookingId, user: userId } = payload;
 
   const session = await mongoose.startSession();
@@ -262,10 +259,14 @@ const payWithWallet = async (payload: {
   try {
     // ── 1. Validate Booking ─────────────────────────────────────
     const booking = await Booking.findById(bookingId).session(session);
-    if (!booking) throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found');
+    if (!booking)
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found');
 
     if (booking.userId.toString() !== userId) {
-      throw new ApiError(StatusCodes.FORBIDDEN, 'This booking does not belong to you');
+      throw new ApiError(
+        StatusCodes.FORBIDDEN,
+        'This booking does not belong to you'
+      );
     }
 
     if (booking.paymentStatus === PAYMENT_STATUS.paid) {
@@ -288,28 +289,37 @@ const payWithWallet = async (payload: {
     }
 
     // ── 3. Calculate Commission ────────────────────────────────
-    const commissionSetting = await Setting.findOne({ key: 'platformCommissionPercent' }).lean();
+    const commissionSetting = await Setting.findOne({
+      key: 'platformCommissionPercent',
+    }).lean();
     const commissionPercent = Number(commissionSetting?.value ?? 10);
 
-    const platformCommission = Math.round((totalFare * commissionPercent) / 100 * 100) / 100;
-    const providerEarning = Math.round((totalFare - platformCommission) * 100) / 100;
+    const platformCommission =
+      Math.round(((totalFare * commissionPercent) / 100) * 100) / 100;
+    const providerEarning =
+      Math.round((totalFare - platformCommission) * 100) / 100;
 
     const transactionId = generateTransactionId();
 
     // ── 4. Create Payment Record ───────────────────────────────
-    const payment = await Payment.create([{
-      user: userId,
-      provider: booking.driverId,
-      booking: bookingId,
-      method: PAYMENT_METHOD.wallet,
-      transactionId,
-      amount: totalFare,
-      platformCommission,
-      providerEarning,
-      status: PAYMENT_STATUS.paid,
-      isPaid: true,
-      paymentIntentId: null as any, // No Stripe
-    }], { session });
+    const payment = await Payment.create(
+      [
+        {
+          user: userId,
+          provider: booking.driverId,
+          booking: bookingId,
+          method: PAYMENT_METHOD.wallet,
+          transactionId,
+          amount: totalFare,
+          platformCommission,
+          providerEarning,
+          status: PAYMENT_STATUS.paid,
+          isPaid: true,
+          paymentIntentId: null as any, // No Stripe
+        },
+      ],
+      { session }
+    );
 
     // ── 5. Deduct from User Wallet ─────────────────────────────
     await User.findByIdAndUpdate(
@@ -334,7 +344,9 @@ const payWithWallet = async (payload: {
     }
 
     // ── 8. Update Ride & Passenger (if needed) ─────────────────
-    const passenger = await Passenger.findById(booking.passengerId).session(session);
+    const passenger = await Passenger.findById(booking.passengerId).session(
+      session
+    );
     if (passenger) {
       const ride = await Ride.findById(booking.rideId).session(session);
       if (ride) {
@@ -347,13 +359,20 @@ const payWithWallet = async (payload: {
     }
 
     // ── 9. Create Chat ─────────────────────────────────────────
-    const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
+    const existingChat = await Chat.findOne({ booking: booking._id }).session(
+      session
+    );
     if (!existingChat) {
-      await Chat.create([{
-        booking: booking._id,
-        participants: [booking.userId, booking.driverId],
-        status: CHAT_STATUS.accepted,
-      }], { session });
+      await Chat.create(
+        [
+          {
+            booking: booking._id,
+            participants: [booking.userId, booking.driverId],
+            status: CHAT_STATUS.accepted,
+          },
+        ],
+        { session }
+      );
     }
 
     await session.commitTransaction();
@@ -364,24 +383,54 @@ const payWithWallet = async (payload: {
       payment: payment[0],
       booking,
     };
-
   } catch (error: any) {
     await session.abortTransaction();
-    throw new ApiError(StatusCodes.BAD_REQUEST, error.message || 'Wallet payment failed');
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      error.message || 'Wallet payment failed'
+    );
   } finally {
     session.endSession();
   }
 };
 
 const getAllPaymentsFromDB = async (query: Record<string, any>) => {
+  const filter: any = {
+    status: PAYMENT_STATUS.paid,
+    isPaid: true,
+  };
+
+  // ── Date Range Filter ─────────────────────────────────────
+  if (query.dateFrom || query.dateTo) {
+    filter.createdAt = {};
+    if (query.dateFrom) {
+      filter.createdAt.$gte = new Date(query.dateFrom + 'T00:00:00.000Z');
+    }
+    if (query.dateTo) {
+      filter.createdAt.$lte = new Date(query.dateTo + 'T23:59:59.999Z');
+    }
+  }
+
+  // ── Amount Range Filter ───────────────────────────────────
+  if (query.minAmount || query.maxAmount) {
+    filter.amount = {};
+    if (query.minAmount) filter.amount.$gte = Number(query.minAmount);
+    if (query.maxAmount) filter.amount.$lte = Number(query.maxAmount);
+  }
+
+  console.log('🔍 Final Filter Applied:', JSON.stringify(filter, null, 2));
+
+  // QueryBuilder-> search, sort, paginate, fields
   const paymentModel = new QueryBuilder(
-    Payment.find({ isDeleted: false, paymentStatus: PAYMENT_STATUS.paid }),
+    Payment.find(filter).populate([
+      { path: 'user', select: 'name profileImage' },
+    ]),
     query
   )
-    .search([''])
-    .filter()
-    .paginate()
+    .search(['transactionId', 'id'])
+    // .filter()
     .sort()
+    .paginate()
     .fields();
 
   const data = await paymentModel.modelQuery;

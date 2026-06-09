@@ -41,7 +41,7 @@ const getAllPayments = catchAsync(async (req, res) => {
 
   sendResponse(res, {
     code: 200,
-    message: 'Payments retrieved successfully!',
+    message: 'All payments retrieved successfully!',
     pagination: result.meta,
     data: result.data,
   })
