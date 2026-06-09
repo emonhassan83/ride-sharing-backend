@@ -7,7 +7,10 @@ import {
 } from '../../../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
-import { REFUND_STATUS } from '../../../modules/refund/refund.constant';
+import {
+  REFUND_STATUS,
+  REFUND_TYPE,
+} from '../../../modules/refund/refund.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
@@ -81,7 +84,8 @@ export const driverCancelRideHandler = eventHandler<any>(
         if (booking && booking.amountPaid > 0) {
           await Refund.create({
             user: passenger.userId,
-            order: booking._id,
+            ride: ride._id,
+            type: REFUND_TYPE.cancel_ride,
             paymentIntentId: booking.transactionId,
             amount: booking.amountPaid,
             reason: `Driver cancelled private ride: ${reason || ''}`,
@@ -155,7 +159,8 @@ export const driverCancelRideHandler = eventHandler<any>(
         if (booking && booking.amountPaid > 0) {
           await Refund.create({
             user: passenger.userId,
-            order: booking._id,
+            ride: ride._id,
+            type: REFUND_TYPE.cancel_ride,
             paymentIntentId: booking.transactionId,
             amount: booking.amountPaid,
             reason: `Driver cancelled passenger: ${reason || ''}`,
@@ -256,7 +261,8 @@ export const driverCancelRideHandler = eventHandler<any>(
           if (booking && booking.amountPaid > 0) {
             await Refund.create({
               user: passenger.userId,
-              order: booking._id,
+              ride: ride._id,
+              type: REFUND_TYPE.cancel_ride,
               paymentIntentId: booking.transactionId,
               amount: booking.amountPaid,
               reason: `Driver cancelled entire ride: ${reason || ''}`,
