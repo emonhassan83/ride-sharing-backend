@@ -184,7 +184,6 @@ export const driverAcceptRideHandler = eventHandler<any>(
       );
 
       io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
-      io.to(`ride:${rideId}`).emit('booking:payment-confirmed', payload);
 
       console.log(`✅ Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`);
 
@@ -283,7 +282,6 @@ export const driverAcceptRideHandler = eventHandler<any>(
       );
 
       io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
-      io.to(`ride:${rideId}`).emit('booking:payment-confirmed', payload);
 
       console.log(`✅ Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`);
 

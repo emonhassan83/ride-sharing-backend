@@ -12,7 +12,7 @@ import eventHandler from '../../utils/eventHandler';
 
 export const driverStartTripHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    const { rideId, startOdometer } = data;
+    const { rideId } = data;
     const driverId = socket.auth?._id?.toString();
 
     if (!driverId || !rideId)
@@ -62,8 +62,7 @@ export const driverStartTripHandler = eventHandler<any>(
     // ── Update ride: accepted → started ──────────────────────────────────────
     await Ride.findByIdAndUpdate(rideId, {
       status:        RIDE_STATUS.started,
-      tripStartedAt: new Date(),
-      ...(startOdometer && { startOdometer }),
+      tripStartedAt: new Date()
     });
     console.log(`✅ Ride ${rideId} status → started`);
 
@@ -89,7 +88,6 @@ export const driverStartTripHandler = eventHandler<any>(
         passengerCount: passengers.length,
         passengerIds:   passengers.map(p => p._id),
         timestamp:      Date.now(),
-        startOdometer:  startOdometer || 0,
       }),
     );
     await redis.set(`driver:${driverId}:activeRide`, rideId, 'EX', 7200);
@@ -106,14 +104,6 @@ export const driverStartTripHandler = eventHandler<any>(
       });
       console.log(`📢 ride:trip-started emitted for passenger ${passenger._id}`);
     }
-
-    // ride:status-update — general room broadcast
-    io.to(`ride:${rideId}`).emit('ride:status-update', {
-      rideId,
-      status:    RIDE_STATUS.started,
-      startedAt: new Date(),
-    });
-    console.log(`📢 ride:status-update emitted to room ride:${rideId}`);
 
     console.log(`✅ Trip started | rideId: ${rideId} | passengers: ${passengers.length}`);
 

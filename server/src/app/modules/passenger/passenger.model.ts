@@ -54,7 +54,9 @@ const passengerSchema = new Schema<TPassenger>(
     vat: { type: Number, default: 0 },
     estimatedFare: { type: Number, default: 0 },
     waitingCharge: { type: Number, default: 0 },
-    extraCharge: { type: Number, default: 0 },
+    fivePassengerCharge: { type: Number, default: 0 },
+    sixPassengerCharge: { type: Number, default: 0 },
+    totalFare: { type: Number, default: 0 },
     estimatedDistanceKm: { type: Number, default: 0 },
     estimatedDurationMinutes: { type: Number, default: 0 },
 

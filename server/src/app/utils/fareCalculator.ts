@@ -9,7 +9,8 @@ export interface FareBreakdown {
   passengerCountExtra: number;
   holidaySurcharge: number;
   waitingCharge: number;
-  extraCharge: number;
+  fivePassengerExtraCharge: number;
+  sixPassengerExtraChargePercentage: number;
   vat: number;
   totalFare: number;
 }
@@ -207,7 +208,8 @@ export async function calculateFareBreakdown(params: {
     passengerCountExtra,
     holidaySurcharge,
     waitingCharge,
-    extraCharge: 0,
+    fivePassengerExtraCharge: 0,
+    sixPassengerExtraChargePercentage: 0,
     vat,
     totalFare,
   };
@@ -285,7 +287,8 @@ export function calculateFareBreakdownSync(
     passengerCountExtra,
     holidaySurcharge,
     waitingCharge,
-    extraCharge: 0,
+    fivePassengerExtraCharge: 0,
+    sixPassengerExtraChargePercentage: 0,
     vat,
     totalFare,
   };

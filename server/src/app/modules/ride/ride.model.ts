@@ -49,8 +49,6 @@ const rideSchema = new Schema<TRide>(
 
     departureDate: { type: String, required: true },
     departureTime: { type: String, required: true },
-    startOdometer: { type: Number },
-    endOdometer: { type: Number },
 
     // Route geometry (GeoJSON LineString)
     routeGeometry: {

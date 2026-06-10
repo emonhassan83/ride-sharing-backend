@@ -37,8 +37,6 @@ export interface TRide {
   malePassengers: number;
   femalePassengers: number;
   
-  startOdometer: number;
-  endOdometer: number;
   routeGeometry?: {
     type: 'LineString';
     coordinates: number[][];
