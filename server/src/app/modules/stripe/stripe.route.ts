@@ -26,13 +26,6 @@ router.delete(
   stripeController.disconnectStripe,
 )
 
-// Get account status
-router.get(
-  '/account-status',
-  auth(USER_ROLE.provider),
-  stripeController.getStripeAccountStatus,
-)
-
 router.get(
   '/check-connection',
   auth(USER_ROLE.provider),

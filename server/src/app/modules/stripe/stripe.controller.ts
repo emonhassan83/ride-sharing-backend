@@ -62,20 +62,6 @@ const returnUrl = catchAsync(async (req: Request, res: Response) => {
   })
 })
 
-// Step 5: Get Stripe account status
-const getStripeAccountStatus = catchAsync(
-  async (req: Request, res: Response) => {
-    const result = await stripeService.getStripeAccountStatus(req?.user?.userId)
-
-    sendResponse(res, {
-
-      code: httpStatus.OK,
-      message: 'Stripe account status retrieved',
-      data: result,
-    })
-  },
-)
-
 // Step 6: Disconnect Stripe account
 const disconnectStripe = catchAsync(async (req: Request, res: Response) => {
   const result = await stripeService.disconnectStripe(req?.user?.userId)
@@ -94,6 +80,5 @@ export const stripeController = {
   handleStripeOAuth,
   refresh,
   returnUrl,
-  getStripeAccountStatus,
   disconnectStripe,
 }
