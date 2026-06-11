@@ -1,77 +1,93 @@
 import { NextFunction, Request, Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
-import jwt, { JwtPayload, Secret } from 'jsonwebtoken';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import { User } from '../modules/user/user.model';
 import ApiError from '../errors/ApiError';
 import catchAsync from '../utils/catchAsync';
 import { config } from '../config/env.config';
 import { TUserRole, USER_ROLE } from '../modules/user/user.constant';
 
-const auth = (role: string | TUserRole[]) =>
+const auth = (allowedRoles: string | TUserRole[] = 'common') =>
   catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-    // Allow OPTIONS requests to pass through without authentication
+    // Allow preflight OPTIONS requests
     if (req.method === 'OPTIONS') {
-      next();
-      return;
+      return next();
     }
 
-    // base case
-    if (!role) throw new ApiError(StatusCodes.FORBIDDEN, 'Role is not defined');
-
-    // Step 1: Get Authorization Header
-    const tokenWithBearer = req.headers.authorization;
-    if (!tokenWithBearer) {
-      throw new ApiError(StatusCodes.UNAUTHORIZED, 'You are not authorized');
-    }
-    if (!tokenWithBearer.startsWith('Bearer')) {
-      // If the token format is incorrect
+    // Get token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new ApiError(StatusCodes.UNAUTHORIZED, 'You are not authorized');
     }
 
-    const token = tokenWithBearer.split(' ')[1];
-    // Step 2: Verify Token
-    let verifyUser;
+    const token = authHeader.split(' ')[1];
+
+    // Verify token
+    let decoded: JwtPayload;
     try {
-      verifyUser = jwt.verify(
-        token,
-        config.jwt.accessSecret as string
-      ) as JwtPayload;
+      decoded = jwt.verify(token, config.jwt.accessSecret as string) as JwtPayload;
     } catch (error) {
-      throw new ApiError(StatusCodes.UNAUTHORIZED, 'Unauthorized Access!');
+      throw new ApiError(StatusCodes.UNAUTHORIZED, 'Invalid or expired token');
     }
 
-    // Step 3: Attach user to the request object
-    req.user = verifyUser;
-
-    // Step 4: Check if the user exists and is active
-    const user = await User.findById(verifyUser.userId);
-    if (!user || user.isDeleted) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, 'User not found.');
+    if (!decoded?.userId) {
+      throw new ApiError(StatusCodes.UNAUTHORIZED, 'Invalid token payload');
     }
 
-    // Step 5: Role-based Authorization
-    if (role === 'common') role = Object.values(USER_ROLE) as TUserRole[];
-    else if (typeof role === 'string') role = [role as TUserRole];
+    // Fetch user from DB
+    const user = await User.findById(decoded.userId)
+      .select('role status isDeleted')
+      .lean();
 
-    if (!role.includes(user.role as TUserRole)) {
+    if (!user) {
+      throw new ApiError(StatusCodes.UNAUTHORIZED, 'User not found');
+    }
+
+    if (user.isDeleted) {
+      throw new ApiError(StatusCodes.FORBIDDEN, 'Your account has been deleted');
+    }
+
+    // Attach user to request
+    req.user = {
+      userId: user._id.toString(),
+      role: user.role,
+      status: user.status || 'active',
+    };
+
+    // Role Authorization
+    let rolesToCheck: TUserRole[] = [];
+
+    if (allowedRoles === 'common') {
+      rolesToCheck = Object.values(USER_ROLE) as TUserRole[];
+    } else if (typeof allowedRoles === 'string') {
+      rolesToCheck = [allowedRoles as TUserRole];
+    } else {
+      rolesToCheck = allowedRoles;
+    }
+
+    if (!rolesToCheck.includes(user.role as TUserRole)) {
       throw new ApiError(
         StatusCodes.FORBIDDEN,
-        "You don't have permission to access this API"
+        "You don't have permission to access this resource"
       );
     }
 
-    // Step 6: update params.userId
-    const { userId } = req.params;
-    if (userId) {
-      if (userId === 'me' || userId === user._id?.toString()) {
-        req.params.userId = verifyUser.userId;
-        req.body.status = undefined; // remove status from body if it exists
-        req.body.role = undefined; // remove role from body if it exists
-      } else if (user.role !== 'admin') {
-        // if the user is not an admin and passing other userId
+    // Handle special 'me' param
+    if (req.params.userId) {
+      if (req.params.userId === 'me' || req.params.userId === user._id.toString()) {
+        req.params.userId = user._id.toString();
+
+        // Safely clear sensitive fields from body (if body exists)
+        if (req.body) {
+          delete req.body.status;
+          delete req.body.role;
+          delete req.body.isDeleted;
+        }
+      } 
+      else if (user.role !== USER_ROLE.admin) {
         throw new ApiError(
           StatusCodes.FORBIDDEN,
-          "You don't have permission to access this API"
+          "You don't have permission to access other user's data"
         );
       }
     }
