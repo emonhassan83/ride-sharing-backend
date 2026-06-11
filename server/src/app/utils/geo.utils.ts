@@ -449,3 +449,51 @@ export const haversineMeters = (
       Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
+
+// utils/geo.utils.ts — point to route corridor check
+export function isPointNearRoute(
+  pointLat: number,
+  pointLng: number,
+  routeCoordinates: number[][], // [[lng, lat], ...]
+  corridorMeters: number,
+): boolean {
+  // Check if any route segment is within corridorMeters of the point
+  for (let i = 0; i < routeCoordinates.length - 1; i++) {
+    const [lng1, lat1] = routeCoordinates[i];
+    const [lng2, lat2] = routeCoordinates[i + 1];
+
+    const dist = pointToSegmentDistance(
+      pointLat, pointLng,
+      lat1, lng1,
+      lat2, lng2,
+    );
+
+    if (dist <= corridorMeters) return true;
+  }
+  return false;
+}
+
+// Point to line segment distance (meters)
+function pointToSegmentDistance(
+  pLat: number, pLng: number,
+  aLat: number, aLng: number,
+  bLat: number, bLng: number,
+): number {
+  const R = 6371000;
+
+  // Convert to radians
+  const toRad = (d: number) => (d * Math.PI) / 180;
+
+  // Use simple planar approximation for short distances
+  const dx = (bLng - aLng) * Math.cos(toRad((aLat + bLat) / 2));
+  const dy = bLat - aLat;
+  const t  = Math.max(0, Math.min(1,
+    ((pLng - aLng) * Math.cos(toRad((aLat + bLat) / 2)) * dx + (pLat - aLat) * dy) /
+    (dx * dx + dy * dy || 1),
+  ));
+
+  const closestLng = aLng + t * (bLng - aLng);
+  const closestLat = aLat + t * (bLat - aLat);
+
+  return haversineMeters(pLat, pLng, closestLat, closestLng);
+}
