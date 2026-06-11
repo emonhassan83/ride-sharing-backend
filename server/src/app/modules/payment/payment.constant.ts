@@ -1,5 +1,5 @@
 export const PAYMENT_METHOD = {
-  stripe: 'stripe',
+  card: 'card',
   wallet: 'wallet'
 } as const;
 

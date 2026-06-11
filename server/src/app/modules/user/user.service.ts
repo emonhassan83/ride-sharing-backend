@@ -27,7 +27,7 @@ import { BOOKING_STATUS } from '../booking/booking.constant';
 const getAllUsersFromDB = async (query: Record<string, unknown>) => {
   const usersQuery = new QueryBuilder(
     User.find({ isDeleted: false, role: { $ne: USER_ROLE.admin } }).select(
-      '_id id name email profileImage role address status isOnline createdAt'
+      '_id id name email profileImage role address status isOnline isKycVerified createdAt'
     ),
     query
   )

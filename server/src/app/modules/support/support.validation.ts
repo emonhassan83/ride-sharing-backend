@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { SUPPORT_STATUS } from './support.constant';
+import { CONTRACT_BY, SUPPORT_STATUS } from './support.constant';
 
 // Create Support / Report
 const createSupportZodSchema = z.object({
   body: z.object({
     name: z
       .string()
-      .min(2, {message: 'Name must be at least 2 characters'})
-      .max(100, {message: 'Name is too long'}),
+      .min(2, { message: 'Name must be at least 2 characters' })
+      .max(100, { message: 'Name is too long' }),
 
     phone: z
       .string()
@@ -29,12 +29,29 @@ const createSupportZodSchema = z.object({
 
 const sentMessageValidationSchema = z.object({
   body: z.object({
-    subject: z.string().min(3, { message: 'subject must be at least 3 characters' }),
+    subject: z
+      .string()
+      .min(3, { message: 'subject must be at least 3 characters' }),
     messages: z.string({ message: 'Support messages is required' }),
+    status: z.enum(Object.values(SUPPORT_STATUS) as [string, ...string[]], {
+      message: 'Support status is required!',
+    }),
+    contractBy: z.enum(Object.values(CONTRACT_BY) as [string, ...string[]], {
+      message: 'Contract By is required!',
+    }),
+  }),
+});
+
+const changedStatusValidationSchema = z.object({
+  body: z.object({
+    status: z.enum(Object.values(SUPPORT_STATUS) as [string, ...string[]], {
+      message: 'Support status is required!',
+    }),
   }),
 });
 
 export const SupportValidation = {
   createSupportZodSchema,
   sentMessageValidationSchema,
+  changedStatusValidationSchema,
 };

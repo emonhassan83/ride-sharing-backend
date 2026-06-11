@@ -19,7 +19,7 @@ router.get('/', auth(USER_ROLE.admin), RideController.getAllRides);
 // Get single ride details (both user & driver can access)
 router.get(
   '/:id',
-  auth([USER_ROLE.provider, USER_ROLE.user]),
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
   RideController.getARide
 );
 

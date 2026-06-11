@@ -8,16 +8,16 @@ import { PASSENGER_STATUS } from '../passenger/passenger.constant';
 
 const getAllIntoDB = async (query: Record<string, unknown>) => {
   // ── Filter type: scheduled | completed | all (default) ───────────────────
-  const filterType = query.filterType as string | undefined;
-  delete query.filterType;
+  const status = query.status as string | undefined;
+  delete query.status;
 
   let statusFilter: any;
 
-  if (filterType === 'scheduled') {
+  if (status === 'scheduled') {
     statusFilter = {
       status: { $in: [RIDE_STATUS.accepted, RIDE_STATUS.started] },
     };
-  } else if (filterType === 'completed') {
+  } else if (status === 'completed') {
     statusFilter = {
       status: RIDE_STATUS.completed,
     };
@@ -78,7 +78,7 @@ const getDriverRides = async (
         { path: 'rideCreatedBy', select: 'name' },
       ])
       .select(
-        'pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
+        'id pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
       ),
     query
   )
@@ -126,7 +126,7 @@ const getRiderRides = async (
         { path: 'rideCreatedBy', select: 'name' },
       ])
       .select(
-        'pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
+        'id pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
       ),
     query
   )
@@ -158,10 +158,7 @@ const getRideById = async (rideId: string) => {
   if (!ride) throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
 
   const passengers = await Passenger.find({ rideId })
-    .populate('userId', 'name phone profileImage avgRating')
-    .select(
-      'userId status estimatedFare requestedSeats malePassengers femalePassengers pickup destination fareType estimatedDistanceKm estimatedDurationMinutes luggageCounts note arriveAt pickedUpAt droppedOffAt createdAt'
-    )
+    .populate('userId', 'name email phone profileImage')
     .lean();
 
   return {

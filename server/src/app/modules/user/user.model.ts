@@ -116,6 +116,7 @@ const userSchema = new Schema<TUser, UserModal>(
     },
     lastPasswordChange: { type: Date },
     stripeAccountId: { type: String, default: null },
+    customerId: { type: String, default: null },
     isOnline: { type: Boolean, default: false },
     lastOnlineAt: { type: Date, default: null },
 

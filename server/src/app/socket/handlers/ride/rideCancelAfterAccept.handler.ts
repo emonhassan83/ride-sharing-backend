@@ -11,7 +11,7 @@ import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
 import { Refund } from '../../../modules/refund/refund.model';
-import { REFUND_STATUS } from '../../../modules/refund/refund.constant';
+import { REFUND_STATUS, REFUND_TYPE } from '../../../modules/refund/refund.constant';
 import { TSocket } from '../../interface/socket.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
@@ -105,7 +105,8 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
     if (paidAmount > 0 && refundAmount > 0) {
       await Refund.create({
         user: userId,
-        order: booking._id,
+        ride: ride._id,
+        type: REFUND_TYPE.cancel_ride,
         paymentIntentId: booking.transactionId,
         amount: refundAmount,
         reason: `Cancellation: ${reason || 'Rider cancelled after acceptance'}`,

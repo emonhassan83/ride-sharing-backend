@@ -1,11 +1,12 @@
 import { Model, Types } from 'mongoose'
-import { TRefundStatus } from './refund.constant'
+import { TRefundStatus, TRefundType } from './refund.constant'
 
 export type TRefund = {
   _id?: string
   id: string
   user: Types.ObjectId | string
-  order: Types.ObjectId | string
+  ride: Types.ObjectId | string
+  type: TRefundType
   paymentIntentId: string
   amount: number
   reason: string

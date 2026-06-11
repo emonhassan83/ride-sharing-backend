@@ -39,6 +39,7 @@ export type TUser = {
   isChangePhoneOtpVerified: boolean
   lastPasswordChange: Date;
   stripeAccountId: string
+  customerId: string
   status: TUserStatus;
   expireAt: Date
   isOnline: boolean

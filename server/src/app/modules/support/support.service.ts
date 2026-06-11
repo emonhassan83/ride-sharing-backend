@@ -3,10 +3,15 @@ import ApiError from '../../errors/ApiError';
 import { TSupport, TSupportMessage } from './support.interface';
 import { Support } from './support.model';
 import QueryBuilder from '../../builder/QueryBuilder';
-import { SUPPORT_STATUS } from './support.constant';
+import { TSupportStatus } from './support.constant';
 import { User } from '../user/user.model';
 import { getEmailQueueInstance } from '../../utils/queueHelper';
-import { getCache, setCache, deleteCache, deleteCachePattern } from '../../redis/helpers';
+import {
+  getCache,
+  setCache,
+  deleteCache,
+  deleteCachePattern,
+} from '../../redis/helpers';
 import { REDIS_KEYS } from '../../redis/keys';
 
 const create = async (userId: string, payload: Partial<TSupport>) => {
@@ -15,6 +20,7 @@ const create = async (userId: string, payload: Partial<TSupport>) => {
     throw new ApiError(StatusCodes.FORBIDDEN, 'This user is not found !');
   }
 
+  payload.user = author._id;
   payload.email = author.email;
 
   const result = await Support.create(payload);
@@ -38,8 +44,13 @@ const getAll = async (query: Record<string, any>) => {
 
   console.log('📡 Cache miss for support tickets, fetching from DB...');
 
-  const supportModel = new QueryBuilder(Support.find(), query)
-    .search([''])
+  const supportModel = new QueryBuilder(
+    Support.find().populate([
+      { path: 'user', select: 'name phone email profileImage' },
+    ]),
+    query
+  )
+    .search(['id'])
     .filter()
     .paginate()
     .sort()
@@ -79,8 +90,36 @@ const sentSupportMessage = async (id: string, payload: TSupportMessage) => {
 
   const result = await Support.findByIdAndUpdate(
     id,
-    { $set: { status: SUPPORT_STATUS.resolved } },
-    { new: true },
+    {
+      $set: {
+        status: payload.status,
+        contractBy: payload.contractBy,
+      },
+    },
+    { new: true }
+  );
+
+  // invalidate cache
+  await deleteCache(REDIS_KEYS.SUPPORT_ALL);
+  await deleteCache(REDIS_KEYS.SUPPORT_SINGLE(id));
+
+  return result;
+};
+
+const changeStatus = async (
+  id: string,
+  payload: { status: TSupportStatus }
+) => {
+  const { status } = payload;
+  const support = await Support.findById(id);
+  if (!support) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'This Support is not found !');
+  }
+
+  const result = await Support.findByIdAndUpdate(
+    id,
+    { $set: { status } },
+    { new: true }
   );
 
   // invalidate cache
@@ -103,5 +142,6 @@ export const SupportService = {
   create,
   getAll,
   sentSupportMessage,
+  changeStatus,
   remove,
 };

@@ -21,6 +21,13 @@ router.post(
   SupportController.sentSupportMessage
 );
 
+router.patch(
+  '/:id',
+  auth(USER_ROLE.admin),
+  validateRequest(SupportValidation.changedStatusValidationSchema),
+  SupportController.changeStatus
+);
+
 router.get('/', auth(USER_ROLE.admin), SupportController.getAll);
 router.delete('/:id', auth(USER_ROLE.admin), SupportController.remove);
 

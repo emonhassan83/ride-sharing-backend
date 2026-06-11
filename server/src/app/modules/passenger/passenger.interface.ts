@@ -30,7 +30,9 @@ export interface TPassenger {
   vat: number;
   estimatedFare: number;
   waitingCharge: number
-  extraCharge: number
+  fivePassengerCharge: number
+  sixPassengerCharge: number
+  totalFare: number
   estimatedDistanceKm: number;
   estimatedDurationMinutes: number;
 

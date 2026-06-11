@@ -23,6 +23,7 @@ import { UserLocationRoutes } from '../modules/savedPlaces/savedPlaces.routes';
 import { LocationHistoryRoutes } from '../modules/locationHistory/locationHistory.route';
 import { AccountDeletionRoutes } from '../modules/accountDeletion/accountDeletion.routes';
 import { PassengerRoutes } from '../modules/passenger/passenger.routes';
+import { CardRoutes } from '../modules/card/card.route';
 
 const router = express.Router();
 
@@ -86,6 +87,10 @@ const apiRoutes = [
   {
     path: '/stripe',
     route: StripeRoute,
+  },
+  {
+    path: '/cards',
+    route: CardRoutes,
   },
   {
     path: '/withdraw',

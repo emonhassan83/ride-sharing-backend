@@ -142,7 +142,6 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       vat:                      fareBreakdown.vat,
       estimatedFare:            roundTo2(fareBreakdown.totalFare),
       waitingCharge:            fareBreakdown.waitingCharge  || 0,
-      extraCharge:              fareBreakdown.extraCharge    || 0,
       estimatedDistanceKm:      actualDistance,
       estimatedDurationMinutes: actualDuration,
       luggageCounts:            luggageCounts  || 0,

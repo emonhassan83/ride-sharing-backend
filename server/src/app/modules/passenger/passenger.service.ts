@@ -29,7 +29,7 @@ const getDriverRideRequest = async (driverUserId: string) => {
       {
         path: 'userId',
         select: 'name profileImage',
-      }
+      },
     ])
     .select(
       'userId rideId pickup destination departureDate departureTime requestedSeats estimatedFare status createdAt'
@@ -43,7 +43,20 @@ const getDriverRideRequest = async (driverUserId: string) => {
 // Get all passengers for a ride
 const getPassengersByRide = async (rideId: string) => {
   const passengers = await Passenger.find({ rideId })
-    .populate('userId', 'name phone profileImage').select(
+    .populate([
+      { path: 'userId', select: 'name phone profileImage' },
+      {
+        path: 'rideId',
+        select: 'driverId',
+        populate: [
+          {
+            path: 'driverId',
+            select: 'name email phone profileImage',
+          },
+        ],
+      },
+    ])
+    .select(
       'userId pickup destination departureDate departureTime requestedSeats estimatedFare status createdAt'
     )
     .sort({ createdAt: -1 });
