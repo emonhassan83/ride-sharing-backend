@@ -11,23 +11,23 @@ import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { triggerArrival } from '../../utils/triggerArrival';
 
-const ARRIVAL_THRESHOLD_METERS  = 100;
-const ARRIVAL_COOLDOWN_SECONDS  = 30;
+const ARRIVAL_THRESHOLD_METERS = 100;
+const ARRIVAL_COOLDOWN_SECONDS = 30;
 
 export const driverLocationUpdateHandler = eventHandler<any>(
   async (socket: TSocket, data: any) => {
-    const { rideId, lat, lng, speed, heading } = data;
+    const { lat, lng, speed, heading } = data;
     const driverId = socket.auth?._id?.toString();
 
-    if (!driverId || !rideId || lat == null || lng == null) {
-      console.log(`❌ Missing data — driverId: ${driverId}, rideId: ${rideId}, lat: ${lat}, lng: ${lng}`);
+    if (!driverId || lat == null || lng == null) {
+      console.log(`❌ Missing data — driverId: ${driverId}, lat: ${lat}, lng: ${lng}`);
       return;
     }
 
     const redis = getRedisClient();
     const io    = getIO();
 
-    // ── 1. Save location in Redis ─────────────────────────────────────────────
+    // ── 1. Save driver current location in Redis ──────────────────────────────
     const locationData = JSON.stringify({
       driverId,
       lat,
@@ -38,23 +38,43 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     });
 
     await Promise.all([
-      redis.rpush(`ride:${rideId}:live`, locationData),
-      redis.expire(`ride:${rideId}:live`, 7200),
       redis.set(`driver:${driverId}:current`, locationData, 'EX', 300),
-      saveDriverLocation(driverId, lat, lng),
+      saveDriverLocation(driverId, lat, lng), // GEOSET + DB update
     ]);
 
-    // ── 2. Find ride ──────────────────────────────────────────────────────────
-    const ride = await Ride.findById(rideId);
+    // ── 2. Find driver's active started ride ──────────────────────────────────
+    const activeRideId = await redis.get(`driver:${driverId}:activeRide`);
+
+    let ride = null;
+    if (activeRideId) {
+      ride = await Ride.findById(activeRideId);
+    }
+
+    // Fallback: DB query if Redis miss
     if (!ride) {
-      console.log(`❌ Ride not found: ${rideId}`);
+      ride = await Ride.findOne({
+        driverId,
+        status: { $in: [RIDE_STATUS.accepted, RIDE_STATUS.started] },
+      });
+    }
+
+    if (!ride) {
+      console.log(`ℹ️ Driver ${driverId} has no active ride — location saved only`);
       return;
     }
 
-    // ── 3. Calculate ETA to destination ──────────────────────────────────────
-    const eta = await calculateETAForRide(rideId, lat, lng);
+    const rideId = ride._id.toString();
 
-    // ── 4. Room debug + broadcast live update ─────────────────────────────────
+    // ── 3. Push to ride live location history ─────────────────────────────────
+    await Promise.all([
+      redis.rpush(`ride:${rideId}:live`, locationData),
+      redis.expire(`ride:${rideId}:live`, 7200),
+    ]);
+
+    // ── 4. Calculate ETA ──────────────────────────────────────────────────────
+    const eta = await calculateETAForRide(rideId, lat, lng, ride.status);
+
+    // ── 5. Broadcast to ride room (only passengers in this ride) ─────────────
     const roomSockets = await io.in(`ride:${rideId}`).fetchSockets();
     console.log(`🛋️ Room ride:${rideId} has ${roomSockets.length} socket(s)`);
 
@@ -69,15 +89,15 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       timestamp: Date.now(),
     });
 
-    console.log(`📡 ride:live-update → room ride:${rideId} | eta: ${eta.etaMinutes}min | dist: ${eta.distanceKm}km`);
+    console.log(`📡 ride:live-update → room ride:${rideId} | eta: ${eta.etaMinutes}min`);
 
-    // ── 5. Arrival check — only when accepted ─────────────────────────────────
-    if (ride.status !== RIDE_STATUS.started) {
+    // ── 6. Arrival check — only when accepted ─────────────────────────────────
+    if (ride.status !== RIDE_STATUS.accepted) {
       console.log(`⏭️ Skipping arrival check — ride status: ${ride.status}`);
       return;
     }
 
-    // ── 6. Cooldown check ─────────────────────────────────────────────────────
+    // ── 7. Cooldown check ─────────────────────────────────────────────────────
     const lastNotify = await redis.get(`ride:${rideId}:lastArrivalNotify`);
     if (lastNotify) {
       const elapsed = Date.now() - parseInt(lastNotify);
@@ -87,11 +107,11 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       }
     }
 
-    // ── 7. Private ride arrival check ─────────────────────────────────────────
+    // ── 8. Private ride arrival check ─────────────────────────────────────────
     if (ride.type === RIDE_TYPE.private) {
       const passenger = await Passenger.findOne({
         rideId,
-        status:          PASSENGER_STATUS.in_progress,
+        status:          PASSENGER_STATUS.confirmed,
         arrivedNotified: false,
       });
 
@@ -103,13 +123,8 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       const pickupLat = ride.pickup.coordinates[1];
       const pickupLng = ride.pickup.coordinates[0];
 
-      console.log(`🎯 Pickup: lat=${pickupLat}, lng=${pickupLng} | Driver: lat=${lat}, lng=${lng}`);
-
-      const nearCheck = await isDriverNearPickup(
-        driverId, pickupLat, pickupLng, ARRIVAL_THRESHOLD_METERS,
-      );
-
-      console.log(`📏 Distance: ${nearCheck?.distanceMeters ?? 'N/A'}m | threshold: ${ARRIVAL_THRESHOLD_METERS}m | isNear: ${nearCheck?.isNear}`);
+      const nearCheck = await isDriverNearPickup(driverId, pickupLat, pickupLng, ARRIVAL_THRESHOLD_METERS);
+      console.log(`📏 Distance: ${nearCheck?.distanceMeters ?? 'N/A'}m | isNear: ${nearCheck?.isNear}`);
 
       if (nearCheck?.isNear) {
         console.log(`🚗 Driver arrived at pickup for private ride ${rideId}`);
@@ -119,11 +134,11 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       return;
     }
 
-    // ── 8. Split ride arrival check ───────────────────────────────────────────
+    // ── 9. Split ride arrival check ───────────────────────────────────────────
     if (ride.type === RIDE_TYPE.split) {
       const passengers = await Passenger.find({
         rideId,
-        status:          PASSENGER_STATUS.in_progress,
+        status:          PASSENGER_STATUS.confirmed,
         arrivedNotified: false,
       });
 
@@ -133,16 +148,10 @@ export const driverLocationUpdateHandler = eventHandler<any>(
         const pickupLat = passenger.pickup.coordinates[1];
         const pickupLng = passenger.pickup.coordinates[0];
 
-        console.log(`🎯 Passenger ${passenger._id} pickup: lat=${pickupLat}, lng=${pickupLng}`);
-
-        const nearCheck = await isDriverNearPickup(
-          driverId, pickupLat, pickupLng, ARRIVAL_THRESHOLD_METERS,
-        );
-
+        const nearCheck = await isDriverNearPickup(driverId, pickupLat, pickupLng, ARRIVAL_THRESHOLD_METERS);
         console.log(`📏 Passenger ${passenger._id}: ${nearCheck?.distanceMeters ?? 'N/A'}m | isNear: ${nearCheck?.isNear}`);
 
         if (nearCheck?.isNear) {
-          console.log(`🚗 Driver arrived at passenger ${passenger._id} pickup`);
           await triggerArrival(rideId, passenger._id, driverId, lat, lng, io, redis);
         }
       }

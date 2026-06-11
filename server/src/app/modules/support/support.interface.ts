@@ -17,7 +17,9 @@ export interface TSupport {
 export type TSupportMessage = {
   _id?: string
   subject: string
-  messages: string
+  messages: string,
+  contractBy: TContractBy
+  status: TSupportStatus;
 }
 
 export type TSupportModel = Model<TSupport>;

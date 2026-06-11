@@ -78,7 +78,7 @@ const getDriverRides = async (
         { path: 'rideCreatedBy', select: 'name' },
       ])
       .select(
-        'pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
+        'id pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
       ),
     query
   )
@@ -126,7 +126,7 @@ const getRiderRides = async (
         { path: 'rideCreatedBy', select: 'name' },
       ])
       .select(
-        'pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
+        'id pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
       ),
     query
   )

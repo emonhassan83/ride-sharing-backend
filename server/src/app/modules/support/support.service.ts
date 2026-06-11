@@ -3,7 +3,7 @@ import ApiError from '../../errors/ApiError';
 import { TSupport, TSupportMessage } from './support.interface';
 import { Support } from './support.model';
 import QueryBuilder from '../../builder/QueryBuilder';
-import { SUPPORT_STATUS } from './support.constant';
+import { TSupportStatus } from './support.constant';
 import { User } from '../user/user.model';
 import { getEmailQueueInstance } from '../../utils/queueHelper';
 import {
@@ -45,7 +45,9 @@ const getAll = async (query: Record<string, any>) => {
   console.log('📡 Cache miss for support tickets, fetching from DB...');
 
   const supportModel = new QueryBuilder(
-    Support.find().populate([{ path: 'user', select: 'name phone email profileImage' }]),
+    Support.find().populate([
+      { path: 'user', select: 'name phone email profileImage' },
+    ]),
     query
   )
     .search(['id'])
@@ -88,7 +90,35 @@ const sentSupportMessage = async (id: string, payload: TSupportMessage) => {
 
   const result = await Support.findByIdAndUpdate(
     id,
-    { $set: { status: SUPPORT_STATUS.replied } },
+    {
+      $set: {
+        status: payload.status,
+        contractBy: payload.contractBy,
+      },
+    },
+    { new: true }
+  );
+
+  // invalidate cache
+  await deleteCache(REDIS_KEYS.SUPPORT_ALL);
+  await deleteCache(REDIS_KEYS.SUPPORT_SINGLE(id));
+
+  return result;
+};
+
+const changeStatus = async (
+  id: string,
+  payload: { status: TSupportStatus }
+) => {
+  const { status } = payload;
+  const support = await Support.findById(id);
+  if (!support) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'This Support is not found !');
+  }
+
+  const result = await Support.findByIdAndUpdate(
+    id,
+    { $set: { status } },
     { new: true }
   );
 
@@ -112,5 +142,6 @@ export const SupportService = {
   create,
   getAll,
   sentSupportMessage,
+  changeStatus,
   remove,
 };

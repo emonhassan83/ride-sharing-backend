@@ -1,5 +1,6 @@
 // handlers/ride/getNearbyDrivers.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
+import { User } from '../../../modules/user/user.model';
 import { fetchDriversWithinRadius } from '../../../utils/geo.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { TSocket } from '../../interface/socket.interface';
@@ -72,10 +73,10 @@ export const getNearbyDriversHandler = eventHandler<any>(
       // ── Enrich each driver with Google Maps distance/ETA + current location ─
       const enriched = await Promise.all(
         drivers.map(async (driver) => {
-          // Get driver's current location from Redis
           let driverLat: number | null = null;
           let driverLng: number | null = null;
 
+          // ── 1. Redis current (live) ─────────────────────────────────────────
           try {
             const currentRaw = await redis.get(
               `driver:${driver.driverId}:current`
@@ -86,10 +87,30 @@ export const getNearbyDriversHandler = eventHandler<any>(
               driverLng = current.lng;
             }
           } catch {
-            // fallback — no current location
+            /* ignore */
           }
 
-          // Google Maps real distance & ETA from driver → pickup
+          // ── 2. Fallback: DB last location ───────────────────────────────────
+          if (driverLat === null || driverLng === null) {
+            try {
+              const dbUser = await User.findById(driver.driverId)
+                .select('location')
+                .lean();
+
+              const coords = dbUser?.location?.coordinates;
+              if (coords && coords[0] !== 0 && coords[1] !== 0) {
+                driverLng = coords[0]; // [lng, lat]
+                driverLat = coords[1];
+                console.log(
+                  `📍 Using DB location for driver ${driver.driverId}`
+                );
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+
+          // ── Google Maps ETA ─────────────────────────────────────────────────
           let distanceKm = driver.distance;
           let etaMinutes = Math.round((distanceKm / 30) * 60);
 
@@ -102,7 +123,7 @@ export const getNearbyDriversHandler = eventHandler<any>(
               distanceKm = result.distanceKm;
               etaMinutes = result.durationMinutes;
             } catch {
-              // keep fallback values
+              /* keep fallback */
             }
           }
 
@@ -114,20 +135,17 @@ export const getNearbyDriversHandler = eventHandler<any>(
             driverPhoto: driver.driverPhoto,
             driverRating: driver.driverRating,
             vehicle: driver.vehicle,
-            // Driver current location
             location:
               driverLat !== null && driverLng !== null
                 ? { lat: driverLat, lng: driverLng }
                 : null,
-            // Google Maps distance & ETA
             distance: parseFloat(distanceKm.toFixed(2)),
             eta: etaMinutes,
             departureTime,
-            departureDate
+            departureDate,
           };
         })
       );
-
       // Sort by distance ascending
       enriched.sort((a, b) => a.distance - b.distance);
 
