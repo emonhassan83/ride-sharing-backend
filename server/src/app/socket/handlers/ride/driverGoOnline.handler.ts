@@ -10,7 +10,7 @@ import eventHandler from '../../utils/eventHandler';
 export const driverGoOnlineHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const driverId = socket.auth?._id?.toString();
-    const { lat, lng, destination, departureTime, vehicleId } = data;
+    const { lat, lng, vehicleId } = data;
     if (!driverId || !lat || !lng) {
       callback?.({ success: false, message: 'Location required' });
       return;
@@ -87,8 +87,6 @@ export const driverGoOnlineHandler = eventHandler<any>(
         lastLng: lng.toString(),
         lastUpdate: Date.now().toString(),
       };
-      if (destination) driverHash.destination = JSON.stringify(destination);
-      if (departureTime) driverHash.departureTime = departureTime;
 
       await redis.hset(`driver:${driverId}:details`, driverHash);
       await redis.expire(`driver:${driverId}:details`, 7200);

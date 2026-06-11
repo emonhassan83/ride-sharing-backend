@@ -137,7 +137,7 @@ export const registerSocketEvents = (socket: Socket) => {
 
 
   // ==================== DISCONNECT ====================
-  tSocket.on('disconnect', () => disconnectHandler.call(tSocket, undefined));
+tSocket.on('disconnect', () => disconnectHandler(tSocket));
 };
 
 export default registerSocketEvents;

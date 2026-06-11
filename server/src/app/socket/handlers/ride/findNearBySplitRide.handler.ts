@@ -1,7 +1,6 @@
 // handlers/ride/findNearbySplitRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import {
-  fetchDriversWithinRadius,
   haversineMeters,
   isPointNearRoute,
 } from '../../../utils/geo.utils';
