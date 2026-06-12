@@ -47,7 +47,8 @@ export interface TPassenger {
   arriveAt: Date
   arrivedNotified: boolean
   pickedUpAt: Date
-  waitingTime: number // in minute
+  waitingStartedAt: Date // in minute
+  waitingChargePaid: boolean
   pickupOdometer: number
   droppedOffAt: Date
   dropOffOdometer: number

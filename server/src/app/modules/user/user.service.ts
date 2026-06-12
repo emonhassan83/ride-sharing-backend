@@ -23,6 +23,7 @@ import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS } from '../ride/ride.constant';
 import { Payment } from '../payment/payment.model';
 import { BOOKING_STATUS } from '../booking/booking.constant';
+import StripeService from '../../config/stripe.config';
 
 const getAllUsersFromDB = async (query: Record<string, unknown>) => {
   const usersQuery = new QueryBuilder(
@@ -188,6 +189,20 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
     todayEarning = earningResult[0]?.total ?? 0;
   }
 
+  let hasDefaultCard = false;
+
+  if (result.customerId) {
+    try {
+      const stripe = StripeService.getStripe();
+      const customer = await stripe.customers.retrieve(result.customerId);
+      if ('invoice_settings' in customer) {
+        hasDefaultCard = !!customer.invoice_settings?.default_payment_method;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   return {
     ...result,
     unreadCount,
@@ -200,6 +215,7 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
     isKycSubmitted,
     hasVehicle,
     isConnectedStripe: !!result.stripeAccountId,
+    hasDefaultCard,
   };
 };
 
@@ -323,7 +339,7 @@ const updateUserProfile = async (
     userId,
     { ...updateData, isProfileComplete: true },
     {
-      returnDocument: 'after'
+      returnDocument: 'after',
     }
   )
     .select('-wallet -expireAt -createdAt -updatedAt')
@@ -351,7 +367,7 @@ const updateUserStatus = async (
     userId,
     { status },
     {
-      returnDocument: 'after'
+      returnDocument: 'after',
     }
   ).select('name fcmToken email phone status isDeleted');
   if (!result) {
