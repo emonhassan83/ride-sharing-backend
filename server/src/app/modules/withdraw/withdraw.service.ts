@@ -230,7 +230,7 @@ const updateWithdrawFromDB = async (
       const updatedProvider = await User.findOneAndUpdate(
         { _id: withdraw.user, wallet: { $gte: withdraw.amount } },
         { $inc: { wallet: -withdraw.amount } },
-        { session, new: true },
+        { session, returnDocument: 'after' },
       )
  
       if (!updatedProvider)

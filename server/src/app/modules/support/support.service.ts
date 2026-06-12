@@ -96,7 +96,7 @@ const sentSupportMessage = async (id: string, payload: TSupportMessage) => {
         contractBy: payload.contractBy,
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   // invalidate cache
@@ -119,7 +119,7 @@ const changeStatus = async (
   const result = await Support.findByIdAndUpdate(
     id,
     { $set: { status } },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   // invalidate cache

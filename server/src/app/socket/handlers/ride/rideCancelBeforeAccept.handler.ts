@@ -131,7 +131,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     const updatedRide = await Ride.findByIdAndUpdate(
       rideId,
       { $inc: { bookedSeats: -passenger.requestedSeats } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean();
 
     const remainingSeats = (updatedRide?.totalSeats ?? 0) - (updatedRide?.bookedSeats ?? 0);

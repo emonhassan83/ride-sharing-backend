@@ -206,7 +206,7 @@ const confirmPayment = async (query: Record<string, any>) => {
       await User.findByIdAndUpdate(
         payment.provider,
         { $inc: { wallet: payment.providerEarning } },
-        { session, new: true }
+        { session, returnDocument: 'after' }
       );
     }
 
@@ -325,7 +325,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
     await User.findByIdAndUpdate(
       userId,
       { $inc: { wallet: -totalFare } },
-      { session, new: true }
+      { session, returnDocument: 'after' }
     );
 
     // ── 6. Update Booking ───────────────────────────────────────
@@ -477,7 +477,7 @@ const refundPayment = async (payload: { intendId: string; amount: number }) => {
     const payment = await Payment.findOneAndUpdate(
       { paymentIntentId: payload.intendId },
       { status: PAYMENT_STATUS.refunded, isPaid: false },
-      { new: true, session }
+      { returnDocument: 'after', session }
     );
     if (!payment || payment?.isDeleted) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Payment record not found');
@@ -499,7 +499,7 @@ const refundPayment = async (payload: { intendId: string; amount: number }) => {
     await Booking.findByIdAndUpdate(
       payment.booking,
       { paymentStatus: PAYMENT_STATUS.refunded },
-      { new: true, session }
+      { returnDocument: 'after', session }
     );
 
     // Process refund via Stripe

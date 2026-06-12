@@ -57,7 +57,7 @@ const createReviews = async (payload: TReviews, userId: string) => {
           totalRating: count,
         },
       },
-      { session, new: true },
+      { session, returnDocument: 'after' },
     );
 
     await session.commitTransaction();

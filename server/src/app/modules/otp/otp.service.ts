@@ -93,7 +93,7 @@ const verifyOTP = async (
   const user = await User.findOneAndUpdate(
     { email },
     { $set: updateData },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (!user) {

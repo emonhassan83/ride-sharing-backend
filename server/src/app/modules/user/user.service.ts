@@ -323,7 +323,7 @@ const updateUserProfile = async (
     userId,
     { ...updateData, isProfileComplete: true },
     {
-      new: true,
+      returnDocument: 'after'
     }
   )
     .select('-wallet -expireAt -createdAt -updatedAt')
@@ -351,7 +351,7 @@ const updateUserStatus = async (
     userId,
     { status },
     {
-      new: true,
+      returnDocument: 'after'
     }
   ).select('name fcmToken email phone status isDeleted');
   if (!result) {
@@ -389,7 +389,7 @@ const updateLocationFromDB = async (
       location: { type: 'Point', coordinates: [longitude, latitude] },
       address: address,
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   return updatedUser;
@@ -439,7 +439,7 @@ const deleteUserProfile = async (
         deletedAt: new Date(),
       },
       {
-        new: true,
+        returnDocument: 'after',
         session,
         select: 'name email phone status isDeleted deletedAt',
       }

@@ -131,13 +131,13 @@ const updateStatusIntoDB = async (
           status: PROVIDER_STATUS.verified,
           approvedAt: new Date(),
         },
-        { new: true, session }
+        { returnDocument: 'after', session }
       );
     } else {
       updatedVerification = await Provider.findByIdAndUpdate(
         id,
         { status: PROVIDER_STATUS.rejected, rejectionReason },
-        { new: true, session }
+        { returnDocument: 'after', session }
       );
     }
 

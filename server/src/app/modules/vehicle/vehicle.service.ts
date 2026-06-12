@@ -119,7 +119,7 @@ const updateACar = async (userId: string, carId: string, payload: Partial<TVehic
   const vehicle = await Vehicle.findOneAndUpdate(
     { _id: carId, userId, isDeleted: false },
     payload,
-    { new: true, runValidators: true },
+    { returnDocument: 'after', runValidators: true },
   ).lean();
 
   if (!vehicle)

@@ -119,7 +119,7 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
           verification: { otp: 0, expiresAt: new Date(), status: true },
           expireAt: null,
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!updatedUser) {
@@ -132,7 +132,7 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
       return generateTokens(updatedUser as any);
     }
 
-    await User.findByIdAndUpdate(user._id, updateData, { new: true });
+    await User.findByIdAndUpdate(user._id, updateData, { returnDocument: 'after' });
     return generateTokens(user as any);
   }
 
@@ -192,7 +192,7 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
           verification: { otp: 0, expiresAt: new Date(), status: true },
           expireAt: null,
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!updatedUser) {
@@ -205,7 +205,7 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
       return generateTokens(updatedUser);
     }
 
-    await User.findByIdAndUpdate(user._id, updateData, { new: true });
+    await User.findByIdAndUpdate(user._id, updateData, { returnDocument: 'after' });
     return generateTokens(user as any);
   }
 
@@ -285,7 +285,7 @@ const loginWithEmail = async (payload: TLoginWithEmail) => {
 
   //* 6. Update user document if needed
   if (Object.keys(updateData).length > 0) {
-    await User.findByIdAndUpdate(user._id, updateData, { new: true });
+    await User.findByIdAndUpdate(user._id, updateData, { returnDocument: 'after' });
   }
 
   return {
@@ -336,7 +336,7 @@ const loginWithPhone = async (payload: TLoginWithPhone) => {
     await User.findByIdAndUpdate(
       user._id,
       { isLoginOTPVerified: false, ...updateData },
-      { new: true }
+      { returnDocument: 'after' }
     );
   }
 
@@ -450,7 +450,7 @@ const forgotPassword = async (payload: { email: string }) => {
   await User.findByIdAndUpdate(
     user._id,
     { isResetPasswordVerified: false },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   return { resetPasswordToken: resetToken };
@@ -501,7 +501,7 @@ const resetPassword = async (
         passwordChangedAt: new Date(),
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   //if password is not updated throw error
@@ -545,7 +545,7 @@ const changePassword = async (
         passwordChangedAt: new Date(),
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   //if password is not updated throw error
@@ -570,7 +570,7 @@ const logoutUser = async (userId: string) => {
   await User.findByIdAndUpdate(
     userId,
     { isLoginOTPVerified: false },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   return null;
