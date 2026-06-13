@@ -71,6 +71,9 @@ export const driverRejectRideHandler = eventHandler<any>(
         cancelledAt: new Date(),
       });
 
+      passenger!.status = PASSENGER_STATUS.cancelled; // ✅ এটা যোগ করুন
+      await passenger!.save();
+
       await redisCleanup();
 
       return callback?.({

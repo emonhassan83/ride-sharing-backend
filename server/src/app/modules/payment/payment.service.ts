@@ -17,6 +17,7 @@ import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
 import { Ride } from '../ride/ride.model';
 import { Setting } from '../settings/settings.model';
+import { getRedisClient } from '../../config/redis.config';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-05-27.dahlia',
@@ -183,6 +184,7 @@ const confirmPayment = async (query: Record<string, any>) => {
     const ride = await Ride.findById(booking.rideId).session(session);
     if (!ride) throw new ApiError(httpStatus.NOT_FOUND, 'Ride not found');
 
+    // ✅ Seat availability check
     const newBookedSeats =
       (ride.bookedSeats || 0) + (passenger.requestedSeats || 1);
     if (newBookedSeats > ride.totalSeats) {
@@ -192,11 +194,29 @@ const confirmPayment = async (query: Record<string, any>) => {
       );
     }
 
+    // ✅ Bug 5 fix: bookedSeats + malePassengers + femalePassengers all here
     await Ride.findByIdAndUpdate(
       ride._id,
-      { $inc: { bookedSeats: passenger.requestedSeats } },
+      {
+        $inc: {
+          bookedSeats: passenger.requestedSeats || 1,
+          malePassengers: passenger.malePassengers || 0, // ✅ added
+          femalePassengers: passenger.femalePassengers || 0, // ✅ added
+        },
+      },
       { session }
     );
+
+    // ✅ Redis bookedSeats sync — also update driver hash
+    const driverId = booking.driverId?.toString();
+    if (driverId) {
+      const redis = getRedisClient();
+      await redis.hincrby(
+        `driver:${driverId}:details`,
+        'bookedSeats',
+        passenger.requestedSeats || 1
+      );
+    }
 
     // ── 6. Provider wallet update — duplicate safe ────────────────────────────
     // Only increment wallet if providerEarning > 0 and not already credited

@@ -136,7 +136,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
       });
 
       if (remainingCount === 0) {
-        const all        = await Passenger.find({ rideId });
+        const all        = await Passenger.find({ rideId, status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] } });
         const grandTotal = all.reduce((sum, p) => sum + (p.estimatedFare || 0) + (p.waitingCharge || 0), 0);
         await finalizeRide(grandTotal);
       }

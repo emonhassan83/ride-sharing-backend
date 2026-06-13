@@ -16,11 +16,7 @@ import {
 
 export const driverDropOffPassengerHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    const {
-      rideId,
-      passengerId,
-      waitingCharge = 0
-    } = data;
+    const { rideId, passengerId } = data;
     const driverId = socket.auth?._id?.toString();
 
     if (!driverId || !rideId)
@@ -32,73 +28,60 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
     const ride = await Ride.findById(rideId);
     if (!ride)
       return callback?.({ success: false, message: 'Ride not found' });
-
     if (ride.driverId?.toString() !== driverId)
       return callback?.({ success: false, message: 'You are not assigned to this ride' });
-
     if (ride.status !== RIDE_STATUS.started)
-      return callback?.({ success: false, message: `Cannot drop off — ride status: ${ride.status}` });
+      return callback?.({ success: false, message: `Cannot drop off — status: ${ride.status}` });
 
-    // ── Location history from Redis ───────────────────────────────────────────
     const locationKey     = `ride:${rideId}:live`;
     const locations       = await redis.lrange(locationKey, 0, -1);
     const parsedLocations = locations.map((loc: string) => JSON.parse(loc));
 
-    // ── Get real distance from passenger pickup → destination ─────────────────
     const getPassengerDistance = async (passenger: any) => {
-      const pickupLat = passenger.pickup.coordinates[1];
-      const pickupLng = passenger.pickup.coordinates[0];
-      const destLat   = passenger.destination.coordinates[1];
-      const destLng   = passenger.destination.coordinates[0];
-
       try {
         const { distanceKm, durationMinutes } = await getRealDistanceAndETA(
-          { lat: pickupLat, lng: pickupLng },
-          { lat: destLat,   lng: destLng   },
+          { lat: passenger.pickup.coordinates[1],      lng: passenger.pickup.coordinates[0] },
+          { lat: passenger.destination.coordinates[1], lng: passenger.destination.coordinates[0] },
         );
         return { distanceKm, durationSeconds: durationMinutes * 60 };
       } catch {
-        const distanceKm      = calculateTotalDistance(parsedLocations) || passenger.estimatedDistanceKm || 0;
-        const durationSeconds = calculateDuration(parsedLocations) || 0;
-        return { distanceKm, durationSeconds };
+        return {
+          distanceKm:      calculateTotalDistance(parsedLocations) || passenger.estimatedDistanceKm || 0,
+          durationSeconds: calculateDuration(parsedLocations) || 0,
+        };
       }
     };
 
-    // ── Helper: drop off single passenger ─────────────────────────────────────
     const dropOffPassenger = async (passenger: any) => {
       const { distanceKm, durationSeconds } = await getPassengerDistance(passenger);
 
-      const baseFare  = passenger.estimatedFare || calculateFareFromDistance(distanceKm);
-      const totalFare = baseFare + waitingCharge;
+      // ✅ Bug 3 fix: waitingCharge from passenger model, not from client data
+      const waitingCharge = passenger.waitingCharge || 0;
+      const baseFare      = passenger.estimatedFare || calculateFareFromDistance(distanceKm);
+      const totalFare     = baseFare + waitingCharge;
 
-      // ── Update passenger → dropped_off ────────────────────────────────────
-      passenger.totalFare   = totalFare;
-      passenger.status      = PASSENGER_STATUS.dropped_off;
+      passenger.totalFare    = totalFare;
+      passenger.status       = PASSENGER_STATUS.dropped_off;
       passenger.droppedOffAt = new Date();
-      if (waitingCharge) passenger.waitingCharge = waitingCharge;
       await passenger.save();
 
-      // ── Redis log ─────────────────────────────────────────────────────────
-      await redis.rpush(
-        `ride:${rideId}:live`,
-        JSON.stringify({
-          event:       'WAYPOINT',
-          note:        'PASSENGER_DROPPED_OFF',
-          driverId,
-          passengerId: passenger._id,
-          timestamp:   Date.now(),
-        }),
-      );
+      await redis.rpush(`ride:${rideId}:live`, JSON.stringify({
+        event:       'WAYPOINT',
+        note:        'PASSENGER_DROPPED_OFF',
+        driverId,
+        passengerId: passenger._id,
+        timestamp:   Date.now(),
+      }));
 
-      // ── Notify passenger — dropped off ────────────────────────────────────
       io.to(`user:${passenger.userId}`).emit('ride:passenger-dropped-off', {
         rideId,
-        passengerId: passenger._id,
-        fare:        totalFare,
-        distance:    distanceKm,
-        duration:    durationSeconds,
+        passengerId:  passenger._id,
+        fare:         baseFare,
         waitingCharge,
-        message:     'You have been dropped off. Please wait for trip completion.',
+        totalFare,
+        distance:     distanceKm,
+        duration:     durationSeconds,
+        message:      'You have been dropped off. Please wait for trip completion.',
       });
 
       return { totalFare, distanceKm, durationSeconds };
@@ -108,52 +91,42 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.private) {
       const passenger = await Passenger.findOne({
         rideId,
-        status: PASSENGER_STATUS.picked_up,
+        status: PASSENGER_STATUS.picked_up, // ✅ Bug 2 fix: picked_up not in_progress
       });
       if (!passenger)
-        return callback?.({ success: false, message: 'No active passenger found' });
+        return callback?.({ success: false, message: 'No picked up passenger found' });
 
       const { totalFare, distanceKm, durationSeconds } = await dropOffPassenger(passenger);
 
       return callback?.({
         success: true,
         message: 'Passenger dropped off. Complete the ride to finish.',
-        data: {
-          passengerId:  passenger._id,
-          fare:         totalFare,
-          distance:     distanceKm,
-          duration:     durationSeconds,
-          allDroppedOff: true,
-        },
+        data:    { passengerId: passenger._id, fare: totalFare, distance: distanceKm, duration: durationSeconds, allDroppedOff: true },
       });
     }
 
-    // ── SPLIT RIDE — single passenger drop off ────────────────────────────────
+    // ── SPLIT RIDE ────────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.split) {
       if (!passengerId)
         return callback?.({ success: false, message: 'passengerId is required for split ride' });
 
       const passenger = await Passenger.findOne({
-        _id:    passengerId,
-        rideId,
-        status: PASSENGER_STATUS.picked_up,
+        _id: passengerId, rideId,
+        status: PASSENGER_STATUS.picked_up, // ✅ correct
       });
       if (!passenger)
         return callback?.({ success: false, message: 'Passenger not found or already dropped off' });
 
       const { totalFare, distanceKm, durationSeconds } = await dropOffPassenger(passenger);
 
-      // Check remaining in_progress passengers
       const remainingCount = await Passenger.countDocuments({
-        rideId,
-        status: PASSENGER_STATUS.picked_up,
+        rideId, status: PASSENGER_STATUS.picked_up,
       });
       const allDroppedOff = remainingCount === 0;
 
-      // Notify driver
       io.to(`driver:${driverId}`).emit('ride:passenger-dropped-off', {
         rideId,
-        passengerId:      passenger._id,
+        passengerId:         passenger._id,
         remainingPassengers: remainingCount,
         allDroppedOff,
         message: allDroppedOff
@@ -166,14 +139,7 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
         message: allDroppedOff
           ? 'All passengers dropped off. Complete the ride to finish.'
           : `Passenger dropped off. ${remainingCount} passenger(s) remaining.`,
-        data: {
-          passengerId:      passenger._id,
-          fare:             totalFare,
-          distance:         distanceKm,
-          duration:         durationSeconds,
-          remainingPassengers: remainingCount,
-          allDroppedOff,
-        },
+        data: { passengerId: passenger._id, fare: totalFare, distance: distanceKm, duration: durationSeconds, remainingPassengers: remainingCount, allDroppedOff },
       });
     }
 
