@@ -1,7 +1,5 @@
 // handlers/driver/driverGoOffline.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
-import { RIDE_STATUS } from '../../../modules/ride/ride.constant';
-import { Ride } from '../../../modules/ride/ride.model';
 import { User } from '../../../modules/user/user.model';
 import { removeDriverLocation } from '../../../utils/geo.utils';
 import { getIO } from '../../socket.init';
@@ -40,32 +38,13 @@ export const driverGoOfflineHandler = async (
       } catch { /* ignore */ }
     }
 
-    // ── Active ride handling ──────────────────────────────────────────────────
-    const activeRideId = await redis.get(`driver:${driverId}:activeRide`);
-    if (activeRideId) {
-      io.to(`ride:${activeRideId}`).emit('ride:driver-disconnected', {
-        rideId:      activeRideId,
-        message:     'Driver went offline. Searching for another driver...',
-        reassigning: true,
-      });
-
-      await Ride.findByIdAndUpdate(activeRideId, {
-        status:              RIDE_STATUS.pending,
-        driverId:            null,
-        reassignmentNeeded:  true,
-      });
-
-      await redis.zadd('ride:matching:queue', Date.now(), activeRideId);
-      await redis.del(`driver:${driverId}:activeRide`);
-      await redis.del(`ride:active:${activeRideId}`);
-    }
-
     // ── Redis cleanup ─────────────────────────────────────────────────────────
     await removeDriverLocation(driverId);
     await Promise.all([
       redis.del(`driver:${driverId}:details`),
       redis.del(`driver:${driverId}:current`),
       redis.del(`driver:${driverId}:reconnecting`),
+      redis.del(`driver:${driverId}:activeRide`),
       redis.srem('users:online', driverId),
     ]);
 
