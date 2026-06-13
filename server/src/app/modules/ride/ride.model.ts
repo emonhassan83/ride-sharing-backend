@@ -25,6 +25,7 @@ const rideSchema = new Schema<TRide>(
       ref: 'User',
       required: true,
     },
+
     type: {
       type: String,
       enum: Object.values(RIDE_TYPE),
@@ -67,6 +68,9 @@ const rideSchema = new Schema<TRide>(
     bookedSeats: { type: Number, default: 0 },
     malePassengers: { type: Number, default: 0, required: true },
     femalePassengers: { type: Number, default: 0, required: true },
+
+    // ── Split fare surcharge (new) ────────────────────────────────────────────
+    currentSurchargePercent: { type: Number, default: 0 }, // tracks current tier
 
     status: {
       type: String,

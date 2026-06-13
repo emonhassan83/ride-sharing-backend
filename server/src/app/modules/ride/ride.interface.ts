@@ -42,6 +42,8 @@ export interface TRide {
     coordinates: number[][];
   };
 
+  currentSurchargePercent: number
+
   status: TRideStatus;
   cancellationReason: string;
   cancelledAt: Date;

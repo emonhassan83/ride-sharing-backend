@@ -108,7 +108,7 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.private) {
       const passenger = await Passenger.findOne({
         rideId,
-        status: PASSENGER_STATUS.in_progress,
+        status: PASSENGER_STATUS.picked_up,
       });
       if (!passenger)
         return callback?.({ success: false, message: 'No active passenger found' });
@@ -146,7 +146,7 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
       // Check remaining in_progress passengers
       const remainingCount = await Passenger.countDocuments({
         rideId,
-        status: PASSENGER_STATUS.in_progress,
+        status: PASSENGER_STATUS.picked_up,
       });
       const allDroppedOff = remainingCount === 0;
 
