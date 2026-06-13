@@ -91,7 +91,7 @@ const getAllMessages = async (query: Record<string, any>) => {
 
 // Update messages
 const updateMessages = async (id: string, payload: Partial<TMessages>) => {
-  const result = await Message.findByIdAndUpdate(id, payload, { new: true })
+  const result = await Message.findByIdAndUpdate(id, payload, { returnDocument: 'after' })
   if (!result) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Message update failed')
   }

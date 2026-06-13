@@ -77,7 +77,7 @@ const connectExistingStripeAccount = async (
   const updatedUser = await User.findByIdAndUpdate(
     userId,
     { stripeAccountId },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (!updatedUser) {

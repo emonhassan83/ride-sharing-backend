@@ -7,10 +7,11 @@ import { Passenger } from '../../../modules/passenger/passenger.model';
 import { TSocket } from '../../interface/socket.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
+import { transferRideOwnership } from '../../../utils/splitFare.utils';
 
 export const rideCancelBeforeAcceptHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    const { rideId, reason } = data;
+    const { rideId, reason = '' } = data;
     const userId = socket.auth?._id?.toString();
 
     if (!rideId || !userId)
@@ -19,41 +20,22 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     const ride = await Ride.findById(rideId);
     if (!ride)
       return callback?.({ success: false, message: 'Ride not found' });
-
     if (ride.status !== RIDE_STATUS.pending)
-      return callback?.({ success: false, message: 'Cannot cancel: driver already accepted or ride started' });
+      return callback?.({ success: false, message: 'Cannot cancel: driver already accepted' });
 
-    const passenger = await Passenger.findOne({ rideId, userId });
+    const passenger = await Passenger.findOne({ rideId, userId, status: PASSENGER_STATUS.pending });
     if (!passenger)
-      return callback?.({ success: false, message: 'You are not a passenger in this ride' });
-
-    if (passenger.status !== PASSENGER_STATUS.pending)
-      return callback?.({ success: false, message: 'Already cancelled or confirmed' });
+      return callback?.({ success: false, message: 'No pending booking found' });
 
     const redis = getRedisClient();
     const io    = getIO();
 
-    // ── Helper: cancel passenger ──────────────────────────────────────────────
-    const cancelPassenger = async () => {
-      passenger.status              = PASSENGER_STATUS.cancelled;
-      passenger.cancellationReason  = reason || 'Cancelled by rider';
-      passenger.cancelledBy         = CANCELLED_BY.user;
-      await passenger.save();
-    };
+    await Passenger.findByIdAndUpdate(passenger._id, {
+      status:             PASSENGER_STATUS.cancelled,
+      cancellationReason: reason || 'Cancelled by rider',
+      cancelledBy:        CANCELLED_BY.user,
+    });
 
-    // ── Helper: notify driver ─────────────────────────────────────────────────
-    const notifyDriver = (message: string) => {
-      if (ride.driverId) {
-        io.to(`driver:${ride.driverId}`).emit('ride:cancelled', {
-          rideId,
-          passengerId:  passenger._id,
-          cancelledBy:  'rider',
-          message,
-        });
-      }
-    };
-
-    // ── Helper: redis cleanup ─────────────────────────────────────────────────
     const redisCleanup = async () => {
       await Promise.all([
         redis.zrem('ride:matching:queue', rideId),
@@ -63,116 +45,86 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
 
     // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.private) {
-      await cancelPassenger();
-
       await Ride.findByIdAndUpdate(rideId, {
-        status:              RIDE_STATUS.cancelled,
-        cancellationReason:  reason || 'Cancelled by rider (before acceptance)',
-        cancelledBy:         CANCELLED_BY.user,
-        cancelledAt:         new Date(),
+        status: RIDE_STATUS.cancelled,
+        cancellationReason: reason || 'Cancelled by rider',
+        cancelledBy: CANCELLED_BY.user, cancelledAt: new Date(),
       });
-
       await redisCleanup();
-
-      // ✅ Notify driver
-      notifyDriver('Rider has cancelled the ride request.');
-
-      // Notify rider
-      io.to(`user:${userId}`).emit('ride:cancelled', {
-        rideId,
-        message:      'Private ride cancelled successfully',
-        refundAmount: 0,
-      });
-
-      return callback?.({
-        success:      true,
-        message:      'Private ride cancelled successfully',
-        refundAmount: 0,
-      });
+      if (ride.driverId) {
+        io.to(`driver:${ride.driverId}`).emit('ride:cancelled', {
+          rideId, message: 'Rider cancelled before acceptance.',
+        });
+      }
+      return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
     }
 
     // ── SPLIT RIDE ────────────────────────────────────────────────────────────
-    const otherActiveCount = await Passenger.countDocuments({
-      rideId,
-      _id:    { $ne: passenger._id },
-      status: { $ne: PASSENGER_STATUS.cancelled },
-    });
-
-    await cancelPassenger();
-
-    if (otherActiveCount === 0) {
-      // Last passenger — cancel the whole ride
-      await Ride.findByIdAndUpdate(rideId, {
-        status:             RIDE_STATUS.cancelled,
-        cancellationReason: reason || 'Last passenger cancelled before acceptance',
-        cancelledBy:        CANCELLED_BY.user,
-        cancelledAt:        new Date(),
-      });
-
-      await redisCleanup();
-
-      // ✅ Notify driver
-      notifyDriver('All passengers cancelled. Ride has been cancelled.');
-
-      io.to(`user:${userId}`).emit('ride:cancelled', {
-        rideId,
-        message:      'Ride cancelled (you were the only passenger)',
-        refundAmount: 0,
-      });
-
-      return callback?.({
-        success:      true,
-        message:      'Ride cancelled successfully',
-        refundAmount: 0,
-      });
+    // Case 3: was this the rideCreatedBy?
+    if (ride.rideCreatedBy?.toString() === userId) {
+      const transferred = await transferRideOwnership(rideId, userId, io);
+      if (!transferred) {
+        await Ride.findByIdAndUpdate(rideId, {
+          status: RIDE_STATUS.cancelled,
+          cancellationReason: 'Creator cancelled before acceptance',
+          cancelledBy: CANCELLED_BY.user, cancelledAt: new Date(),
+        });
+        await redisCleanup();
+        if (ride.driverId) {
+          io.to(`driver:${ride.driverId}`).emit('ride:cancelled', {
+            rideId, message: 'All passengers cancelled.',
+          });
+        }
+        return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+      }
     }
 
-    // Other passengers still in the ride — only remove this passenger
+    // Decrement seats
     const updatedRide = await Ride.findByIdAndUpdate(
       rideId,
-      { $inc: { bookedSeats: -passenger.requestedSeats } },
-      { new: true },
+      { $inc: { bookedSeats: -(passenger.requestedSeats || 1) } },
+      { returnDocument: 'after' },
     ).lean();
+
+    const remaining = await Passenger.find({
+      rideId, _id: { $ne: passenger._id }, status: { $ne: PASSENGER_STATUS.cancelled },
+    }).select('userId');
+
+    if (remaining.length === 0) {
+      await Ride.findByIdAndUpdate(rideId, {
+        status: RIDE_STATUS.cancelled,
+        cancellationReason: 'Last passenger cancelled',
+        cancelledBy: CANCELLED_BY.user, cancelledAt: new Date(),
+      });
+      await redisCleanup();
+      if (ride.driverId) {
+        io.to(`driver:${ride.driverId}`).emit('ride:cancelled', {
+          rideId, message: 'All passengers cancelled.',
+        });
+      }
+      return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+    }
 
     const remainingSeats = (updatedRide?.totalSeats ?? 0) - (updatedRide?.bookedSeats ?? 0);
 
-    // ✅ Notify driver — one passenger left
     if (ride.driverId) {
       io.to(`driver:${ride.driverId}`).emit('ride:passenger-cancelled', {
-        rideId,
-        passengerId:    passenger._id,
-        cancelledBy:    'rider',
-        remainingSeats,
-        message:        'A passenger has cancelled their request.',
+        rideId, passengerId: passenger._id, remainingSeats,
+        message: 'A passenger cancelled.',
       });
     }
 
-    // Notify rider
-    io.to(`user:${userId}`).emit('ride:passenger-cancelled', {
-      rideId,
-      message: 'You have been removed from the ride.',
-    });
-
-    // Notify remaining passengers
-    const remainingPassengers = await Passenger.find({
-      rideId,
-      _id:    { $ne: passenger._id },
-      status: { $ne: PASSENGER_STATUS.cancelled },
-    }).select('userId');
-
-    for (const p of remainingPassengers) {
+    for (const p of remaining) {
       io.to(`user:${p.userId}`).emit('ride:co-passenger-cancelled', {
-        rideId,
-        cancelledPassengerId: passenger._id,
-        remainingSeats,
-        message: 'Another passenger has cancelled their booking.',
+        rideId, cancelledPassengerId: passenger._id, remainingSeats,
+        message: 'Another passenger cancelled.',
       });
     }
 
     return callback?.({
-      success:      true,
-      message:      'Cancelled successfully',
-      refundAmount: 0,
+      success: true,
+      message: 'Cancelled successfully.',
+      data:    { rideCancelled: false, remainingPassengers: remaining.length },
     });
   },
 );

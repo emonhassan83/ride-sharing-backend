@@ -62,7 +62,7 @@ const updateSavedPlace = async (userId: string, placeId: string, payload: any) =
   const place = await UserLocation.findOneAndUpdate(
     { _id: placeId, user: userId },
     payload,
-    { new: true, runValidators: true }
+    { returnDocument: 'after', runValidators: true }
   );
   if (!place) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Saved place not found');

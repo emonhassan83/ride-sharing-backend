@@ -252,7 +252,7 @@ const getChatByUserId = async (currentUser: string, userId: string) => {
 };
 
 const updateChatList = async (id: string, payload: Partial<TChat>) => {
-  const result = await Chat.findByIdAndUpdate(id, payload, { new: true });
+  const result = await Chat.findByIdAndUpdate(id, payload, { returnDocument: 'after' });
   if (!result) throw new ApiError(httpStatus.BAD_REQUEST, 'Chat not found');
   return result;
 };

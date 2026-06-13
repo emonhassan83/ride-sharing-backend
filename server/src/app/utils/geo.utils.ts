@@ -45,7 +45,7 @@ export async function saveDriverLocation(
         coordinates: [lng, lat], // [lng, lat] — GeoJSON order
       },
     },
-    { new: false },
+    { returnDocument: 'after' },
   ).catch((err) => console.error('Failed to save driver location to DB:', err));
 }
 

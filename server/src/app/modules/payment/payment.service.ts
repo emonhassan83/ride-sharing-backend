@@ -17,6 +17,7 @@ import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
 import { Ride } from '../ride/ride.model';
 import { Setting } from '../settings/settings.model';
+import { getRedisClient } from '../../config/redis.config';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-05-27.dahlia',
@@ -183,6 +184,7 @@ const confirmPayment = async (query: Record<string, any>) => {
     const ride = await Ride.findById(booking.rideId).session(session);
     if (!ride) throw new ApiError(httpStatus.NOT_FOUND, 'Ride not found');
 
+    // ✅ Seat availability check
     const newBookedSeats =
       (ride.bookedSeats || 0) + (passenger.requestedSeats || 1);
     if (newBookedSeats > ride.totalSeats) {
@@ -192,11 +194,29 @@ const confirmPayment = async (query: Record<string, any>) => {
       );
     }
 
+    // ✅ Bug 5 fix: bookedSeats + malePassengers + femalePassengers all here
     await Ride.findByIdAndUpdate(
       ride._id,
-      { $inc: { bookedSeats: passenger.requestedSeats } },
+      {
+        $inc: {
+          bookedSeats: passenger.requestedSeats || 1,
+          malePassengers: passenger.malePassengers || 0, // ✅ added
+          femalePassengers: passenger.femalePassengers || 0, // ✅ added
+        },
+      },
       { session }
     );
+
+    // ✅ Redis bookedSeats sync — also update driver hash
+    const driverId = booking.driverId?.toString();
+    if (driverId) {
+      const redis = getRedisClient();
+      await redis.hincrby(
+        `driver:${driverId}:details`,
+        'bookedSeats',
+        passenger.requestedSeats || 1
+      );
+    }
 
     // ── 6. Provider wallet update — duplicate safe ────────────────────────────
     // Only increment wallet if providerEarning > 0 and not already credited
@@ -206,7 +226,7 @@ const confirmPayment = async (query: Record<string, any>) => {
       await User.findByIdAndUpdate(
         payment.provider,
         { $inc: { wallet: payment.providerEarning } },
-        { session, new: true }
+        { session, returnDocument: 'after' }
       );
     }
 
@@ -325,7 +345,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
     await User.findByIdAndUpdate(
       userId,
       { $inc: { wallet: -totalFare } },
-      { session, new: true }
+      { session, returnDocument: 'after' }
     );
 
     // ── 6. Update Booking ───────────────────────────────────────
@@ -477,7 +497,7 @@ const refundPayment = async (payload: { intendId: string; amount: number }) => {
     const payment = await Payment.findOneAndUpdate(
       { paymentIntentId: payload.intendId },
       { status: PAYMENT_STATUS.refunded, isPaid: false },
-      { new: true, session }
+      { returnDocument: 'after', session }
     );
     if (!payment || payment?.isDeleted) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Payment record not found');
@@ -499,7 +519,7 @@ const refundPayment = async (payload: { intendId: string; amount: number }) => {
     await Booking.findByIdAndUpdate(
       payment.booking,
       { paymentStatus: PAYMENT_STATUS.refunded },
-      { new: true, session }
+      { returnDocument: 'after', session }
     );
 
     // Process refund via Stripe

@@ -7,224 +7,182 @@ import { Passenger } from '../../../modules/passenger/passenger.model';
 import { TSocket } from '../../interface/socket.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
-
-/* 
-দায়িত্ব: নির্দিষ্ট passenger(s) কে physically pickup করা (status → picked_up)
-Client payload:
-single: { rideId, passengerId, pickupOdometer? }
-all:    { rideId, pickupType: 'all', pickupOdometer? }
-*/
+import {
+  calculateWaitingCharge,
+  deductWaitingCharge,
+  getWaitingRatePerMinute,
+} from '../../../utils/waitingCharge.utils';
 
 export const pickUpRideHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    const { rideId, passengerId, pickupType = 'single', pickupOdometer } = data;
+    const { rideId, passengerId } = data;
     const driverId = socket.auth?._id?.toString();
 
-    if (!driverId || !rideId) {
+    if (!driverId || !rideId)
       return callback?.({ success: false, message: 'Missing required fields' });
-    }
 
-    try {
-      const ride = await Ride.findById(rideId);
-      if (!ride) {
-        return callback?.({ success: false, message: 'Ride not found' });
-      }
-      if (ride.driverId?.toString() !== driverId) {
-        return callback?.({
-          success: false,
-          message: 'You are not assigned to this ride',
-        });
-      }
-      if (ride.status !== RIDE_STATUS.started) {
-        return callback?.({
-          success: false,
-          message: 'Trip must be started before picking up passengers',
-        });
-      }
+    const ride = await Ride.findById(rideId);
+    if (!ride)
+      return callback?.({ success: false, message: 'Ride not found' });
+    if (ride.driverId?.toString() !== driverId)
+      return callback?.({ success: false, message: 'You are not assigned to this ride' });
+    if (ride.status !== RIDE_STATUS.started)
+      return callback?.({ success: false, message: 'Trip must be started before picking up' });
 
-      const redis = getRedisClient();
-      const io = getIO();
+    const redis = getRedisClient();
+    const io    = getIO();
 
-      // ═══════════════════════════════════════════════════════════════
-      // CASE 1: Private ride OR pickupType = 'all' — সবাইকে pickup
-      // ═══════════════════════════════════════════════════════════════
-      if (ride.type === RIDE_TYPE.private || pickupType === 'all') {
-        const passengers = await Passenger.find({
-          rideId,
-          status: PASSENGER_STATUS.in_progress,
-        });
+    // ── Helper: pickup + stop waiting charge ──────────────────────────────────
+    const doPickup = async (passenger: any) => {
+      const pickedUpAt = new Date();
 
-        if (!passengers.length) {
-          return callback?.({
-            success: false,
-            message: 'No passengers to pick up',
-          });
-        }
+      // ✅ Stop waiting charge — calculate if waiting was active
+      let waitingCharge = 0;
+      let paymentResult = { method: 'none', amount: 0 };
 
-        for (const passenger of passengers) {
-          passenger.status = PASSENGER_STATUS.picked_up;
-          passenger.pickedUpAt = new Date();
-          if (pickupOdometer) passenger.pickupOdometer = pickupOdometer;
-          await passenger.save();
-
-          // Notify each passenger
-          io.to(`ride:${rideId}`).emit('ride:passenger-picked-up', {
-            rideId,
-            passengerId: passenger._id,
-            driverId,
-            pickedUpAt: new Date(),
-            message: 'You have been picked up!',
-          });
-        }
-
-        // Redis log
-        await redis.rpush(
-          `ride:${rideId}:live`,
-          JSON.stringify({
-            event: 'ALL_PASSENGERS_PICKED_UP',
-            driverId,
-            passengerCount: passengers.length,
-            timestamp: Date.now(),
-            pickupOdometer: pickupOdometer || 0,
-          })
+      if (passenger.waitingStartedAt && !passenger.waitingChargePaid) {
+        const rate    = await getWaitingRatePerMinute();
+        waitingCharge = calculateWaitingCharge(
+          passenger.waitingStartedAt,
+          pickedUpAt,
+          rate,
         );
 
-        // Broadcast to ride room
-        io.to(`ride:${rideId}`).emit('ride:all-passengers-picked', {
-          rideId,
-          message: 'All passengers have been picked up.',
-          passengerCount: passengers.length,
-        });
-
-        console.log(
-          `✅ All passengers picked up | rideId: ${rideId} | count: ${passengers.length}`
-        );
-
-        return callback?.({
-          success: true,
-          message: 'All passengers picked up successfully',
-          data: {
-            passengerCount: passengers.length,
-          allPickedUp: true,
-          }
-        });
-      }
-
-      // ═══════════════════════════════════════════════════════════════
-      // CASE 2: Split ride — single passenger pickup
-      // ═══════════════════════════════════════════════════════════════
-      if (pickupType === 'single' && passengerId) {
-        const passenger = await Passenger.findOne({
-          _id: passengerId,
-          rideId,
-          status: PASSENGER_STATUS.in_progress,
-        });
-
-        if (!passenger) {
-          return callback?.({
-            success: false,
-            message: 'Passenger not found or already picked up',
-          });
-        }
-
-        passenger.status = PASSENGER_STATUS.picked_up;
-        passenger.pickedUpAt = new Date();
-        if (pickupOdometer) passenger.pickupOdometer = pickupOdometer;
-        await passenger.save();
-
-        // Redis log
-        await redis.rpush(
-          `ride:${rideId}:live`,
-          JSON.stringify({
-            event: 'PASSENGER_PICKED_UP',
-            driverId,
-            passengerId: passenger._id,
-            timestamp: Date.now(),
-            pickupOdometer: pickupOdometer || 0,
-          })
-        );
-
-        // Notify picked passenger
-        io.to(`ride:${rideId}`).emit('ride:passenger-picked-up', {
-          rideId,
-          passengerId: passenger._id,
-          driverId,
-          pickedUpAt: new Date(),
-          message: 'You have been picked up!',
-        });
-
-        // Remaining passengers still in_progress
-        const remainingCount = await Passenger.countDocuments({
-          rideId,
-          status: PASSENGER_STATUS.in_progress,
-        });
-
-        if (remainingCount > 0) {
-          // Notify other in_progress passengers
-          const otherPassengers = await Passenger.find({
+        if (waitingCharge > 0) {
+          // ✅ Deduct waiting charge immediately at pickup
+          paymentResult = await deductWaitingCharge(
+            passenger.userId.toString(),
+            waitingCharge,
             rideId,
-            _id: { $ne: passengerId },
-            status: PASSENGER_STATUS.in_progress,
-          }).select('userId');
-
-          for (const op of otherPassengers) {
-            io.to(`ride:${rideId}`).emit('ride:co-passenger-picked', {
-              rideId,
-              pickedUpPassengerId: passenger._id,
-              remainingPassengers: remainingCount,
-              message: 'A fellow passenger has been picked up.',
-            });
-          }
-
-          // Notify driver how many left
-          io.to(`driver:${driverId}`).emit('ride:passenger-picked', {
-            rideId,
-            passengerId: passenger._id,
-            remainingPassengers: remainingCount,
-            message: `${remainingCount} passenger(s) remaining to pick up.`,
-          });
-
-          console.log(
-            `✅ Passenger picked up | rideId: ${rideId} | remaining: ${remainingCount}`
           );
 
-          return callback?.({
-            success: true,
-            message: `Passenger picked up. ${remainingCount} passenger(s) remaining.`,
-            data: {
-              passengerId: passenger._id,
+          // Notify rider about waiting charge
+          io.to(`user:${passenger.userId}`).emit('ride:waiting-charge-paid', {
+            rideId,
+            passengerId:    passenger._id,
+            waitingCharge,
+            paymentMethod:  paymentResult.method,
+            message:        `Waiting charge of £${waitingCharge} deducted from your ${paymentResult.method}.`,
+          });
+
+          console.log(`💰 Waiting charge £${waitingCharge} deducted via ${paymentResult.method} for passenger ${passenger._id}`);
+        }
+      }
+
+      // ✅ Update passenger
+      await Passenger.findByIdAndUpdate(passenger._id, {
+        status:            PASSENGER_STATUS.picked_up,
+        pickedUpAt,
+        waitingCharge,
+        waitingChargePaid: waitingCharge > 0,
+      });
+
+      await redis.rpush(`ride:${rideId}:live`, JSON.stringify({
+        event:          'PASSENGER_PICKED_UP',
+        driverId,
+        passengerId:    passenger._id,
+        timestamp:      Date.now(),
+        waitingCharge,
+      }));
+
+      return { waitingCharge, paymentResult };
+    };
+
+    // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
+    if (ride.type === RIDE_TYPE.private) {
+      const passenger = await Passenger.findOne({
+        rideId, status: PASSENGER_STATUS.in_progress,
+      });
+      if (!passenger)
+        return callback?.({ success: false, message: 'No passenger to pick up' });
+
+      const { waitingCharge, paymentResult } = await doPickup(passenger);
+
+      io.to(`ride:${rideId}`).emit('ride:passenger-picked-up', {
+        rideId,
+        passengerId:   passenger._id,
+        driverId,
+        pickedUpAt:    new Date(),
+        waitingCharge,
+        paymentMethod: paymentResult.method,
+        message:       'You have been picked up!',
+      });
+
+      io.to(`ride:${rideId}`).emit('ride:all-passengers-picked', {
+        rideId, message: 'All passengers picked up.', passengerCount: 1,
+      });
+
+      return callback?.({
+        success: true,
+        message: 'Passenger picked up successfully',
+        data:    { passengerId: passenger._id, waitingCharge, allPickedUp: true },
+      });
+    }
+
+    // ── SPLIT RIDE ────────────────────────────────────────────────────────────
+    if (ride.type === RIDE_TYPE.split) {
+      if (!passengerId)
+        return callback?.({ success: false, message: 'passengerId is required' });
+
+      const passenger = await Passenger.findOne({
+        _id: passengerId, rideId, status: PASSENGER_STATUS.in_progress,
+      });
+      if (!passenger)
+        return callback?.({ success: false, message: 'Passenger not found or already picked up' });
+
+      const { waitingCharge, paymentResult } = await doPickup(passenger);
+
+      io.to(`user:${passenger.userId}`).emit('ride:passenger-picked-up', {
+        rideId,
+        passengerId:   passenger._id,
+        driverId,
+        pickedUpAt:    new Date(),
+        waitingCharge,
+        paymentMethod: paymentResult.method,
+        message:       'You have been picked up!',
+      });
+
+      const remainingCount = await Passenger.countDocuments({
+        rideId, status: PASSENGER_STATUS.in_progress,
+      });
+
+      if (remainingCount > 0) {
+        const others = await Passenger.find({
+          rideId, _id: { $ne: passengerId }, status: PASSENGER_STATUS.in_progress,
+        }).select('userId');
+
+        for (const op of others) {
+          io.to(`user:${op.userId}`).emit('ride:co-passenger-picked', {
+            rideId, pickedUpPassengerId: passenger._id,
             remainingPassengers: remainingCount,
-            allPickedUp: false,
-            }
+            message: 'A fellow passenger has been picked up.',
           });
         }
 
-        // সবাই picked up — notify all
-        io.to(`ride:${rideId}`).emit('ride:all-passengers-picked', {
-          rideId,
-          message: 'All passengers have been picked up.',
+        io.to(`driver:${driverId}`).emit('ride:passenger-picked', {
+          rideId, passengerId: passenger._id,
+          remainingPassengers: remainingCount,
+          message: `${remainingCount} passenger(s) remaining.`,
         });
-
-        console.log(`✅ Last passenger picked up | rideId: ${rideId}`);
 
         return callback?.({
           success: true,
-          message: 'Last passenger picked up. All passengers on board!',
-          data: {
-            passengerId: passenger._id,
-            remainingPassengers: 0,
-            allPickedUp: true,
-          }
+          message: `Passenger picked up. ${remainingCount} remaining.`,
+          data:    { passengerId: passenger._id, waitingCharge, remainingPassengers: remainingCount, allPickedUp: false },
         });
       }
 
-      return callback?.({
-        success: false,
-        message: 'Invalid pickupType or missing passengerId for single pickup',
+      io.to(`ride:${rideId}`).emit('ride:all-passengers-picked', {
+        rideId, message: 'All passengers picked up.',
       });
-    } catch (error) {
-      console.error('❌ Error in pickUpRideHandler:', error);
-      return callback?.({ success: false, message: 'Internal server error' });
+
+      return callback?.({
+        success: true,
+        message: 'Last passenger picked up. All on board!',
+        data:    { passengerId: passenger._id, waitingCharge, remainingPassengers: 0, allPickedUp: true },
+      });
     }
-  }
+
+    return callback?.({ success: false, message: 'Unknown ride type' });
+  },
 );

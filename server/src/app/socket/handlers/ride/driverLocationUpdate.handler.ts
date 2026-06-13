@@ -111,7 +111,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.private) {
       const passenger = await Passenger.findOne({
         rideId,
-        status:          PASSENGER_STATUS.confirmed,
+        status: { $in: [PASSENGER_STATUS.driver_arrived, PASSENGER_STATUS.in_progress] },
         arrivedNotified: false,
       });
 
@@ -138,7 +138,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.split) {
       const passengers = await Passenger.find({
         rideId,
-        status:          PASSENGER_STATUS.confirmed,
+        status: { $in: [PASSENGER_STATUS.driver_arrived, PASSENGER_STATUS.in_progress] },
         arrivedNotified: false,
       });
 

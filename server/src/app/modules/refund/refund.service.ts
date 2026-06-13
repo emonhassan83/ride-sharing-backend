@@ -100,7 +100,7 @@ const updateRefundStatusFromDB = async (
       const user = await User.findByIdAndUpdate(
         refund.user,
         { $inc: { wallet: refund.amount } },
-        { session, new: true }
+        { session, returnDocument: 'after' }
       );
 
       if (!user) {
@@ -114,7 +114,7 @@ const updateRefundStatusFromDB = async (
           note: note || `Refunded ${refund.amount} to wallet`,
           processedAt: new Date(),
         },
-        { new: true, session }
+        { returnDocument: 'after', session }
       );
 
       console.log(`💰 Refunded ${refund.amount} to wallet | User: ${refund.user}`);
@@ -126,7 +126,7 @@ const updateRefundStatusFromDB = async (
           status: REFUND_STATUS.rejected,
           note: note || 'Refund request rejected by admin',
         },
-        { new: true, session }
+        { returnDocument: 'after', session }
       );
     }
 
