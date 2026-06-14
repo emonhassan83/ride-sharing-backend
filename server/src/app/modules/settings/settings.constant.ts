@@ -5,10 +5,8 @@ export const GENERAL_KEYS = [
   "matchingLastNotifyHours",
   "cancellationFreeWindowHours",
   "cancellationPercentage50Hours",
-  "waitingTimeMinutes",
   "waitingReminderIntervals",
-  "pendingRideCancelHours",
-  "pendingRideNotifyHours",
+
   // ride charge keys
   'dayFareInitialCharge',
   'dayFarePerKMRate',
@@ -21,8 +19,9 @@ export const GENERAL_KEYS = [
   'fivePassengerExtraCharge',
   'sixPassengerExtraChargePercentage',
   'platformVat',
-  // platform commission
   "platformCommissionPercent",
+
+  // platform info
   'supportContract',
   'supportEmail',
 ] as const;
