@@ -6,6 +6,7 @@ import { CANCELLED_BY, RIDE_STATUS } from '../modules/ride/ride.constant';
 import { Ride } from '../modules/ride/ride.model';
 import { getIO } from '../socket/socket.init';
 
+// Testing added 10 min but production use cancel ride before 24 hour ride start
 const MATCHING_TIMEOUT_MS = 30 * 60000; // 30 minutes
 const BATCH_SIZE = 50;
 
