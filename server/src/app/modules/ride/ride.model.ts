@@ -25,6 +25,10 @@ const rideSchema = new Schema<TRide>(
       ref: 'User',
       required: true,
     },
+    notifiedDriverIds: {
+      type: [Schema.Types.ObjectId],
+      ref: 'User',
+    },
 
     type: {
       type: String,

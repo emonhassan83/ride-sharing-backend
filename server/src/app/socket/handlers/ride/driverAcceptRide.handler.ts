@@ -6,6 +6,7 @@ import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant'
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { Ride } from '../../../modules/ride/ride.model';
+import { Vehicle } from '../../../modules/vehicle/vehicle.model';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { TSocket } from '../../interface/socket.interface';
 import { getIO } from '../../socket.init';
@@ -13,6 +14,7 @@ import onlineUsers from '../../utils/onlineUsers';
 import eventHandler from '../../utils/eventHandler';
 import { recalculateSplitFares } from '../../../utils/splitFare.utils';
 
+// ── Helper: rider কে ride room এ join করাও ───────────────────────────────────
 const ensureRiderInRoom = (userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
   if (riderSocket) {
@@ -20,6 +22,7 @@ const ensureRiderInRoom = (userId: string, rideId: string) => {
   }
 };
 
+// ── Helper: driver current location from Redis ────────────────────────────────
 const getDriverLocation = async (
   redis: any,
   driverId: string,
@@ -32,6 +35,7 @@ const getDriverLocation = async (
   } catch { return null; }
 };
 
+// ── Helper: calculate ETA from driver → pickup ────────────────────────────────
 const calcEstimatedArrival = async (
   redis: any,
   driverId: string,
@@ -49,6 +53,7 @@ const calcEstimatedArrival = async (
   } catch { return 5; }
 };
 
+// ── Helper: build accepted payload ────────────────────────────────────────────
 const buildAcceptedPayload = (
   rideId: string,
   passenger: any,
@@ -74,6 +79,7 @@ const buildAcceptedPayload = (
   ...extra,
 });
 
+// ── Helper: cancel rider's other pending split ride requests ──────────────────
 const cancelOtherPendingRequests = async (
   userId: string,
   acceptedRideId: string,
@@ -93,7 +99,10 @@ const cancelOtherPendingRequests = async (
       cancellationReason: 'accepted_another_ride',
     });
 
-    const otherRide = await Ride.findById(other.rideId).select('driverId').lean();
+    const otherRide = await Ride.findById(other.rideId)
+      .select('driverId')
+      .lean();
+
     if (otherRide?.driverId) {
       io.to(`driver:${otherRide.driverId}`).emit('ride:passenger-withdrew', {
         rideId:      other.rideId.toString(),
@@ -121,6 +130,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io    = getIO();
 
+    // ── Driver details from Redis ─────────────────────────────────────────────
     const driverDetails = await redis.hgetall(`driver:${driverId}:details`);
     if (!driverDetails || !Object.keys(driverDetails).length)
       return callback?.({ success: false, message: 'Driver data not found. Please go online first.' });
@@ -129,10 +139,21 @@ export const driverAcceptRideHandler = eventHandler<any>(
     const bookedSeats    = parseInt(driverDetails.bookedSeats) || 0;
     const availableSeats = totalSeats - bookedSeats;
 
+    // ── Driver's default vehicle ──────────────────────────────────────────────
+    const defaultVehicle = await Vehicle.findOne({
+      userId:    driverId,
+      isDefault: true,
+      isDeleted: false,
+    }).select('_id').lean();
+
+    const vehicleId = defaultVehicle?._id ?? null;
+
+    // ── Ride ──────────────────────────────────────────────────────────────────
     const ride = await Ride.findById(rideId);
     if (!ride)
       return callback?.({ success: false, message: 'Ride not found' });
 
+    // ── Race condition guard ──────────────────────────────────────────────────
     if (ride.status !== RIDE_STATUS.pending && ride.status !== RIDE_STATUS.accepted)
       return callback?.({ success: false, message: 'This ride has already been accepted or cancelled.' });
 
@@ -158,9 +179,10 @@ export const driverAcceptRideHandler = eventHandler<any>(
       const pickupLng        = passenger.pickup.coordinates[0];
       const estimatedArrival = await calcEstimatedArrival(redis, driverId, pickupLat, pickupLng);
 
-      // ✅ Bug 5 fix: NO bookedSeats/$inc here — happens in confirmPayment
+      // ✅ driverId + vehicleId save, bookedSeats NOT here (happens in confirmPayment)
       await Ride.findByIdAndUpdate(rideId, {
         driverId,
+        vehicleId, // ✅
         status: RIDE_STATUS.accepted,
       });
 
@@ -203,6 +225,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
         passengerCount: '1',
       });
       await redis.expire(`ride:active:${rideId}`, 7200);
+      await redis.set(`driver:${driverId}:activeRide`, rideId, 'EX', 7200);
 
       ensureRiderInRoom(passenger.userId.toString(), rideId);
 
@@ -213,6 +236,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       );
 
       io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
+      console.log(`✅ Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`);
 
       return callback?.({
         success: true,
@@ -252,10 +276,13 @@ export const driverAcceptRideHandler = eventHandler<any>(
       });
       const isLastPassenger = remainingCount === 0;
 
-      // ✅ Bug 5 fix: NO $inc bookedSeats — happens in confirmPayment
+      // ✅ driverId + vehicleId save (first accept only), bookedSeats NOT here
       const rideUpdate: Record<string, any> = {};
-      if (!ride.driverId)  rideUpdate.driverId = driverId;
-      if (isLastPassenger) rideUpdate.status   = RIDE_STATUS.accepted;
+      if (!ride.driverId) {
+        rideUpdate.driverId  = driverId;
+        rideUpdate.vehicleId = vehicleId; // ✅
+      }
+      if (isLastPassenger) rideUpdate.status = RIDE_STATUS.accepted;
 
       if (Object.keys(rideUpdate).length) {
         await Ride.findByIdAndUpdate(rideId, rideUpdate);
@@ -277,7 +304,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
 
-      // Recalculate fares for all passengers
+      // Recalculate split fares (Cases 30, 31)
       recalculateSplitFares(rideId, 'passenger_joined', io).catch(
         err => console.error('Recalculate error after accept:', err),
       );
@@ -290,6 +317,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
           passengerCount: '1',
         });
         await redis.expire(`ride:active:${rideId}`, 7200);
+        await redis.set(`driver:${driverId}:activeRide`, rideId, 'EX', 7200);
       }
 
       ensureRiderInRoom(passenger.userId.toString(), rideId);
@@ -304,6 +332,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       );
 
       io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
+      console.log(`✅ Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`);
 
       return callback?.({
         success: true,
