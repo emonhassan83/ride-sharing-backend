@@ -18,6 +18,7 @@ export interface TRide {
   driverId: Types.ObjectId;
   vehicleId?: Types.ObjectId;
   rideCreatedBy: Types.ObjectId;
+  notifiedDriverIds: Types.ObjectId[];
   type: TRideType;
 
   pickup: {

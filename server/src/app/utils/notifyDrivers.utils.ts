@@ -39,7 +39,8 @@ export async function notifyNearbyDrivers(
   io:          any,
   radiusKm     = 10,
 ): Promise<number> {
-  let notifiedCount = 0;
+  let notifiedCount  = 0;
+  const notifiedIds: string[] = [];
 
   type GeoResult = Array<[string, string]>;
   const onlineDrivers = (await redis.georadius(
@@ -53,15 +54,15 @@ export async function notifyNearbyDrivers(
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
     io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    notifiedIds.push(driverId);
     notifiedCount++;
   }
 
-  // Offline — FCM
+  // Offline — FCM + DB location
   const offlineDrivers = await User.find({
     role:      USER_ROLE.provider,
     isDeleted: false,
     status:    USER_STATUS.active,
-    fcmToken:  { $ne: null },
     location: {
       $nearSphere: {
         $geometry:    { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
@@ -76,6 +77,8 @@ export async function notifyNearbyDrivers(
 
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
+
+    notifiedIds.push(driverId);
 
     if (driver.fcmToken) {
       // try {
@@ -97,6 +100,14 @@ export async function notifyNearbyDrivers(
       //   console.warn(`FCM failed for driver ${driverId}:`, err);
       // }
     }
+  }
+
+  // ✅ Save notified driver IDs to ride
+  if (notifiedIds.length) {
+    const { Ride } = await import('../modules/ride/ride.model');
+    await Ride.findByIdAndUpdate(rideId, {
+      $addToSet: { notifiedDriverIds: { $each: notifiedIds } },
+    });
   }
 
   return notifiedCount;
@@ -189,6 +200,7 @@ export async function notifyNearbyDriversForSplitRide(
       //   notifiedCount++;
       // } catch { /* ignore */ }
     }
+    
   }
 
   return notifiedCount;

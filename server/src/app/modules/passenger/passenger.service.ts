@@ -8,7 +8,7 @@ import { RIDE_STATUS } from '../ride/ride.constant';
 const getDriverRideRequest = async (driverUserId: string) => {
   // Find rides where the user is a passenger and the ride is pending
   const pendingRides = await Ride.find({
-    driverId: driverUserId,
+    notifiedDriverIds: driverUserId,
     status: RIDE_STATUS.pending,
   })
     .select('_id')
