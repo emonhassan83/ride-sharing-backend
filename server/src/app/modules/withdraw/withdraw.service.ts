@@ -310,7 +310,7 @@ const updateWithdrawFromDB = async (
     await withdraw.save({ session })
  
     const user = await User.findById(withdraw.user).session(session)
-    if (user) await sendWithdrawNotify(status, withdraw, user, note)
+    if (user) await sendWithdrawNotify(status, withdraw, user)
  
     await session.commitTransaction()
     return withdraw
