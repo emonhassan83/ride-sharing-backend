@@ -152,6 +152,7 @@ export const rideRequestHandler = eventHandler<any>(
       ridePayload,
       redis,
       io,
+      passenger._id.toString()
     );
 
     console.log(`📡 Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);

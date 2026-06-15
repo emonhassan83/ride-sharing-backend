@@ -3,6 +3,7 @@ import axios from 'axios';
 import polyline from '@mapbox/polyline';
 import { getRedisClient } from '../config/redis.config';
 import { calculateDistance } from './location.utils';
+import { ILatLng, IRealDistanceAndETA, IRouteGeometry } from '../socket/interface/ride';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
@@ -11,9 +12,9 @@ const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
  * ফলাফল Redis-এ ৫ মিনিট ক্যাশ করে রাখে যাতে বারবার API কল না হয়
  */
 export async function getRealDistanceAndETA(
-  origin: { lat: number; lng: number },
-  destination: { lat: number; lng: number }
-): Promise<{ distanceKm: number; durationMinutes: number }> {
+  origin: ILatLng,
+  destination: ILatLng
+): Promise<IRealDistanceAndETA> {
   // API Key চেক
   if (!GOOGLE_MAPS_API_KEY) {
     console.warn(
@@ -103,11 +104,10 @@ export async function getRealDistanceAndETA(
   }
 }
 
-
 export async function getRouteGeometry(
-  origin: { lat: number; lng: number },
-  destination: { lat: number; lng: number }
-): Promise<{ type: 'LineString'; coordinates: number[][] }> {
+  origin: ILatLng,
+  destination: ILatLng
+): Promise<IRouteGeometry> {
   const url = 'https://maps.googleapis.com/maps/api/directions/json';
   const response = await axios.get(url, {
     params: {

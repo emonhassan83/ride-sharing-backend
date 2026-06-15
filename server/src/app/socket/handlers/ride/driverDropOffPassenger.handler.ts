@@ -10,8 +10,7 @@ import eventHandler from '../../utils/eventHandler';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import {
   calculateTotalDistance,
-  calculateDuration,
-  calculateFareFromDistance,
+  calculateDuration
 } from '../../../utils/location.utils';
 
 export const driverDropOffPassengerHandler = eventHandler<any>(
@@ -57,7 +56,7 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
 
       // ✅ Bug 3 fix: waitingCharge from passenger model, not from client data
       const waitingCharge = passenger.waitingCharge || 0;
-      const baseFare      = passenger.estimatedFare || calculateFareFromDistance(distanceKm);
+      const baseFare      = passenger.estimatedFare || 0;
       const totalFare     = baseFare + waitingCharge;
 
       passenger.totalFare    = totalFare;

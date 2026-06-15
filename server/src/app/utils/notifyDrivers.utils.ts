@@ -1,6 +1,10 @@
 // utils/notifyDrivers.utils.ts
 import { User } from '../modules/user/user.model';
 import { USER_ROLE, USER_STATUS } from '../modules/user/user.constant';
+import { ILatLng } from '../socket/interface/ride';
+import { Ride } from '../modules/ride/ride.model';
+import { modeType } from '../modules/notification/notification.interface';
+import { sendNotification } from './sentPushNotification';
 
 const CORRIDOR_RADIUS_METERS = 10000;
 
@@ -30,13 +34,59 @@ function pointToSegmentMeters(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ── Get driver current location: Redis current → Redis hash → DB ──────────────
+async function getDriverCurrentLocation(
+  redis:    any,
+  driverId: string,
+  dbDriver?: any,
+): Promise<{ lat: number; lng: number } | null> {
+
+  // 1. Redis current key (live location, 5min TTL)
+  try {
+    const raw = await redis.get(`driver:${driverId}:current`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.lat && parsed?.lng) {
+        return { lat: parsed.lat, lng: parsed.lng };
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 2. Redis hash lastLat/lastLng (longer lived, updated on each location update)
+  try {
+    const hash = await redis.hgetall(`driver:${driverId}:details`);
+    if (hash?.lastLat && hash?.lastLng) {
+      const lat = parseFloat(hash.lastLat);
+      const lng = parseFloat(hash.lastLng);
+      if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        return { lat, lng };
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 3. DB location (permanent last known — saved on go offline or cron sync)
+  if (dbDriver) {
+    const coords = dbDriver?.location?.coordinates;
+    if (coords && Array.isArray(coords) && coords.length === 2) {
+      const lng = coords[0];
+      const lat = coords[1];
+      if (lat !== 0 || lng !== 0) {
+        return { lat, lng };
+      }
+    }
+  }
+
+  return null;
+}
+
 // ── Notify nearby drivers (private ride) ─────────────────────────────────────
 export async function notifyNearbyDrivers(
   rideId:      string,
-  pickup:      { lat: number; lng: number },
+  pickup:      ILatLng,
   ridePayload: any,
   redis:       any,
   io:          any,
+  passengerId: string,
   radiusKm     = 10,
 ): Promise<number> {
   let notifiedCount  = 0;
@@ -49,16 +99,29 @@ export async function notifyNearbyDrivers(
 
   const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
 
-  // Online — socket
+  // ── Online drivers — socket + FCM ─────────────────────────────────────────
   for (const [driverId] of onlineDrivers) {
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
+
     io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
     notifiedIds.push(driverId);
     notifiedCount++;
+
+    // FCM for online drivers (background/killed app state)
+    const driver = await User.findById(driverId).select('_id fcmToken').lean();
+    if (driver?.fcmToken) {
+      sendNotification([(driver as any).fcmToken], {
+        receiver:    driver._id,
+        message:     'New Ride Request!',
+        description: `New ${ridePayload.rideType} ride from ${ridePayload.pickup?.address || 'nearby'}`,
+        reference:   passengerId,
+        modelType:   modeType.Passenger,
+      }).catch((err: any) => console.warn(`FCM failed for online driver ${driverId}:`, err));
+    }
   }
 
-  // Offline — FCM + DB location
+  // ── Offline drivers — DB location + FCM ──────────────────────────────────
   const offlineDrivers = await User.find({
     role:      USER_ROLE.provider,
     isDeleted: false,
@@ -69,7 +132,7 @@ export async function notifyNearbyDrivers(
         $maxDistance: radiusKm * 1000,
       },
     },
-  }).select('_id fcmToken').lean();
+  }).select('_id fcmToken location').lean();
 
   for (const driver of offlineDrivers) {
     const driverId = driver._id.toString();
@@ -80,31 +143,25 @@ export async function notifyNearbyDrivers(
 
     notifiedIds.push(driverId);
 
-    if (driver.fcmToken) {
-      // try {
-      //   await sendPushNotification({
-      //     fcmToken: driver.fcmToken,
-      //     title:    'New Ride Request!',
-      //     body:     `${ridePayload.rideType} ride from ${ridePayload.pickup?.address || 'nearby'}`,
-      //     data: {
-      //       type:          'RIDE_REQUEST',
-      //       rideId,
-      //       passengerId:   ridePayload.passengerId,
-      //       estimatedFare: String(ridePayload.estimatedFare),
-      //       departureDate: ridePayload.departureDate,
-      //       departureTime: ridePayload.departureTime,
-      //     },
-      //   });
-      //   notifiedCount++;
-      // } catch (err) {
-      //   console.warn(`FCM failed for driver ${driverId}:`, err);
-      // }
+    const fcmToken = (driver as any).fcmToken;
+    if (fcmToken) {
+      try {
+        await sendNotification([fcmToken], {
+          receiver:    driver._id,
+          message:     'New Ride Request!',
+          description: `New ${ridePayload.rideType} ride from ${ridePayload.pickup?.address || 'nearby'}`,
+          reference:   passengerId,
+          modelType:   modeType.Passenger,
+        });
+        notifiedCount++;
+      } catch (err) {
+        console.warn(`FCM failed for offline driver ${driverId}:`, err);
+      }
     }
   }
 
-  // ✅ Save notified driver IDs to ride
+  // Save notified driver IDs to ride
   if (notifiedIds.length) {
-    const { Ride } = await import('../modules/ride/ride.model');
     await Ride.findByIdAndUpdate(rideId, {
       $addToSet: { notifiedDriverIds: { $each: notifiedIds } },
     });
@@ -121,8 +178,10 @@ export async function notifyNearbyDriversForSplitRide(
   ridePayload:   any,
   redis:         any,
   io:            any,
+  passengerId?:  string,
 ): Promise<number> {
-  let notifiedCount = 0;
+  let notifiedCount  = 0;
+  const notifiedIds: string[] = [];
 
   const isNearRoute = (lat: number, lng: number): boolean => {
     if (!routeGeometry?.coordinates?.length) return true;
@@ -142,28 +201,41 @@ export async function notifyNearbyDriversForSplitRide(
 
   const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
 
+  // ── Online drivers — route check + socket + FCM ───────────────────────────
   for (const [driverId] of onlineDrivers) {
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    try {
-      const raw = await redis.get(`driver:${driverId}:current`);
-      if (raw) {
-        const { lat, lng } = JSON.parse(raw);
-        if (!isNearRoute(lat, lng)) continue;
-      }
-    } catch { /* notify anyway */ }
+    // Fetch DB driver for location fallback
+    const dbDriver = await User.findById(driverId)
+      .select('_id fcmToken location')
+      .lean();
+
+    // Route corridor check: Redis → DB fallback
+    const location = await getDriverCurrentLocation(redis, driverId, dbDriver);
+    if (location && !isNearRoute(location.lat, location.lng)) continue;
 
     io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    notifiedIds.push(driverId);
     notifiedCount++;
+
+    // FCM for online drivers too
+    if (dbDriver?.fcmToken) {
+      sendNotification([(dbDriver as any).fcmToken], {
+        receiver:    dbDriver._id,
+        message:     'New Split Ride Request!',
+        description: `Split ride from ${ridePayload.pickup?.address || 'nearby'}`,
+        reference:   passengerId || ridePayload.passengerId,
+        modelType:   modeType.Passenger,
+      }).catch((err: any) => console.warn(`FCM failed for online split driver ${driverId}:`, err));
+    }
   }
 
-  // Offline — FCM
+  // ── Offline drivers — route check + FCM ──────────────────────────────────
   const offlineDrivers = await User.find({
     role:      USER_ROLE.provider,
     isDeleted: false,
     status:    USER_STATUS.active,
-    fcmToken:  { $ne: null },
     location: {
       $nearSphere: {
         $geometry:    { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
@@ -179,28 +251,33 @@ export async function notifyNearbyDriversForSplitRide(
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    const coords = (driver as any).location?.coordinates;
-    if (coords && !isNearRoute(coords[1], coords[0])) continue;
+    // Route corridor check using DB location
+    const location = await getDriverCurrentLocation(redis, driverId, driver);
+    if (location && !isNearRoute(location.lat, location.lng)) continue;
 
-    if ((driver as any).fcmToken) {
-      // try {
-      //   await sendPushNotification({
-      //     fcmToken: (driver as any).fcmToken,
-      //     title:    'New Split Ride Request!',
-      //     body:     `Split ride from ${ridePayload.pickup?.address || 'nearby'}`,
-      //     data: {
-      //       type:          'SPLIT_RIDE_REQUEST',
-      //       rideId,
-      //       passengerId:   ridePayload.passengerId,
-      //       estimatedFare: String(ridePayload.estimatedFare),
-      //       departureDate: ridePayload.departureDate,
-      //       departureTime: ridePayload.departureTime,
-      //     },
-      //   });
-      //   notifiedCount++;
-      // } catch { /* ignore */ }
+    notifiedIds.push(driverId);
+
+    const fcmToken = (driver as any).fcmToken;
+    if (fcmToken) {
+      try {
+        await sendNotification([fcmToken], {
+          receiver:    driver._id,
+          message:     'New Split Ride Request!',
+          description: `Split ride from ${ridePayload.pickup?.address || 'nearby'}`,
+          reference:   passengerId || ridePayload.passengerId,
+          modelType:   modeType.Passenger,
+        });
+        notifiedCount++;
+      } catch (err) {
+        console.warn(`FCM failed for offline split driver ${driverId}:`, err);
+      }
     }
-    
+  }
+
+  if (notifiedIds.length) {
+    await Ride.findByIdAndUpdate(rideId, {
+      $addToSet: { notifiedDriverIds: { $each: notifiedIds } },
+    });
   }
 
   return notifiedCount;
