@@ -51,6 +51,12 @@ export const driverRejectRideHandler = eventHandler<any>(
         rideId,
         status: PASSENGER_STATUS.pending,
       });
+      if (!passenger) {
+        return callback?.({
+          success: false,
+          message: 'Passenger not found or already processed',
+        });
+      }
 
       if (passenger) {
         io.to(`user:${passenger.userId}`).emit('ride:driver-rejected', {
@@ -71,8 +77,8 @@ export const driverRejectRideHandler = eventHandler<any>(
         cancelledAt: new Date(),
       });
 
-      passenger!.status = PASSENGER_STATUS.cancelled; // ✅ এটা যোগ করুন
-      await passenger!.save();
+      passenger.status = PASSENGER_STATUS.rejected;
+      await passenger.save();
 
       await redisCleanup();
 

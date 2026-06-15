@@ -401,7 +401,7 @@ export const transferRideOwnership = async (
   const remaining = await Passenger.find({
     rideId,
     userId: { $ne: cancelledUserId },
-    status: { $nin: ['cancelled', 'rejected'] },
+    status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
   })
     .sort({ createdAt: 1 })
     .lean();
