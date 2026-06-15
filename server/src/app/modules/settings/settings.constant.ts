@@ -6,6 +6,7 @@ export const GENERAL_KEYS = [
   "cancellationFreeWindowHours",
   "cancellationPercentage50Hours",
   "waitingReminderIntervals",
+  "waitingTimeMinutes",
 
   // ride charge keys
   'dayFareInitialCharge',

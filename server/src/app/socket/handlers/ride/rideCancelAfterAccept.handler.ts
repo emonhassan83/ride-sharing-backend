@@ -6,7 +6,10 @@ import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant'
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
-import { TSocket } from '../../interface/socket.interface';
+import { User } from '../../../modules/user/user.model';
+import { modeType } from '../../../modules/notification/notification.interface';
+import { sendNotification } from '../../../utils/sentPushNotification';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import {
@@ -16,9 +19,37 @@ import {
   transferRideOwnership,
 } from '../../../utils/splitFare.utils';
 
+// ── Helper: notify driver (socket + FCM) ─────────────────────────────────────
+const notifyDriver = async (
+  io:        any,
+  driverId:  string,
+  rideId:    string,
+  message:   string,
+  extra?:    Record<string, any>,
+) => {
+  // Socket
+  io.to(`driver:${driverId}`).emit('ride:cancelled-by-rider', {
+    rideId,
+    message,
+    ...extra,
+  });
+
+  // FCM push
+  const driver = await User.findById(driverId).select('fcmToken').lean();
+  if (driver?.fcmToken) {
+    sendNotification([driver.fcmToken], {
+      receiver:    driverId,
+      message:     'Ride Cancelled by Rider',
+      description: message,
+      reference:   rideId,
+      modelType:   modeType.Ride,
+    }).catch(() => {});
+  }
+};
+
 export const rideCancelAfterAcceptHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    const { rideId, passengerId, reason = '' } = data; // ✅ passengerId added
+    const { rideId, passengerId, reason = '' } = data;
     const userId = socket.auth?._id?.toString();
 
     if (!rideId || !userId)
@@ -35,8 +66,6 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       return callback?.({ success: false, message: 'Cannot cancel at this stage' });
 
     // ── Find passenger ────────────────────────────────────────────────────────
-    // Private: userId দিয়ে খোঁজো
-    // Split: passengerId দিয়ে খোঁজো (same user একাধিক split ride এ থাকতে পারে)
     let passenger: any;
 
     if (ride.type === RIDE_TYPE.split) {
@@ -46,7 +75,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       passenger = await Passenger.findOne({
         _id:    passengerId,
         rideId,
-        userId, // ✅ security check — must be the owner
+        userId,
         status: { $in: [PASSENGER_STATUS.confirmed, PASSENGER_STATUS.driver_arrived, PASSENGER_STATUS.pending] },
       });
     } else {
@@ -60,10 +89,10 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
     if (!passenger)
       return callback?.({ success: false, message: 'No active booking found' });
 
-    const booking      = await Booking.findOne({ passengerId: passenger._id }).lean();
-    const paidAmount   = booking?.amountPaid ?? passenger.estimatedFare ?? 0;
+    const booking    = await Booking.findOne({ passengerId: passenger._id }).lean();
+    const paidAmount = booking?.amountPaid ?? passenger.estimatedFare ?? 0;
 
-    // ── Cancellation refund (Cases 20, 21) ────────────────────────────────────
+    // ── Cancellation refund ───────────────────────────────────────────────────
     const departureDateTime = new Date(`${ride.departureDate}T${ride.departureTime}:00`);
     const { refundAmount, platformAmount, refundReason } = await calculateCancellationRefund(
       paidAmount,
@@ -71,7 +100,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       departureDateTime,
     );
 
-    // ── Update passenger ──────────────────────────────────────────────────────
+    // ── Update passenger & booking ────────────────────────────────────────────
     await Passenger.findByIdAndUpdate(passenger._id, {
       status:             PASSENGER_STATUS.cancelled,
       cancellationReason: reason || 'Rider cancelled',
@@ -84,13 +113,13 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       { bookingStatus: BOOKING_STATUS.cancelled, refundAmount },
     );
 
-    // ── Refund to wallet (Case 26) ────────────────────────────────────────────
+    // ── Refund to wallet ──────────────────────────────────────────────────────
     if (refundAmount > 0) {
       await refundToWallet(userId, refundAmount, `cancel_${refundReason}`, io);
     }
 
     if (platformAmount > 0) {
-      console.log(`💼 Platform revenue £${platformAmount} | ride ${rideId} | reason: ${refundReason}`);
+      console.log(`💼 Platform revenue £${platformAmount} | ride ${rideId}`);
     }
 
     // ── Decrement seats ───────────────────────────────────────────────────────
@@ -120,11 +149,15 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         redis.del(`ride:request:${rideId}`),
       ]);
 
+      // ✅ Notify driver — only ride:cancelled-by-rider
       if (ride.driverId) {
-        io.to(`driver:${ride.driverId}`).emit('ride:cancelled-by-rider', {
-          rideId, reason, refundAmount,
-          message: 'Rider cancelled the ride.',
-        });
+        await notifyDriver(
+          io,
+          ride.driverId.toString(),
+          rideId,
+          reason || 'Rider cancelled the ride.',
+          { refundAmount },
+        );
       }
 
       return callback?.({
@@ -140,7 +173,6 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
     if (ride.rideCreatedBy?.toString() === userId) {
       const transferred = await transferRideOwnership(rideId, userId, io);
       if (!transferred) {
-        // No other passengers — cancel ride
         await Ride.findByIdAndUpdate(rideId, {
           status:             RIDE_STATUS.cancelled,
           cancellationReason: 'Creator cancelled, no passengers remaining',
@@ -151,11 +183,17 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
           redis.del(`ride:active:${rideId}`),
           redis.zrem('ride:matching:queue', rideId),
         ]);
+
+        // ✅ Notify driver — only ride:cancelled-by-rider
         if (ride.driverId) {
-          io.to(`driver:${ride.driverId}`).emit('ride:cancelled-by-rider', {
-            rideId, message: 'Ride creator cancelled. No passengers remaining.',
-          });
+          await notifyDriver(
+            io,
+            ride.driverId.toString(),
+            rideId,
+            'Ride creator cancelled. No passengers remaining.',
+          );
         }
+
         return callback?.({
           success: true,
           message: 'Ride cancelled — no other passengers.',
@@ -164,14 +202,13 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       }
     }
 
-    // Check remaining active passengers
+    // Check remaining passengers
     const remainingCount = await Passenger.countDocuments({
       rideId,
-      status: { $nin: ['cancelled', 'rejected'] },
+      status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
     });
 
     if (remainingCount === 0) {
-      // Last passenger cancelled → cancel ride
       await Ride.findByIdAndUpdate(rideId, {
         status:             RIDE_STATUS.cancelled,
         cancellationReason: 'Last passenger cancelled',
@@ -182,11 +219,17 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         redis.del(`ride:active:${rideId}`),
         redis.zrem('ride:matching:queue', rideId),
       ]);
+
+      // ✅ Notify driver — only ride:cancelled-by-rider
       if (ride.driverId) {
-        io.to(`driver:${ride.driverId}`).emit('ride:cancelled', {
-          rideId, message: 'All passengers cancelled. Ride is now cancelled.',
-        });
+        await notifyDriver(
+          io,
+          ride.driverId.toString(),
+          rideId,
+          'All passengers cancelled. Ride is now cancelled.',
+        );
       }
+
       return callback?.({
         success: true,
         message: 'Ride cancelled — you were the last passenger.',
@@ -194,25 +237,29 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       });
     }
 
-    // Recalculate fares for remaining (Cases 6, 29, 30)
+    // Remaining passengers exist — recalculate + notify driver only
     await recalculateSplitFares(rideId, 'passenger_cancelled', io);
 
-    // Notify driver
+    // ✅ Notify driver — only ride:cancelled-by-rider (not passenger-cancelled)
     if (ride.driverId) {
-      io.to(`driver:${ride.driverId}`).emit('ride:passenger-cancelled', {
+      await notifyDriver(
+        io,
+        ride.driverId.toString(),
         rideId,
-        passengerId:         passenger._id,
-        remainingPassengers: remainingCount,
-        message:             'A passenger cancelled their booking.',
-      });
+        `A passenger cancelled. ${remainingCount} passenger(s) remaining.`,
+        {
+          passengerId:         passenger._id,
+          remainingPassengers: remainingCount,
+        },
+      );
     }
 
-    // Notify co-passengers
+    // ✅ Notify co-passengers — ride:co-passenger-cancelled (riders listen to this)
     const others = await Passenger.find({
       rideId,
       _id:    { $ne: passenger._id },
-      status: { $nin: ['cancelled', 'rejected'] },
-    }).select('userId');
+      status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
+    }).select('userId fcmToken');
 
     for (const p of others) {
       io.to(`user:${p.userId}`).emit('ride:co-passenger-cancelled', {
@@ -220,6 +267,18 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         cancelledPassengerId: passenger._id,
         message:              'Another passenger cancelled their booking.',
       });
+
+      // FCM to co-passengers
+      const coUser = await User.findById(p.userId).select('fcmToken').lean();
+      if (coUser?.fcmToken) {
+        sendNotification([coUser.fcmToken], {
+          receiver:    p.userId,
+          message:     'Co-passenger Cancelled',
+          description: 'Another passenger has cancelled. Your fare may be updated.',
+          reference:   rideId,
+          modelType:   modeType.Ride,
+        }).catch(() => {});
+      }
     }
 
     return callback?.({

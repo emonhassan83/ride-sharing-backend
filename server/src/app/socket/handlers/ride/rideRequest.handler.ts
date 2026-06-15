@@ -10,7 +10,7 @@ import { calculateFareBreakdown } from '../../../utils/fareCalculator';
 import { getFareType } from '../../../utils/time.utils';
 import { roundObjectNumbers, roundTo2 } from '../../../utils/number.utils';
 import { getRealDistanceAndETA, getRouteGeometry } from '../../../utils/maps.utils';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { notifyNearbyDrivers } from '../../../utils/notifyDrivers.utils';
@@ -152,6 +152,7 @@ export const rideRequestHandler = eventHandler<any>(
       ridePayload,
       redis,
       io,
+      passenger._id.toString()
     );
 
     console.log(`📡 Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);

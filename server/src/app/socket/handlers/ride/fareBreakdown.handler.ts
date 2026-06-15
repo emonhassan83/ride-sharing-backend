@@ -3,7 +3,7 @@ import { calculateDistance } from '../../../utils/location.utils';
 import { calculateFareBreakdown } from '../../../utils/fareCalculator';
 import { roundObjectNumbers, roundTo2 } from '../../../utils/number.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 
 export const fareBreakdownHandler = eventHandler<any>(

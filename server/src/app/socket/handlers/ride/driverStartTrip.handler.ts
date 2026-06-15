@@ -6,7 +6,10 @@ import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
-import { TSocket } from '../../interface/socket.interface';
+import { User } from '../../../modules/user/user.model';
+import { modeType } from '../../../modules/notification/notification.interface';
+import { sendNotification } from '../../../utils/sentPushNotification';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 
@@ -25,30 +28,14 @@ export const driverStartTripHandler = eventHandler<any>(
     if (ride.driverId?.toString() !== driverId)
       return callback?.({ success: false, message: 'You are not assigned to this ride' });
 
-    // ── Status guard: only accepted → started ─────────────────────────────────
-    if (ride.status !== RIDE_STATUS.accepted) {
-      return callback?.({
-        success: false,
-        message: `Ride cannot be started. Current status: ${ride.status}`,
-      });
-    }
+    if (ride.status !== RIDE_STATUS.accepted)
+      return callback?.({ success: false, message: `Ride cannot be started. Current status: ${ride.status}` });
 
     const io    = getIO();
     const redis = getRedisClient();
 
-    // ── Driver joins ride room ────────────────────────────────────────────────
     socket.join(`ride:${rideId}`);
-    console.log(`✅ Driver ${driverId} joined room: ride:${rideId}`);
 
-    // ── Room debug ────────────────────────────────────────────────────────────
-    const roomSockets = await io.in(`ride:${rideId}`).fetchSockets();
-    console.log(`🛋️ Room ride:${rideId} has ${roomSockets.length} socket(s): [${roomSockets.map(s => s.id).join(', ')}]`);
-
-    if (roomSockets.length === 0) {
-      console.warn(`⚠️ No sockets in room ride:${rideId} — riders may not receive events`);
-    }
-
-    // ── Find confirmed passengers ─────────────────────────────────────────────
     const passengers = await Passenger.find({
       rideId,
       status: PASSENGER_STATUS.confirmed,
@@ -57,14 +44,11 @@ export const driverStartTripHandler = eventHandler<any>(
     if (!passengers.length)
       return callback?.({ success: false, message: 'No confirmed passengers found' });
 
-    console.log(`👥 Found ${passengers.length} confirmed passenger(s) for ride ${rideId}`);
-
-    // ── Update ride: accepted → started ──────────────────────────────────────
+    // ── Update ride → started ─────────────────────────────────────────────────
     await Ride.findByIdAndUpdate(rideId, {
       status:        RIDE_STATUS.started,
-      tripStartedAt: new Date()
+      tripStartedAt: new Date(),
     });
-    console.log(`✅ Ride ${rideId} status → started`);
 
     // ── Update passengers + bookings ──────────────────────────────────────────
     for (const passenger of passengers) {
@@ -76,25 +60,7 @@ export const driverStartTripHandler = eventHandler<any>(
         { bookingStatus: BOOKING_STATUS.running },
       );
 
-      console.log(`✅ Passenger ${passenger._id} → in_progress`);
-    }
-
-    // ── Redis ─────────────────────────────────────────────────────────────────
-    await redis.rpush(
-      `ride:${rideId}:live`,
-      JSON.stringify({
-        event:          'TRIP_STARTED',
-        driverId,
-        passengerCount: passengers.length,
-        passengerIds:   passengers.map(p => p._id),
-        timestamp:      Date.now(),
-      }),
-    );
-    await redis.set(`driver:${driverId}:activeRide`, rideId, 'EX', 7200);
-
-    // ── Emit to ride room ─────────────────────────────────────────────────────
-    // ride:trip-started — per passenger (rider sees their own passengerId)
-    for (const passenger of passengers) {
+      // Socket
       io.to(`ride:${rideId}`).emit('ride:trip-started', {
         rideId,
         passengerId: passenger._id,
@@ -102,8 +68,31 @@ export const driverStartTripHandler = eventHandler<any>(
         startTime:   new Date(),
         message:     'Your ride has started. Enjoy the trip!',
       });
-      console.log(`📢 ride:trip-started emitted for passenger ${passenger._id}`);
+
+      // ✅ FCM push — trip started
+      const riderUser = await User.findById(passenger.userId).select('fcmToken').lean();
+      if (riderUser?.fcmToken) {
+        sendNotification([riderUser.fcmToken], {
+          receiver:    passenger.userId,
+          message:     'Trip Started!',
+          description: 'Your ride has started. Enjoy the trip!',
+          reference:   rideId,
+          modelType:   modeType.Ride,
+        }).catch(() => {});
+      }
+
+      console.log(`✅ Passenger ${passenger._id} → in_progress | FCM sent`);
     }
+
+    // ── Redis ─────────────────────────────────────────────────────────────────
+    await redis.rpush(`ride:${rideId}:live`, JSON.stringify({
+      event:          'TRIP_STARTED',
+      driverId,
+      passengerCount: passengers.length,
+      passengerIds:   passengers.map(p => p._id),
+      timestamp:      Date.now(),
+    }));
+    await redis.set(`driver:${driverId}:activeRide`, rideId, 'EX', 7200);
 
     console.log(`✅ Trip started | rideId: ${rideId} | passengers: ${passengers.length}`);
 

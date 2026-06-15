@@ -1,5 +1,5 @@
 // src/app/socket/handlers/chat/sendMessage.handler.ts
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { Chat } from '../../../modules/chat/chat.models';
 import { chatService } from '../../../modules/chat/chat.service';

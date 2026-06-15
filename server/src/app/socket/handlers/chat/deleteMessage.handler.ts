@@ -1,5 +1,5 @@
 // src/app/socket/handlers/chat/deleteMessage.handler.ts
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { Message } from '../../../modules/messages/messages.model';
 import { callbackFn } from '../../../utils/callbackFn';

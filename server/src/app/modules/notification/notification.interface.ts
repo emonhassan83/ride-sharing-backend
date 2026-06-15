@@ -5,6 +5,7 @@ export enum modeType {
   User = 'User',
   Provider = 'Provider',
   Ride = 'Ride',
+  Passenger = 'Passenger',
   Payment = 'Payment',
   Withdraw = 'Withdraw',
   Refund = 'Refund',

@@ -1,6 +1,6 @@
 import { chatService } from "../../../modules/chat/chat.service"
 import { callbackFn } from "../../../utils/callbackFn"
-import { TSocket } from "../../interface/socket.interface"
+import { TSocket } from "../../interface/index.interface"
 import eventHandler from "../../utils/eventHandler"
 
 export const myChatListHandler = eventHandler(

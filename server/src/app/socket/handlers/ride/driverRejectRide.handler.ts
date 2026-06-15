@@ -8,7 +8,7 @@ import {
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { recalculateSplitFares } from '../../../utils/splitFare.utils';
@@ -51,6 +51,12 @@ export const driverRejectRideHandler = eventHandler<any>(
         rideId,
         status: PASSENGER_STATUS.pending,
       });
+      if (!passenger) {
+        return callback?.({
+          success: false,
+          message: 'Passenger not found or already processed',
+        });
+      }
 
       if (passenger) {
         io.to(`user:${passenger.userId}`).emit('ride:driver-rejected', {
@@ -71,8 +77,8 @@ export const driverRejectRideHandler = eventHandler<any>(
         cancelledAt: new Date(),
       });
 
-      passenger!.status = PASSENGER_STATUS.cancelled; // ✅ এটা যোগ করুন
-      await passenger!.save();
+      passenger.status = PASSENGER_STATUS.rejected;
+      await passenger.save();
 
       await redisCleanup();
 

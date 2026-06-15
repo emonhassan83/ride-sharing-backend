@@ -3,14 +3,14 @@ import { getRedisClient } from '../../../config/redis.config';
 import { User } from '../../../modules/user/user.model';
 import { Vehicle } from '../../../modules/vehicle/vehicle.model';
 import { saveDriverLocation } from '../../../utils/geo.utils';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 
 export const driverGoOnlineHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const driverId = socket.auth?._id?.toString();
-    const { lat, lng, vehicleId } = data; // ✅ Bug 10 fix: only these 3
+    const { lat, lng, vehicleId } = data;
 
     if (!driverId || !lat || !lng)
       return callback?.({ success: false, message: 'Location required' });
