@@ -1,12 +1,24 @@
 // utils/waitingCharge.utils.ts
-import Stripe from 'stripe';
 import StripeService from '../config/stripe.config';
 import { User } from '../modules/user/user.model';
 import { Setting } from '../modules/settings/settings.model';
 
-export const getWaitingRatePerMinute = async (): Promise<number> => {
-  const setting = await Setting.findOne({ key: 'waitingChargePerMinute' }).lean();
-  return Number(setting?.value ?? 0.50);
+// ✅ Hourly rate থেকে per-minute rate বের করো
+export const getWaitingRatePerMinute = async (isNight = false): Promise<number> => {
+  const key = isNight ? 'nightFareWaitingCharge' : 'dayFareWaitingCharge';
+  const setting = await Setting.findOne({ key }).lean();
+
+  // Default: day=17, night=19 (from Cyprus fare sheet)
+  const hourlyRate = Number(setting?.value ?? (isNight ? 19.0 : 17.0));
+
+  // Convert hourly → per minute, rounded to 4 decimal places
+  return Math.round((hourlyRate / 60) * 10000) / 10000;
+};
+
+// ✅ Departure time থেকে day/night detect করো
+export const isNightFare = (departureTime: string): boolean => {
+  const [hour] = departureTime.split(':').map(Number);
+  return hour >= 20 || hour < 6;
 };
 
 export const calculateWaitingCharge = (
@@ -40,7 +52,7 @@ export const deductWaitingCharge = async (
 
   // ── Partial wallet + card ─────────────────────────────────────────────────
   const walletPortion = walletBalance;
-  const cardPortion   = amount - walletPortion;
+  const cardPortion = amount - walletPortion;
 
   if (walletPortion > 0) {
     await User.findByIdAndUpdate(userId, { $inc: { wallet: -walletPortion } });
@@ -48,17 +60,17 @@ export const deductWaitingCharge = async (
 
   if (user.customerId && cardPortion > 0) {
     try {
-      const stripe   = StripeService.getStripe();
-      const customer = await stripe.customers.retrieve(user.customerId) as any;
+      const stripe = StripeService.getStripe();
+      const customer = (await stripe.customers.retrieve(user.customerId)) as any;
       const defaultPM = customer.invoice_settings?.default_payment_method;
 
       if (defaultPM) {
         await stripe.paymentIntents.create({
-          amount:   Math.round(cardPortion * 100),
+          amount: Math.round(cardPortion * 100),
           currency: 'gbp',
           customer: user.customerId,
           payment_method: defaultPM,
-          confirm:  true,
+          confirm: true,
           automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
           metadata: { rideId, type: 'waiting_charge' },
         });

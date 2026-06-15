@@ -7,30 +7,30 @@ import { TSocket } from '../../interface/socket.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
-import { getWaitingRatePerMinute } from '../../../utils/waitingCharge.utils';
+import {
+  getWaitingRatePerMinute,
+  isNightFare,
+} from '../../../utils/waitingCharge.utils';
 import { haversineMeters } from '../../../utils/geo.utils';
 
-const ARRIVAL_THRESHOLD_METERS = 100; // 100m tolerance
+const ARRIVAL_THRESHOLD_METERS = 100;
 
-// ── Helper: check driver is near pickup ───────────────────────────────────────
 const checkDriverNearPickup = async (
   redis: any,
   driverId: string,
   pickupLat: number,
   pickupLng: number,
   manualLat?: number,
-  manualLng?: number
+  manualLng?: number,
 ): Promise<{ isNear: boolean; distanceMeters: number }> => {
   let driverLat: number | null = null;
   let driverLng: number | null = null;
 
-  // 1. Manual lat/lng from client (most accurate)
   if (manualLat != null && manualLng != null) {
     driverLat = manualLat;
     driverLng = manualLng;
   }
 
-  // 2. Redis current location
   if (driverLat === null) {
     try {
       const raw = await redis.get(`driver:${driverId}:current`);
@@ -39,12 +39,9 @@ const checkDriverNearPickup = async (
         driverLat = current.lat;
         driverLng = current.lng;
       }
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }
 
-  // 3. Redis hash lastLat/lastLng
   if (driverLat === null) {
     try {
       const hash = await redis.hgetall(`driver:${driverId}:details`);
@@ -52,21 +49,14 @@ const checkDriverNearPickup = async (
         driverLat = parseFloat(hash.lastLat);
         driverLng = parseFloat(hash.lastLng);
       }
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }
 
   if (driverLat === null || driverLng === null) {
     return { isNear: false, distanceMeters: -1 };
   }
 
-  const distanceMeters = haversineMeters(
-    driverLat,
-    driverLng,
-    pickupLat,
-    pickupLng
-  );
+  const distanceMeters = haversineMeters(driverLat, driverLng, pickupLat, pickupLng);
   return {
     isNear: distanceMeters <= ARRIVAL_THRESHOLD_METERS,
     distanceMeters: Math.round(distanceMeters),
@@ -84,12 +74,10 @@ export const driverArrivedHandler = eventHandler<any>(
       return callback?.({ success: false, message: 'Missing rideId' });
 
     const ride = await Ride.findById(rideId);
-    if (!ride) return callback?.({ success: false, message: 'Ride not found' });
+    if (!ride)
+      return callback?.({ success: false, message: 'Ride not found' });
     if (ride.driverId?.toString() !== driverId)
-      return callback?.({
-        success: false,
-        message: 'You are not assigned to this ride',
-      });
+      return callback?.({ success: false, message: 'You are not assigned to this ride' });
 
     const validStatuses = [RIDE_STATUS.accepted, RIDE_STATUS.started];
     if (!validStatuses.includes(ride.status as any))
@@ -100,9 +88,11 @@ export const driverArrivedHandler = eventHandler<any>(
 
     const io = getIO();
     const redis = getRedisClient();
-    const waitingRate = await getWaitingRatePerMinute();
 
-    // ── Helper: notify + start waiting charge timer ───────────────────────────
+    // ✅ Ride departure time থেকে day/night detect করে correct hourly rate নাও
+    const night = isNightFare(ride.departureTime ?? '08:00');
+    const waitingRatePerMinute = await getWaitingRatePerMinute(night);
+
     const notifyPassenger = async (passenger: any, isLastArrival = false) => {
       const arrivedAt = new Date();
 
@@ -121,7 +111,7 @@ export const driverArrivedHandler = eventHandler<any>(
           lat,
           lng,
           timestamp: Date.now(),
-        })
+        }),
       );
 
       io.to(`user:${passenger.userId}`).emit('ride:driver-arrived', {
@@ -133,36 +123,30 @@ export const driverArrivedHandler = eventHandler<any>(
         isLastArrival,
       });
 
-      // Waiting charge after 2 min grace
-      setTimeout(
-        async () => {
-          const p = await Passenger.findById(passenger._id);
-          if (!p || p.pickedUpAt) return;
+      // ✅ Waiting charge after 2 min grace — use hourly-derived per-minute rate
+      setTimeout(async () => {
+        const p = await Passenger.findById(passenger._id);
+        if (!p || p.pickedUpAt) return;
 
-          const waitingStartedAt = new Date();
-          await Passenger.findByIdAndUpdate(passenger._id, {
-            waitingStartedAt,
-          });
+        const waitingStartedAt = new Date();
+        await Passenger.findByIdAndUpdate(passenger._id, { waitingStartedAt });
 
-          io.to(`user:${passenger.userId}`).emit(
-            'ride:waiting-charge-started',
-            {
-              rideId,
-              passengerId: passenger._id,
-              ratePerMinute: waitingRate,
-              startedAt: waitingStartedAt,
-              message: `Waiting charge started: £${waitingRate}/min`,
-            }
-          );
+        io.to(`user:${passenger.userId}`).emit('ride:waiting-charge-started', {
+          rideId,
+          passengerId: passenger._id,
+          ratePerMinute: waitingRatePerMinute,
+          // ✅ Also expose hourly rate for UI display
+          ratePerHour: Math.round(waitingRatePerMinute * 60 * 100) / 100,
+          startedAt: waitingStartedAt,
+          message: `Waiting charge started: £${waitingRatePerMinute.toFixed(4)}/min`,
+        });
 
-          io.to(`driver:${driverId}`).emit('ride:waiting-charge-active', {
-            rideId,
-            passengerId: passenger._id,
-            message: 'Waiting charge is now active for this passenger.',
-          });
-        },
-        2 * 60 * 1000
-      );
+        io.to(`driver:${driverId}`).emit('ride:waiting-charge-active', {
+          rideId,
+          passengerId: passenger._id,
+          message: 'Waiting charge is now active for this passenger.',
+        });
+      }, 2 * 60 * 1000);
     };
 
     // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
@@ -172,22 +156,13 @@ export const driverArrivedHandler = eventHandler<any>(
         status: PASSENGER_STATUS.confirmed,
       });
       if (!passenger)
-        return callback?.({
-          success: false,
-          message: 'No active passenger found',
-        });
+        return callback?.({ success: false, message: 'No active passenger found' });
 
-      // ✅ Check driver is near passenger pickup
       const pickupLat = passenger.pickup.coordinates[1];
       const pickupLng = passenger.pickup.coordinates[0];
 
       const { isNear, distanceMeters } = await checkDriverNearPickup(
-        redis,
-        driverId,
-        pickupLat,
-        pickupLng,
-        lat,
-        lng
+        redis, driverId, pickupLat, pickupLng, lat, lng,
       );
 
       if (!isNear) {
@@ -216,22 +191,13 @@ export const driverArrivedHandler = eventHandler<any>(
         status: PASSENGER_STATUS.confirmed,
       });
       if (!passenger)
-        return callback?.({
-          success: false,
-          message: 'Passenger not found or already notified',
-        });
+        return callback?.({ success: false, message: 'Passenger not found or already notified' });
 
-      // ✅ Check driver is near this passenger's pickup
       const pickupLat = passenger.pickup.coordinates[1];
       const pickupLng = passenger.pickup.coordinates[0];
 
       const { isNear, distanceMeters } = await checkDriverNearPickup(
-        redis,
-        driverId,
-        pickupLat,
-        pickupLng,
-        lat,
-        lng
+        redis, driverId, pickupLat, pickupLng, lat, lng,
       );
 
       if (!isNear) {
@@ -254,11 +220,7 @@ export const driverArrivedHandler = eventHandler<any>(
       return callback?.({
         success: true,
         message: 'Driver arrived notification sent',
-        data: {
-          passengerId: passenger._id,
-          remainingUnnotified: remaining,
-          distanceMeters,
-        },
+        data: { passengerId: passenger._id, remainingUnnotified: remaining, distanceMeters },
       });
     }
 
@@ -270,10 +232,7 @@ export const driverArrivedHandler = eventHandler<any>(
         arrivedNotified: false,
       });
       if (!passengers.length)
-        return callback?.({
-          success: false,
-          message: 'No unnotified passengers',
-        });
+        return callback?.({ success: false, message: 'No unnotified passengers' });
 
       const results: any[] = [];
 
@@ -283,16 +242,10 @@ export const driverArrivedHandler = eventHandler<any>(
         const pickupLng = passenger.pickup.coordinates[0];
 
         const { isNear, distanceMeters } = await checkDriverNearPickup(
-          redis,
-          driverId,
-          pickupLat,
-          pickupLng,
-          lat,
-          lng
+          redis, driverId, pickupLat, pickupLng, lat, lng,
         );
 
         if (!isNear) {
-          // ✅ Skip passengers not yet near — don't fail entire call
           results.push({
             passengerId: passenger._id,
             notified: false,
@@ -303,11 +256,7 @@ export const driverArrivedHandler = eventHandler<any>(
         }
 
         await notifyPassenger(passenger, i === passengers.length - 1);
-        results.push({
-          passengerId: passenger._id,
-          notified: true,
-          distanceMeters,
-        });
+        results.push({ passengerId: passenger._id, notified: true, distanceMeters });
       }
 
       const notifiedCount = results.filter((r) => r.notified).length;
@@ -323,9 +272,6 @@ export const driverArrivedHandler = eventHandler<any>(
       });
     }
 
-    return callback?.({
-      success: false,
-      message: 'Provide passengerId or arriveAll=true',
-    });
-  }
+    return callback?.({ success: false, message: 'Provide passengerId or arriveAll=true' });
+  },
 );

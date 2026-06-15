@@ -71,8 +71,8 @@ export const registerSocketEvents = (socket: Socket) => {
   );
 
   // Driver Location
-  tSocket.on('driver:location-update', (data) =>
-    driverLocationUpdateHandler.call(tSocket, data)
+  tSocket.on('driver:location-update', (data, callback) =>
+    driverLocationUpdateHandler.call(tSocket, data, callback)
   );
 
   // Driver Ride Actions
@@ -122,11 +122,11 @@ export const registerSocketEvents = (socket: Socket) => {
     submitRatingHandler.call(tSocket, data, callback)
   );
 
-/**
- * ==============================================
- * --------------SPLIT RIDE EVENTS --------------
- * ==============================================
- */
+  /**
+   * ==============================================
+   * --------------SPLIT RIDE EVENTS --------------
+   * ==============================================
+   */
 
   tSocket.on('ride:find-nearby-split-ride', (data, callback) =>
     findNearbySplitRideHandler.call(tSocket, data, callback)
@@ -135,9 +135,8 @@ export const registerSocketEvents = (socket: Socket) => {
     joinSplitRideRequestHandler.call(tSocket, data, callback)
   );
 
-
   // ==================== DISCONNECT ====================
-tSocket.on('disconnect', () => disconnectHandler(tSocket));
+  tSocket.on('disconnect', () => disconnectHandler(tSocket));
 };
 
 export default registerSocketEvents;

@@ -7,8 +7,7 @@ import { sendNotification } from '../../utils/sentPushNotification'
 export const sendWithdrawNotify = async (
   action: TWithdrawStatus,
   withdraw: TWithdraw,
-  user: TUser,
-  note?: string
+  user: TUser
 ) => {
   if (!user?.fcmToken) return
   

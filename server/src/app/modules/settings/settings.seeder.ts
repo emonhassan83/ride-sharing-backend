@@ -2,6 +2,16 @@ import { Setting } from './settings.model';
 
 const settingSeeder = async () => {
   const settingsData = [
+      // Access & validation ride
+    { key: 'bookingMaxDaysAhead', value: 30 },
+    { key: 'bookingMinDaysAhead', value: 2 },
+    { key: 'matchingNoDriverNotifyHours', value: 48 },
+    { key: 'matchingLastNotifyHours', value: 24 },
+    { key: 'cancellationFreeWindowHours', value: 24 },
+    { key: 'cancellationPercentage50Hours', value: 3 },
+    { key: 'waitingReminderIntervals', value: 2 },
+
+    // ride & charge
     { key: 'dayFareInitialCharge', value: 3.8 },
     { key: 'dayFarePerKMRate', value: 0.95 },
     { key: 'dayFareWaitingCharge', value: 17 },
@@ -14,8 +24,12 @@ const settingSeeder = async () => {
     { key: 'sixPassengerExtraChargePercentage', value: 40 },
     { key: 'platformVat', value: 9 },
     { key: 'platformCommissionPercent', value: 10 },
-    { key: 'supportContract', value: 'Standard support contract terms' },
+
+    // platform info
+    { key: 'supportContract', value: '+357XXXXXXXX' },
     { key: 'supportEmail', value: 'support@yourapp.com' },
+
+    // Trams & Condition
     {
       key: 'userTramsAndCondition',
       value: 'Full trams and condition content goes here...',

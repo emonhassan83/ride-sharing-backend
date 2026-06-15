@@ -23,6 +23,7 @@ export const socketAuth = async (socket: Socket, next: (err?: Error) => void) =>
     } catch (err) {
       return next(new ApiError(httpStatus.UNAUTHORIZED, 'Invalid token!'));
     }
+    
 
     if (!decoded || !decoded.userId) {
       return next(new ApiError(httpStatus.UNAUTHORIZED, 'Invalid token payload'));

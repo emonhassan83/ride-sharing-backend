@@ -12,7 +12,7 @@ import ApiError from '../../errors/ApiError';
 import { config } from '../../config/env.config';
 import { Booking } from '../booking/booking.model';
 import { generateTransactionId } from '../../utils/generateTransctionId';
-import { createCheckoutSession } from './payment.utils';
+import { createCheckoutSession, paymentNotifyToUser } from './payment.utils';
 import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
 import { Ride } from '../ride/ride.model';
@@ -247,6 +247,10 @@ const confirmPayment = async (query: Record<string, any>) => {
       );
     }
 
+    /* ========= 6. Notifications ========= */
+    const user = await User.findById(booking.userId);
+    if (user?.fcmToken) await paymentNotifyToUser('SUCCESS', payment, user);
+
     await session.commitTransaction();
     return payment;
   } catch (error: any) {
@@ -395,6 +399,9 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       );
     }
 
+    /* ========= 6. Notifications ========= */
+    if (user?.fcmToken) await paymentNotifyToUser('SUCCESS', payment[0], user);
+
     await session.commitTransaction();
 
     return {
@@ -535,11 +542,8 @@ const refundPayment = async (payload: { intendId: string; amount: number }) => {
     await session.commitTransaction();
     session.endSession();
 
-    // // sent notify to user when payment is refund
-    // await paymentNotifyToUser('REFUND', payment, user)
-
-    // // sent notify to admin when payment is refund
-    // await paymentNotifyToAdmin('REFUND', payment)
+    // sent notify to user when payment is refund
+    if (user?.fcmToken) await paymentNotifyToUser('REFUND', payment, user);
 
     return response;
   } catch (error: any) {

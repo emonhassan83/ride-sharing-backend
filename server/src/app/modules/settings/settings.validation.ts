@@ -20,6 +20,16 @@ export const createOrUpdateSettingZodSchema = z.object({
 export const updateGeneralsZodSchema = z.object({
   body: z
     .object({
+      // Access & validation ride
+      bookingMaxDaysAhead: z.number().optional(),
+      bookingMinDaysAhead: z.number().optional(),
+      matchingNoDriverNotifyHours: z.number().optional(),
+      matchingLastNotifyHours: z.number().optional(),
+      cancellationFreeWindowHours: z.number().optional(),
+      cancellationPercentage50Hours: z.number().optional(),
+      waitingReminderIntervals: z.number().optional(),
+
+      // ride charge keys
       dayFareInitialCharge: z.number().optional(),
       dayFarePerKMRate: z.number().optional(),
       dayFareWaitingCharge: z.number().optional(),
@@ -31,12 +41,16 @@ export const updateGeneralsZodSchema = z.object({
       fourPassengerTaxiTax: z.number().optional(),
       sixPassengerTaxiTaxPercentage: z.number().optional(),
       platformVat: z.number().optional(),
+
+      // platform info
       supportContract: z.string().optional(),
       supportEmail: z.string().email({ message: 'Invalid email' }).optional(),
+
+      // Trams and condition
       userTramsAndCondition: z.string().optional(),
       providerTramsAndCondition: z.string().optional(),
     })
-    .refine(data => Object.keys(data).length > 0, {
+    .refine((data) => Object.keys(data).length > 0, {
       message: 'At least one general setting value must be provided',
     }),
 });
