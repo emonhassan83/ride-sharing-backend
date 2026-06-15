@@ -3,7 +3,7 @@ import { getRedisClient } from '../../../config/redis.config';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';

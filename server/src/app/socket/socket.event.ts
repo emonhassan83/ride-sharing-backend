@@ -1,6 +1,6 @@
 // src/app/socket/socket.event.ts
 import { Socket } from 'socket.io';
-import { TSocket } from './interface/socket.interface';
+import { TSocket } from './interface/index.interface';
 
 // Chat events
 import { myChatListHandler } from './handlers/chat/myChatList.handler';

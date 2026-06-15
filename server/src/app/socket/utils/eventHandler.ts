@@ -1,6 +1,6 @@
 // src/app/socket/utils/eventHandler.ts
 import { handleSocketError } from "./handleSocketError";
-import { TAckFn, TSocket, TSocketHandler } from "../interface/socket.interface";
+import { TAckFn, TSocket, TSocketHandler } from "../interface/index.interface";
 
 const eventHandler = <TData = any>(handler: TSocketHandler<TData>) => {
   return async function (this: TSocket, data: TData, ack?: TAckFn) {

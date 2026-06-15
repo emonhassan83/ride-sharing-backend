@@ -3,7 +3,7 @@ import { getRedisClient } from '../../../config/redis.config';
 import { User } from '../../../modules/user/user.model';
 import { fetchDriversWithinRadius } from '../../../utils/geo.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 
 export const getNearbyDriversHandler = eventHandler<any>(

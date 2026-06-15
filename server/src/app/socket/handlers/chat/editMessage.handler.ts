@@ -1,7 +1,7 @@
 // src/app/socket/handlers/chat/editMessage.handler.ts
 import { Message } from '../../../modules/messages/messages.model';
 import { callbackFn } from '../../../utils/callbackFn';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 
 export const editMessageHandler = eventHandler(

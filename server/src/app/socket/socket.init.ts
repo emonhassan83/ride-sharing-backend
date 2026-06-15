@@ -2,7 +2,7 @@ import { Server as HttpServer } from 'http';
 import { Server } from 'socket.io';
 import { socketAuth } from './utils/socket.auth';
 import onlineUsers from './utils/onlineUsers';
-import { TSocket } from './interface/socket.interface';
+import { TSocket } from './interface/index.interface';
 import registerSocketEvents from './socket.event';
 import { User } from '../modules/user/user.model';
 import { Passenger } from '../modules/passenger/passenger.model';

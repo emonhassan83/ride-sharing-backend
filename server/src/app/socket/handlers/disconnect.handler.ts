@@ -1,7 +1,7 @@
 // handlers/disconnect.handler.ts
 import { getRedisClient } from '../../config/redis.config';
 import { getIO } from '../socket.init';
-import { TSocket } from '../interface/socket.interface';
+import { TSocket } from '../interface/index.interface';
 import { USER_ROLE } from '../../modules/user/user.constant';
 import { User } from '../../modules/user/user.model';
 import { driverGoOfflineHandler } from './ride/driverGoOffline.handler';

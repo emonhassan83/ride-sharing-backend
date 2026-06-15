@@ -5,7 +5,7 @@ import {
   isPointNearRoute,
 } from '../../../utils/geo.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { Ride } from '../../../modules/ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';

@@ -1,5 +1,5 @@
 // src/app/socket/handlers/chat/stopTyping.handler.ts
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { Chat } from '../../../modules/chat/chat.models';
 import { User } from '../../../modules/user/user.model';

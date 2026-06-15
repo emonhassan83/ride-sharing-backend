@@ -5,7 +5,7 @@ import { Ride } from '../modules/ride/ride.model';
 import { USER_ROLE, USER_STATUS } from '../modules/user/user.constant';
 import { User } from '../modules/user/user.model';
 import { Vehicle } from '../modules/vehicle/vehicle.model';
-import { calculateDistance, calculateFareFromDistance } from './location.utils';
+import { calculateDistance } from './location.utils';
 import { getRealDistanceAndETA } from './maps.utils';
 
 const DESTINATION_MATCH_RADIUS_KM = 5;
@@ -16,7 +16,7 @@ export interface LatLng {
 }
 
 /**
- * Driver location set in Redis (GEOSET)
+ * Driver location set in Redis (GEOSET) and DB
  */
 export async function saveDriverLocation(
   driverId: string,

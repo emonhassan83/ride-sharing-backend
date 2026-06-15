@@ -8,7 +8,7 @@ import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
 import { Refund } from '../../../modules/refund/refund.model';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { refundToWallet } from '../../../utils/splitFare.utils'; // ✅ Bug 4 fix

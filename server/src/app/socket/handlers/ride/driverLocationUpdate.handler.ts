@@ -6,7 +6,7 @@ import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { isDriverNearPickup, saveDriverLocation } from '../../../utils/geo.utils';
 import { calculateETAForRide } from '../../../utils/location.utils';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { triggerArrival } from '../../utils/triggerArrival';

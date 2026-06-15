@@ -13,7 +13,7 @@ import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { haversineMeters } from '../../../utils/geo.utils';
 import { notifyNearbyDriversForSplitRide } from '../../../utils/notifyDrivers.utils';
 import { calcSplitPassengerFare } from '../../../utils/splitFare.utils';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 

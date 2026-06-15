@@ -8,7 +8,7 @@ import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Vehicle } from '../../../modules/vehicle/vehicle.model';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import onlineUsers from '../../utils/onlineUsers';
 import eventHandler from '../../utils/eventHandler';
