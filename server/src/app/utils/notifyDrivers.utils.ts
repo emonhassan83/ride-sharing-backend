@@ -86,7 +86,7 @@ export async function notifyNearbyDrivers(
   ridePayload: any,
   redis:       any,
   io:          any,
-  passengerId: string,
+  passengerId?: string,
   radiusKm     = 10,
 ): Promise<number> {
   let notifiedCount  = 0;

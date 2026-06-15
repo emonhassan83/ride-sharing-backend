@@ -7,11 +7,9 @@ import { getRedisClient } from '../../../config/redis.config';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
+import { sendNotification } from '../../../utils/sentPushNotification';   // ← Import করো
+import { modeType } from '../../../modules/notification/notification.interface';
 
-/**
- * ride:submit-rating Handler
- * Client Payload: { rideId, rating, feedback? }
- */
 export const submitRatingHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const { rideId, rating, feedback } = data;
@@ -43,7 +41,7 @@ export const submitRatingHandler = eventHandler<any>(
 
       const driverId = ride.driverId.toString();
 
-      // 2. Verify reviewer is a valid passenger of this ride
+      // 2. Verify reviewer is a valid passenger
       const passengerRecord = await Passenger.findOne({
         rideId,
         userId: reviewerId,
@@ -60,8 +58,8 @@ export const submitRatingHandler = eventHandler<any>(
 
       // 4. Prevent duplicate review
       const existingReview = await Review.findOne({
-        user: driverId,           // Driver being reviewed
-        reviewer: reviewerId,     // Passenger giving rating
+        user: driverId,
+        reviewer: reviewerId,
         ride: rideId,
       }).lean();
 
@@ -71,8 +69,8 @@ export const submitRatingHandler = eventHandler<any>(
 
       // 5. Create Review
       const review = await Review.create({
-        user: driverId,           // Driver (being reviewed)
-        reviewer: reviewerId,     // Passenger (reviewer)
+        user: driverId,
+        reviewer: reviewerId,
         ride: rideId,
         rating,
         comment: feedback || '',
@@ -80,11 +78,13 @@ export const submitRatingHandler = eventHandler<any>(
 
       // 6. Update Driver's Average Rating
       const driver = await User.findById(driverId);
+      let newAvgRating = rating;
+
       if (driver) {
         const prevTotal = driver.totalRating || 0;
         const prevAvg = driver.avgRating || 0;
         const newTotal = prevTotal + 1;
-        const newAvgRating = Math.round(((prevAvg * prevTotal + rating) / newTotal) * 10) / 10;
+        newAvgRating = Math.round(((prevAvg * prevTotal + rating) / newTotal) * 10) / 10;
 
         await User.findByIdAndUpdate(driverId, {
           avgRating: newAvgRating,
@@ -99,14 +99,26 @@ export const submitRatingHandler = eventHandler<any>(
         }
       }
 
-      // 7. Notify Driver in real-time
+      // 7. Real-time Socket Notification to Driver
       const io = getIO();
       io.to(`driver:${driverId}`).emit('ride:rating-received', {
         rideId,
         rating,
         feedback: feedback || '',
-        newAverageRating: driver?.avgRating,
+        newAverageRating: newAvgRating,
       });
+
+      // 8. Push Notification to Driver (Mobile)
+      const driverUser = await User.findById(driverId).select('fcmToken name').lean();
+      if (driverUser?.fcmToken) {
+        await sendNotification([driverUser.fcmToken], {
+          receiver: driverId,
+          message: '⭐ New Rating Received!',
+          description: `${reviewerId ? 'A passenger' : 'Someone'} gave you ${rating} stars${feedback ? `: "${feedback}"` : ''}`,
+          reference: rideId,
+          modelType: modeType.Ride,
+        }).catch((err) => console.warn('FCM failed for driver rating:', err));
+      }
 
       callback?.({
         success: true,

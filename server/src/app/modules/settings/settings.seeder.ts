@@ -9,7 +9,8 @@ const settingSeeder = async () => {
     { key: 'matchingLastNotifyHours', value: 24 },
     { key: 'cancellationFreeWindowHours', value: 24 },
     { key: 'cancellationPercentage50Hours', value: 3 },
-    { key: 'waitingReminderIntervals', value: 2 },
+    { key: 'waitingReminderIntervals', value: 5 },
+    { key: 'waitingTimeMinutes', value: 60 },
 
     // ride & charge
     { key: 'dayFareInitialCharge', value: 3.8 },

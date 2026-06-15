@@ -7,6 +7,8 @@ import { Setting } from '../modules/settings/settings.model';
 import StripeService from '../config/stripe.config';
 import { isPublicHoliday, loadFareSettings } from './fareCalculator';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
+import { sendNotification } from './sentPushNotification';
+import { modeType } from '../modules/notification/notification.interface';
 
 // ── Surcharge based on total seats ────────────────────────────────────────────
 export const getSurchargeMultiplier = (
@@ -107,11 +109,16 @@ export const refundToWallet = async (
   await User.findByIdAndUpdate(userId, { $inc: { wallet: rounded } });
   console.log(`💰 Wallet refund £${rounded} → ${userId} (${reason})`);
 
-  io?.to(`user:${userId}`).emit('ride:wallet-refund', {
-    amount: rounded,
-    reason,
-    message: `£${rounded.toFixed(2)} refunded to your wallet.`,
-  });
+  const user = await User.findById(userId)
+  if (user && user?.fcmToken) {
+    sendNotification([user.fcmToken], {
+        receiver:    userId,
+        message:     'Ride refund amount transfer',
+        description: `£${rounded.toFixed(2)} refunded to your wallet.`,
+        // reference:   rideId,
+        modelType:   modeType.Refund,
+      }).catch((err: any) => console.warn(`FCM failed for passenger ${userId}:`, err));
+  }
 };
 
 // ── Charge user — wallet first, card fallback (Case 11) ──────────────────────
