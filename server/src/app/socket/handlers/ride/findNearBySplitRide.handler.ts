@@ -113,8 +113,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
       const pickupNear = isPointNearRoute(
         pickup.lat,
         pickup.lng,
-        coords,
-        CORRIDOR_RADIUS_METERS
+        coords
       );
       if (!pickupNear) return false;
 
@@ -122,8 +121,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
       const destNear = isPointNearRoute(
         destination.lat,
         destination.lng,
-        coords,
-        CORRIDOR_RADIUS_METERS
+        coords
       );
       if (!destNear) return false;
 
