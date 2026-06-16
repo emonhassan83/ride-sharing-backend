@@ -85,8 +85,8 @@ export const registerSocketEvents = (socket: Socket) => {
   tSocket.on('driver:cancel-ride', (data, callback) =>
     driverCancelRideHandler.call(tSocket, data, callback)
   );
-  tSocket.on('driver:arrived-pickup', (data) =>
-    driverArrivedHandler.call(tSocket, data)
+  tSocket.on('driver:arrived-pickup', (data, callback) =>
+    driverArrivedHandler.call(tSocket, data, callback)
   );
   tSocket.on('driver:start-trip', (data, callback) =>
     driverStartTripHandler.call(tSocket, data, callback)
