@@ -111,7 +111,7 @@ const getMessagesByChatId = async (
   const messageQuery = new QueryBuilder(
     Message.find({ chat: chat._id })
       // .populate([{ path: 'sender', select: 'name profileImage _id' }])
-      .select('text imageUrl seen sender createdAt')
+      .select('text imageUrl seen isEdited sender createdAt')
       .sort({ createdAt: 1 }),
     query,
   )

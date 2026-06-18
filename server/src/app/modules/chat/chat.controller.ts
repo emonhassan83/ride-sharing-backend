@@ -33,8 +33,8 @@ const getChatBookingById = catchAsync(async (req: Request, res: Response) => {
   })
 })
 
-const getChatByUserId = catchAsync(async (req: Request, res: Response) => {
-  const result = await chatService.getChatByUserId(req?.user.userId, req.params.userId as string)
+const getChatById = catchAsync(async (req: Request, res: Response) => {
+  const result = await chatService.getChatById(req?.user.userId, req.params.id as string)
 
   sendResponse(res, {
     code: 200,
@@ -66,7 +66,7 @@ const deleteChat = catchAsync(async (req: Request, res: Response) => {
 export const chatController = {
   createChat,
   getMyChatList,
-  getChatByUserId,
+  getChatById,
   getChatBookingById,
   updateChat,
   deleteChat,
