@@ -242,7 +242,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
           reference: passenger.id,
           modelType: modeType.Passenger,
         });
-      };
+      }
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
 
@@ -378,7 +378,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
           reference: passenger.id,
           modelType: modeType.Passenger,
         });
-      };
+      }
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
 

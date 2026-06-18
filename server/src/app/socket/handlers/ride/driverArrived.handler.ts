@@ -33,6 +33,7 @@ const checkDriverNearPickup = async (
     driverLat = manualLat;
     driverLng = manualLng;
   }
+  console.log({ driverLat, driverLng });
 
   if (driverLat === null) {
     try {
@@ -68,6 +69,9 @@ const checkDriverNearPickup = async (
     pickupLat,
     pickupLng
   );
+
+  console.log({ driverLat, driverLng, pickupLat, pickupLng, distanceMeters });
+
   return {
     isNear: distanceMeters <= ARRIVAL_THRESHOLD_METERS,
     distanceMeters: Math.round(distanceMeters),
@@ -210,6 +214,8 @@ export const driverArrivedHandler = eventHandler<any>(
           success: false,
           message: 'No active passenger found',
         });
+
+      console.log({ passenger });
 
       const { isNear, distanceMeters } = await checkDriverNearPickup(
         redis,

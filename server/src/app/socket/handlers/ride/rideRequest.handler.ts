@@ -14,6 +14,60 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { notifyNearbyDrivers } from '../../../utils/notifyDrivers.utils';
+import { hasDriverRideAtDateTime } from '../../../utils/geo.utils';
+import { USER_ROLE, USER_STATUS } from '../../../modules/user/user.constant';
+
+// ── Helper: check if any available driver exists nearby ───────────────────────
+const hasAvailableDriversNearby = async (
+  redis:          any,
+  pickup:         { lat: number; lng: number },
+  departureDate:  string,
+  departureTime:  string,
+  rideType:       string,
+  requestedSeats: number,
+  radiusKm        = 10,
+): Promise<boolean> => {
+
+  // Check online drivers from Redis GEOSET
+  type GeoResult = Array<[string, string]>;
+  const onlineDrivers = (await redis.georadius(
+    'drivers:location', pickup.lng, pickup.lat, radiusKm, 'km', 'WITHDIST',
+  )) as GeoResult;
+
+  for (const [driverId] of onlineDrivers) {
+    const availability = await hasDriverRideAtDateTime(
+      driverId, departureDate, departureTime, rideType, requestedSeats,
+    );
+    if (availability.available) return true;
+  }
+
+  const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
+
+  // Check offline drivers from DB
+  const offlineDrivers = await User.find({
+    role:      USER_ROLE.provider,
+    isDeleted: false,
+    status:    USER_STATUS.active,
+    location: {
+      $nearSphere: {
+        $geometry:    { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
+        $maxDistance: radiusKm * 1000,
+      },
+    },
+  }).select('_id').lean();
+
+  for (const driver of offlineDrivers) {
+    const driverId = driver._id.toString();
+    if (onlineDriverIds.has(driverId)) continue;
+
+    const availability = await hasDriverRideAtDateTime(
+      driverId, departureDate, departureTime, rideType, requestedSeats,
+    );
+    if (availability.available) return true;
+  }
+
+  return false;
+};
 
 export const rideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -33,10 +87,30 @@ export const rideRequestHandler = eventHandler<any>(
 
     const requestedSeats = seats || 1;
 
-    // ── Departure datetime ────────────────────────────────────────────────────
     const [year, month, day] = scheduledDate.split('-').map(Number);
     const [hour, minute]     = scheduledTime.split(':').map(Number);
     const departureDateTime  = new Date(year, month - 1, day, hour, minute);
+
+    const redis = getRedisClient();
+    const io    = getIO();
+
+    // ✅ Check available drivers BEFORE creating ride/passenger
+    const driversAvailable = await hasAvailableDriversNearby(
+      redis,
+      pickup,
+      scheduledDate,
+      scheduledTime,
+      type,
+      requestedSeats,
+    );
+
+    if (!driversAvailable) {
+      return callback?.({
+        success: false,
+        message: 'No drivers available for this date and time. Please try a different time.',
+        code:    'NO_DRIVERS_AVAILABLE',
+      });
+    }
 
     // ── Real distance & ETA ───────────────────────────────────────────────────
     let actualDistance = 0;
@@ -114,64 +188,67 @@ export const rideRequestHandler = eventHandler<any>(
       status:                   PASSENGER_STATUS.pending,
     });
 
-    const redis = getRedisClient();
-    const io    = getIO();
-
     socket.join(`ride:${ride._id}`);
     socket.join(`passenger:${passenger._id}`);
 
-    // ── Rider info for driver notification ────────────────────────────────────
     const rider = await User.findById(userId)
       .select('name profileImage avgRating phone')
       .lean();
 
     const ridePayload = {
-      rideId:        ride._id.toString(),
-      passengerId:   passenger._id.toString(),
+      rideId:           ride._id.toString(),
+      passengerId:      passenger._id.toString(),
       riderInfo: {
         name:         rider?.name         || '',
         profileImage: rider?.profileImage || null,
         avgRating:    rider?.avgRating    || 0,
         phone:        rider?.phone        || '',
       },
-      rideType:      type,
+      rideType:         type,
       pickup,
       destination,
       requestedSeats,
-      luggageCount:  luggageCounts || 0,
-      estimatedFare: roundedBreakdown.totalFare,
-      distance:      roundTo2(actualDistance),
-      departureDate: scheduledDate,
-      departureTime: scheduledTime,
+      malePassengers:   malePassengers   || 0,
+      femalePassengers: femalePassengers || 0,
+      luggageCount:     luggageCounts    || 0,
+      note:             note             || '',
+      estimatedFare:    roundedBreakdown.totalFare,
+      distance:         roundTo2(actualDistance),
+      departureDate:    scheduledDate,
+      departureTime:    scheduledTime,
+      vehicle:          null,
+      availableSeats:   requestedSeats,
+      surchargePercent: 0,
+      surchargeAmount:  0,
     };
 
-    // ── Phase 1: Immediate notify — online + offline nearby drivers ───────────
+    // ── Notify drivers ────────────────────────────────────────────────────────
     const notifiedCount = await notifyNearbyDrivers(
       ride._id.toString(),
       pickup,
       ridePayload,
       redis,
       io,
-      passenger._id.toString()
+      passenger._id.toString(),
     );
 
     console.log(`📡 Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);
 
-    // ── Redis: store ride request data ────────────────────────────────────────
+    // ── Redis ─────────────────────────────────────────────────────────────────
     await redis.hset(`ride:request:${ride._id}`, {
       userId,
-      passengerId:   passenger._id.toString(),
-      pickup:        JSON.stringify(pickup),
-      destination:   JSON.stringify(destination),
-      seats:         requestedSeats.toString(),
-      estimatedFare: fareBreakdown.totalFare.toString(),
+      passengerId:        passenger._id.toString(),
+      pickup:             JSON.stringify(pickup),
+      destination:        JSON.stringify(destination),
+      seats:              requestedSeats.toString(),
+      estimatedFare:      fareBreakdown.totalFare.toString(),
       scheduledDate,
       scheduledTime,
       departureTimestamp: departureDateTime.getTime().toString(),
       notifiedCount:      notifiedCount.toString(),
       timestamp:          Date.now().toString(),
     });
-    // TTL = departure time + 2 hours buffer
+
     const ttlSeconds = Math.max(
       3600,
       Math.floor((departureDateTime.getTime() - Date.now()) / 1000) + 7200,
