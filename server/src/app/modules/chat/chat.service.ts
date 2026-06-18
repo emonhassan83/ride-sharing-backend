@@ -105,7 +105,7 @@ const getMyChatList = async (
       const [message, unreadMessageCount] = await Promise.all([
         Message.findOne({ chat: chatId })
           .sort({ createdAt: -1 })
-          .select('text imageUrl seen sender createdAt')
+          .select('text imageUrl seen isEdited sender createdAt')
           .populate([{ path: 'sender', select: 'name profileImage' }]),
         Message.countDocuments({
           chat: chatId,
@@ -164,7 +164,7 @@ const getSingleChat = async (chatId: string, userId: string) => {
     const [lastMessage, unreadMessageCount] = await Promise.all([
       Message.findOne({ chat: chatId })
         .sort({ createdAt: -1 })
-        .select('text imageUrl seen sender createdAt')
+        .select('text imageUrl seen isEdited sender createdAt')
         .populate([{ path: 'sender', select: 'name profileImage' }])
         .lean(),
 
@@ -207,52 +207,15 @@ const getChatBookingById = async (bookingId: string, userId: string) => {
   return result;
 };
 
-const getChatByUserId = async (currentUser: string, userId: string) => {
-  const chats = await Chat.find({
-    participants: { $all: [currentUser, userId] },
-  }).populate({
+const getChatById = async (currentUser: string, chatId: string) => {
+  const result = await Chat.findById(chatId).populate({
     path: 'participants',
-    select: 'name profileImage',
+    select: 'name profileImage email phone',
     match: { _id: { $ne: currentUser } },
   });
+  if (!result) throw new ApiError(httpStatus.BAD_REQUEST, 'Chat not found');
 
-  if (!chats) throw new ApiError(httpStatus.BAD_REQUEST, 'Chat list not found');
-
-  const dataWithMessages = await Promise.all(
-    chats.map(async (chatItem) => {
-      const participant = chatItem?.participants?.[0] as any;
-
-      // ✅ fix — 'name' in participant check বাদ
-      if (!participant || typeof participant !== 'object') return null;
-
-      const chatId = chatItem?._id;
-
-      const [message, unreadMessageCount] = await Promise.all([
-        Message.findOne({ chat: chatId }).sort({ createdAt: -1 }),
-        Message.countDocuments({
-          chat: chatId,
-          seen: false,
-          sender: { $ne: currentUser },
-        }),
-      ]);
-
-      return { chat: chatItem, message: message || null, unreadMessageCount };
-    })
-  );
-
-  const data = dataWithMessages.filter(Boolean) as any[];
-
-  data.sort((a, b) => {
-    const dateA = a.message?.createdAt
-      ? new Date(a.message.createdAt).getTime()
-      : 0;
-    const dateB = b.message?.createdAt
-      ? new Date(b.message.createdAt).getTime()
-      : 0;
-    return dateB - dateA;
-  });
-
-  return data;
+  return result;
 };
 
 const updateChatList = async (id: string, payload: Partial<TChat>) => {
@@ -278,7 +241,7 @@ export const chatService = {
   getMyChatList,
   getSingleChat,
   getChatBookingById,
-  getChatByUserId,
+  getChatById,
   updateChatList,
   deleteChatList,
   checkUserExists,

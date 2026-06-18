@@ -28,9 +28,9 @@ router.delete(
 )
 
 router.get(
-  '/user/:userId',
+  '/:id',
   auth([USER_ROLE.provider, USER_ROLE.user]),
-  chatController.getChatByUserId,
+  chatController.getChatById,
 )
 
 router.get(
