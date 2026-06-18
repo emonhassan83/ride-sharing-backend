@@ -75,7 +75,11 @@ const getMyChatList = async (
       select: 'name profileImage',
       match: { _id: { $ne: userId } },
     })
-    .select('_id participants status');
+    .populate({
+      path: 'booking',
+      select: 'id'
+    })
+    .select('_id participants booking status');
 
   if (!chats) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Chat list not found');
@@ -141,7 +145,7 @@ const getSingleChat = async (chatId: string, userId: string) => {
     const chatItem = await Chat.findById(chatId)
       .populate({
         path: 'participants',
-        select: 'name profileImage',
+        select: 'name profileImage email phone',
         match: { _id: { $ne: userId } },
       })
       .select('_id participants status')
@@ -185,7 +189,7 @@ const getSingleChat = async (chatId: string, userId: string) => {
 const getChatBookingById = async (bookingId: string, userId: string) => {
   const result = await Chat.findOne({ booking: bookingId }).populate({
     path: 'participants',
-    select: 'name profileImage',
+    select: 'name profileImage email phone',
     match: { _id: { $ne: userId } },
   });
   if (!result) throw new ApiError(httpStatus.BAD_REQUEST, 'Chat not found');
