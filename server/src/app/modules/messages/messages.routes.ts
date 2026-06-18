@@ -27,7 +27,7 @@ router.put(
   messagesController.updateMessages,
 )
 
-router.get('/my-messages/:bookingId', messagesController.getMessagesByBookingId)
+router.get('/my-messages/:chatId', messagesController.getMessagesByChatId)
 
 router.delete(
   '/chat/:chatId',
