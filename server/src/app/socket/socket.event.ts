@@ -36,6 +36,7 @@ import { joinSplitRideRequestHandler } from './handlers/ride/splitRideRequest.ha
 
 // Disconnect handler
 import disconnectHandler from './handlers/disconnect.handler';
+import { getRidePassengersHandler } from './handlers/ride/getRidePassengers.handler';
 
 export const registerSocketEvents = (socket: Socket) => {
   const tSocket = socket as TSocket; // Cast to TSocket
@@ -90,6 +91,9 @@ export const registerSocketEvents = (socket: Socket) => {
   );
   tSocket.on('driver:start-trip', (data, callback) =>
     driverStartTripHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('driver:ride-passenger', (data, callback) =>
+    getRidePassengersHandler.call(tSocket, data, callback)
   );
   tSocket.on('driver:pickup-ride', (data, callback) =>
     pickUpRideHandler.call(tSocket, data, callback)

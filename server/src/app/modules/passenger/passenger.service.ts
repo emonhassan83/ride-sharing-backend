@@ -4,6 +4,7 @@ import { Passenger } from './passenger.model';
 import { Ride } from '../ride/ride.model';
 import { PASSENGER_STATUS } from './passenger.constant';
 import { RIDE_STATUS } from '../ride/ride.constant';
+import { Booking } from '../booking/booking.model';
 
 const getDriverRideRequest = async (driverUserId: string) => {
   // Find rides where the user is a passenger and the ride is pending
@@ -75,13 +76,21 @@ const getPassengersByRide = async (rideId: string) => {
 const getPassengerById = async (passengerId: string) => {
   const passenger = await Passenger.findById(passengerId)
     .populate('userId', 'name phone profileImage')
-    .populate('rideId', 'departureDate departureTime pickup destination');
+    .populate('rideId', 'departureDate departureTime pickup destination')
+    .lean();
 
   if (!passenger) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Passenger not found');
   }
 
-  return passenger;
+  const booking = await Booking.findOne({ passengerId })
+    .select('id paymentStatus bookingStatus totalFare amountPaid')
+    .lean();
+
+  return {
+    ...passenger,
+    bookingId: booking?._id || null,
+  };
 };
 
 export const PassengerService = {

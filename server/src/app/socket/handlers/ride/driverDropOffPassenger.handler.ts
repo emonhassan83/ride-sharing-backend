@@ -102,7 +102,11 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
 
     // PRIVATE RIDE
     if (ride.type === RIDE_TYPE.private) {
-      const passenger = await Passenger.findOne({
+      const passenger = passengerId ? await Passenger.findOne({
+         _id: passengerId,
+        rideId,
+        status: PASSENGER_STATUS.picked_up,
+      }) : await Passenger.findOne({
         rideId,
         status: PASSENGER_STATUS.picked_up,
       });

@@ -22,16 +22,21 @@ export const driverStartTripHandler = eventHandler<any>(
       return callback?.({ success: false, message: 'Missing required fields' });
 
     const ride = await Ride.findById(rideId);
-    if (!ride)
-      return callback?.({ success: false, message: 'Ride not found' });
+    if (!ride) return callback?.({ success: false, message: 'Ride not found' });
 
     if (ride.driverId?.toString() !== driverId)
-      return callback?.({ success: false, message: 'You are not assigned to this ride' });
+      return callback?.({
+        success: false,
+        message: 'You are not assigned to this ride',
+      });
 
     if (ride.status !== RIDE_STATUS.accepted)
-      return callback?.({ success: false, message: `Ride cannot be started. Current status: ${ride.status}` });
+      return callback?.({
+        success: false,
+        message: `Ride cannot be started. Current status: ${ride.status}`,
+      });
 
-    const io    = getIO();
+    const io = getIO();
     const redis = getRedisClient();
 
     socket.join(`ride:${rideId}`);
@@ -42,11 +47,14 @@ export const driverStartTripHandler = eventHandler<any>(
     });
 
     if (!passengers.length)
-      return callback?.({ success: false, message: 'No confirmed passengers found' });
+      return callback?.({
+        success: false,
+        message: 'No confirmed passengers found',
+      });
 
     // ── Update ride → started ─────────────────────────────────────────────────
     await Ride.findByIdAndUpdate(rideId, {
-      status:        RIDE_STATUS.started,
+      status: RIDE_STATUS.started,
       tripStartedAt: new Date(),
     });
 
@@ -57,7 +65,7 @@ export const driverStartTripHandler = eventHandler<any>(
 
       await Booking.findOneAndUpdate(
         { passengerId: passenger._id },
-        { bookingStatus: BOOKING_STATUS.running },
+        { bookingStatus: BOOKING_STATUS.running }
       );
 
       // Socket
@@ -65,19 +73,21 @@ export const driverStartTripHandler = eventHandler<any>(
         rideId,
         passengerId: passenger._id,
         driverId,
-        startTime:   new Date(),
-        message:     'Your ride has started. Enjoy the trip!',
+        startTime: new Date(),
+        message: 'Your ride has started. Enjoy the trip!',
       });
 
       // ✅ FCM push — trip started
-      const riderUser = await User.findById(passenger.userId).select('fcmToken').lean();
+      const riderUser = await User.findById(passenger.userId)
+        .select('fcmToken')
+        .lean();
       if (riderUser?.fcmToken) {
         sendNotification([riderUser.fcmToken], {
-          receiver:    passenger.userId,
-          message:     'Trip Started!',
+          receiver: passenger.userId,
+          message: 'Trip Started!',
           description: 'Your ride has started. Enjoy the trip!',
-          reference:   rideId,
-          modelType:   modeType.Ride,
+          reference: rideId,
+          modelType: modeType.Ride,
         }).catch(() => {});
       }
 
@@ -85,21 +95,26 @@ export const driverStartTripHandler = eventHandler<any>(
     }
 
     // ── Redis ─────────────────────────────────────────────────────────────────
-    await redis.rpush(`ride:${rideId}:live`, JSON.stringify({
-      event:          'TRIP_STARTED',
-      driverId,
-      passengerCount: passengers.length,
-      passengerIds:   passengers.map(p => p._id),
-      timestamp:      Date.now(),
-    }));
+    await redis.rpush(
+      `ride:${rideId}:live`,
+      JSON.stringify({
+        event: 'TRIP_STARTED',
+        driverId,
+        passengerCount: passengers.length,
+        passengerIds: passengers.map((p) => p._id),
+        timestamp: Date.now(),
+      })
+    );
     await redis.set(`driver:${driverId}:activeRide`, rideId, 'EX', 7200);
 
-    console.log(`✅ Trip started | rideId: ${rideId} | passengers: ${passengers.length}`);
+    console.log(
+      `✅ Trip started | rideId: ${rideId} | passengers: ${passengers.length}`
+    );
 
     return callback?.({
       success: true,
       message: 'Trip started successfully',
-      data:    { passengerCount: passengers.length },
+      data: { rideId: ride._id, passengerCount: passengers.length },
     });
-  },
+  }
 );
