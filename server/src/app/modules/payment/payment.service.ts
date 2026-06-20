@@ -174,6 +174,13 @@ const confirmPayment = async (query: Record<string, any>) => {
     booking.amountPaid = booking.totalFare;
     await booking.save({ session });
 
+    // ── 4.5:  Update passenger ──────
+    await Passenger.findByIdAndUpdate(
+      booking.passengerId,
+      { paymentStatus: PAYMENT_STATUS.paid },
+      { returnDocument: 'after' }
+    );
+
     // ── 5. Update passenger & ride ────────────────────────────────────────────
     const passenger = await Passenger.findById(booking.passengerId).session(
       session
