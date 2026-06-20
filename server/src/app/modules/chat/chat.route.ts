@@ -28,6 +28,12 @@ router.delete(
 )
 
 router.get(
+  '/my-chat-list',
+  auth([USER_ROLE.provider, USER_ROLE.user]),
+  chatController.getMyChatList,
+)
+
+router.get(
   '/:id',
   auth([USER_ROLE.provider, USER_ROLE.user]),
   chatController.getChatById,
@@ -39,10 +45,5 @@ router.get(
   chatController.getChatBookingById,
 )
 
-router.get(
-  '/my-chat-list',
-  auth([USER_ROLE.provider, USER_ROLE.user]),
-  chatController.getMyChatList,
-)
 
 export const ChatRoutes = router
