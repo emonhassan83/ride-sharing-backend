@@ -18,30 +18,49 @@ export const sendMessageHandler = eventHandler(
     try {
       // 1. validate chatId
       if (!chatId) {
-        return callbackFn(callback, { success: false, message: 'chatId is required' });
+        return callbackFn(callback, {
+          success: false,
+          message: 'chatId is required',
+        });
       }
 
       // 2. find text or image url
       if (!text?.trim() && (!imageUrl || imageUrl.length === 0)) {
-        return callbackFn(callback, { success: false, message: 'text or imageUrl is required' });
+        return callbackFn(callback, {
+          success: false,
+          message: 'text or imageUrl is required',
+        });
       }
 
       // 3. find chat and validate
       const chat = await Chat.findById(chatId).populate('participants', '_id');
       if (!chat) {
-        return callbackFn(callback, { success: false, message: 'Chat not found' });
+        return callbackFn(callback, {
+          success: false,
+          message: 'Chat not found',
+        });
       }
 
       // 4. Check precipitant
-      const isParticipant = chat.participants.some((p: any) => p._id.toString() === userId);
+      const isParticipant = chat.participants.some(
+        (p: any) => p._id.toString() === userId
+      );
       if (!isParticipant) {
-        return callbackFn(callback, { success: false, message: 'You are not a participant of this chat' });
+        return callbackFn(callback, {
+          success: false,
+          message: 'You are not a participant of this chat',
+        });
       }
 
       // 5. sent receiver join the room
-      const otherParticipant = chat.participants.find((p: any) => p._id.toString() !== userId);
+      const otherParticipant = chat.participants.find(
+        (p: any) => p._id.toString() !== userId
+      );
       if (!otherParticipant) {
-        return callbackFn(callback, { success: false, message: 'No other participant found in chat' });
+        return callbackFn(callback, {
+          success: false,
+          message: 'No other participant found in chat',
+        });
       }
       const finalReceiverId = otherParticipant._id.toString();
 
@@ -54,9 +73,9 @@ export const sendMessageHandler = eventHandler(
         imageUrl,
       });
 
-      const populated = await Message.findById(message._id)
-        .populate('sender', 'name profileImage _id')
-        .populate('receiver', 'name profileImage _id');
+      const populated = await Message.findById(message._id).select(
+        'text imageUrl seen isEdited sender createdAt'
+      );
 
       const io = getIO();
       // emit to users
