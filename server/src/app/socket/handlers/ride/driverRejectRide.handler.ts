@@ -47,10 +47,13 @@ export const driverRejectRideHandler = eventHandler<any>(
 
     // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.private) {
-      const passenger = await Passenger.findOne({
-        rideId,
-        status: PASSENGER_STATUS.pending,
-      });
+      const passenger = passengerId
+        ? await Passenger.findOne({
+            _id: passengerId,
+            rideId,
+            status: PASSENGER_STATUS.pending,
+          })
+        : await Passenger.findOne({ rideId, status: PASSENGER_STATUS.pending });
       if (!passenger) {
         return callback?.({
           success: false,

@@ -122,7 +122,11 @@ export const pickUpRideHandler = eventHandler<any>(
 
     // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.private) {
-      const passenger = await Passenger.findOne({
+      const passenger = passengerId ? await Passenger.findOne({
+         _id: passengerId,
+        rideId,
+        status: { $in: [PASSENGER_STATUS.driver_arrived, PASSENGER_STATUS.in_progress] },
+      }) :await Passenger.findOne({
         rideId,
         status: { $in: [PASSENGER_STATUS.driver_arrived, PASSENGER_STATUS.in_progress] },
       });
