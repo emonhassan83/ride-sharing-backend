@@ -75,8 +75,19 @@ const getPassengersByRide = async (rideId: string) => {
 // Get single passenger by ID
 const getPassengerById = async (passengerId: string) => {
   const passenger = await Passenger.findById(passengerId)
-    .populate('userId', 'name phone profileImage')
-    .populate('rideId', 'departureDate departureTime pickup destination')
+    .populate([
+      { path: 'userId', select: 'name phone profileImage' },
+      {
+        path: 'rideId',
+        select: 'departureDate departureTime pickup destination driverId',
+        populate: [
+          {
+            path: 'driverId',
+            select: 'name email phone profileImage',
+          },
+        ],
+      },
+    ])
     .lean();
 
   if (!passenger) {
@@ -90,6 +101,7 @@ const getPassengerById = async (passengerId: string) => {
   return {
     ...passenger,
     bookingId: booking?._id || null,
+    bookingShortId: booking?.id || null,
   };
 };
 
