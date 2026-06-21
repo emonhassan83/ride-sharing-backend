@@ -158,6 +158,7 @@ const getRiderRides = async (
 
       return {
         // Passenger
+        userId,
         passengerId:     p._id,
         requestedSeats:  p.requestedSeats,
         estimatedFare:   p.estimatedFare,
@@ -167,7 +168,8 @@ const getRiderRides = async (
         departureTime:   p.departureTime,
 
         // Booking
-        bookingId:       booking?.id     || null,
+        bookingId:       booking?._id     || null,
+        bookingShortId:       booking?.id     || null,
         paymentStatus:   booking?.paymentStatus || null, 
 
         // Ride
