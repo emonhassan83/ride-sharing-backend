@@ -61,14 +61,15 @@ export const uploadManyToS3 = async (
     const uploadPromises = files.map(async ({ file, path: folderPath, key }) => {
       const ext = path.extname(file.originalname);
       const randomPart = `${Math.floor(100000 + Math.random() * 900000)}${Date.now()}`;
-      const baseName = key || randomPart;
-      const newFileName = `${baseName}${ext || ''}`;
-      const fileKey = `${folderPath}/${newFileName}`;
+
+      // ✅ key already has extension (from generateS3Key) → don't add ext again
+      const newFileName = key || `${randomPart}${ext || ''}`;
+      const fileKey     = `${folderPath}/${newFileName}`;
 
       const command = new PutObjectCommand({
-        Bucket: config.aws.bucket as string,
-        Key: fileKey,
-        Body: file?.buffer,
+        Bucket:      config.aws.bucket as string,
+        Key:         fileKey,
+        Body:        file?.buffer,
         ContentType: file.mimetype,
       });
 

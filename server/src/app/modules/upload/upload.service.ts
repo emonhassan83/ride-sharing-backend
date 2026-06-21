@@ -1,3 +1,4 @@
+// src/app/modules/uploads/upload.service.ts
 import httpStatus from 'http-status';
 import { uploadManyToS3, uploadToS3 } from '../../utils/s3';
 import ApiError from '../../errors/ApiError';
@@ -20,33 +21,29 @@ const multiple = async (files: any) => {
     return [];
   }
 
-  // Helper: Get extension (without dot)
+  // ================== HELPERS ==================
   const getExtension = (file: any): string => {
     if (!file.originalname) return '';
     const parts = file.originalname.split('.');
     return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
   };
 
-  // Helper: Sanitize filename (remove dangerous chars)
   const sanitizeFileName = (name: string): string => {
     if (!name) return 'file';
-    return (
-      name
-        .replace(/[^a-zA-Z0-9._-]/g, '_')
-        .replace(/_+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .trim() || 'file'
-    );
+    return name
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .trim() || 'file';
   };
 
-  // Generate safe, unique S3 key with original name preserved
   const generateS3Key = (file: any): string => {
     const ext = getExtension(file);
     let baseName = 'file';
 
     if (file.originalname) {
       baseName = sanitizeFileName(
-        file.originalname.replace(new RegExp(`\\.${ext}$`, 'i'), ''),
+        file.originalname.replace(new RegExp(`\\.${ext}$`, 'i'), '')
       );
     }
 
@@ -63,139 +60,49 @@ const multiple = async (files: any) => {
     let path = 'others';
     let type = 'unknown';
 
-    // Images
     if (mimetype.startsWith('image/')) {
       path = 'images';
       type = 'image';
-    }
-    // Videos
-    else if (mimetype.startsWith('video/')) {
+    } else if (mimetype.startsWith('video/')) {
       path = 'videos';
       type = 'video';
-    }
-    // Audios
-    else if (mimetype.startsWith('audio/')) {
+    } else if (mimetype.startsWith('audio/')) {
       path = 'audios';
       type = 'audio';
-    }
-    // PDFs
-    else if (mimetype === 'application/pdf' || ext === 'pdf') {
+    } else if (mimetype === 'application/pdf' || ext === 'pdf') {
       path = 'documents';
       type = 'document_pdf';
-    }
-    // Office documents
-    else if (
+    } else if (
       mimetype.startsWith('application/vnd.') ||
-      [
-        'doc',
-        'docx',
-        'xls',
-        'xlsx',
-        'ppt',
-        'pptx',
-        'odt',
-        'ods',
-        'odp',
-      ].includes(ext)
+      ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp'].includes(ext)
     ) {
       path = 'documents';
       type = 'document_office';
-    }
-    // Plain text / CSV / Markdown
-    else if (
+    } else if (
       mimetype === 'text/plain' ||
       mimetype === 'text/csv' ||
       ['txt', 'csv', 'md', 'log', 'json', 'xml', 'yaml', 'yml'].includes(ext)
     ) {
       path = 'documents';
       type = 'document_text';
-    }
-    // Archives
-    else if (
-      [
-        'application/zip',
-        'application/x-zip-compressed',
-        'application/x-rar-compressed',
-        'application/x-7z-compressed',
-        'application/x-tar',
-        'application/gzip',
-      ].includes(mimetype) ||
-      ['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(ext)
+    } else if (
+      ['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(ext) ||
+      mimetype.includes('zip') || mimetype.includes('rar')
     ) {
       path = 'archives';
       type = 'archive';
-    }
-    // Fonts
-    else if (
-      mimetype.startsWith('font/') ||
-      mimetype === 'application/font-woff' ||
-      ['ttf', 'otf', 'woff', 'woff2', 'eot'].includes(ext)
-    ) {
-      path = 'fonts';
-      type = 'font';
-    }
-    // Code / Scripts (NEW)
-    else if (
-      [
-        'js',
-        'ts',
-        'py',
-        'java',
-        'cpp',
-        'c',
-        'cs',
-        'go',
-        'php',
-        'rb',
-        'swift',
-        'kt',
-        'rs',
-        'sh',
-        'bash',
-        'html',
-        'css',
-        'scss',
-      ].includes(ext) ||
-      mimetype === 'application/javascript' ||
-      mimetype === 'text/x-python' ||
-      mimetype.startsWith('text/x-')
-    ) {
-      path = 'code';
-      type = 'code_source';
-    }
-    // 3D Models / CAD (NEW)
-    else if (
-      ['stl', 'obj', 'fbx', 'glb', 'gltf', 'blend', '3ds', 'dae'].includes(
-        ext,
-      ) ||
-      mimetype === 'model/gltf-binary' ||
-      mimetype === 'application/octet-stream' // common for .glb/.stl
-    ) {
-      path = 'models';
-      type = 'model_3d';
-    }
-    // Executable / Binary (NEW - but stored separately for review/security)
-    else if (
-      ['exe', 'msi', 'dmg', 'apk', 'deb', 'rpm', 'bin', 'app'].includes(ext) ||
-      mimetype === 'application/x-msdownload' ||
-      mimetype === 'application/octet-stream'
-    ) {
-      path = 'binaries';
-      type = 'executable';
-    }
-    // Subtitle files (NEW)
-    else if (['srt', 'vtt', 'ass', 'ssa'].includes(ext)) {
-      path = 'subtitles';
-      type = 'subtitle';
+    } else {
+      path = 'others';
+      type = 'unknown';
     }
 
     return { path, type };
   };
 
-  // Prepare upload tasks — NOW WITH KEY!
+  // Prepare upload tasks
   const uploadTasks = fileArray.map((file: any) => {
     const { path } = determineCategoryAndType(file);
-    const key = generateS3Key(file); // This is the fix!
+    const key = generateS3Key(file);   // Full key with extension
 
     return { file, path, key };
   });
@@ -216,17 +123,19 @@ const multiple = async (files: any) => {
       extension: extension ? `.${extension}` : null,
       type: file_type,
       mimetype: originalFile.mimetype,
-      originalName: originalFile.originalname, // Optional: nice to have
+      originalName: originalFile.originalname,
     };
   });
 
   return result;
 };
 
+// Single File Upload
 const single = async (file: any) => {
   if (!file) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'File is required');
   }
+
   const result = await uploadToS3({
     file,
     fileName: `images/${Math.floor(100000 + Math.random() * 900000)}`,

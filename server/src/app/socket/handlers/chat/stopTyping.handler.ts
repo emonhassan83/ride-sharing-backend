@@ -46,7 +46,7 @@ export const stopTypingHandler = eventHandler<any>(
 
       if (otherUserId) {
         // other user sent stop typing event
-        socket.to(otherUserId).emit('typing', {
+        socket.to(otherUserId).emit('stopTyping', {
           success: true,
           message: `${userName} stopped typing`,
           data: {

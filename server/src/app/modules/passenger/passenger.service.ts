@@ -25,7 +25,7 @@ const getDriverRideRequest = async (driverUserId: string) => {
     .populate([
       {
         path: 'rideId',
-        select: 'type',
+        select: 'id type',
       },
       {
         path: 'userId',
@@ -33,7 +33,7 @@ const getDriverRideRequest = async (driverUserId: string) => {
       },
     ])
     .select(
-      'userId rideId pickup destination departureDate departureTime requestedSeats estimatedFare status createdAt'
+      'userId rideId pickup destination departureDate departureTime requestedSeats estimatedDistanceKm estimatedFare status createdAt'
     )
     .sort({ createdAt: -1 })
     .lean();

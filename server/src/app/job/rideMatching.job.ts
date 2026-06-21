@@ -38,34 +38,36 @@ export const startRideMatchingJob = async (): Promise<void> => {
       if (!passenger) continue;
 
       const rider = await User.findById(ride.rideCreatedBy)
-        .select('name profileImage avgRating phone')
+        .select('name profileImage')
         .lean();
 
       const ridePayload = {
-        rideId: ride._id.toString(),
-        passengerId: passenger._id.toString(),
-        riderInfo: {
-          name: rider?.name || '',
+        _id:  passenger._id,
+        userId: {
+          _id:          rider?._id          || null,
+          name:         rider?.name         || '',
           profileImage: rider?.profileImage || null,
-          avgRating: rider?.avgRating || 0,
         },
-        rideType: ride.type,
+        rideId: {
+          _id:  ride._id,
+          type: ride.type,
+          id:   (ride as any).id || '',
+        },
         pickup: {
-          lat: ride.pickup.coordinates[1],
-          lng: ride.pickup.coordinates[0],
-          address: ride.pickup.address,
+          address:     ride.pickup.address,
+          coordinates: ride.pickup.coordinates,
         },
         destination: {
-          lat: ride.destination.coordinates[1],
-          lng: ride.destination.coordinates[0],
-          address: ride.destination.address,
+          address:     ride.destination.address,
+          coordinates: ride.destination.coordinates,
         },
-        requestedSeats: ride.totalSeats,
-        estimatedFare: passenger.estimatedFare,
-        departureDate: ride.departureDate,
-        departureTime: ride.departureTime,
-        phase: 2,
-        message: 'Ride departing in 48 hours — accept now!',
+        departureDate:       ride.departureDate,
+        departureTime:       ride.departureTime,
+        requestedSeats:      ride.totalSeats,
+        estimatedFare:       (passenger as any).estimatedFare       || 0,
+        estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,
+        status:              PASSENGER_STATUS.pending,
+        createdAt:           (passenger as any).createdAt,
       };
 
       const count = await notifyNearbyDrivers(
