@@ -24,7 +24,7 @@ router.put(
 
 router
   .route('/:userId')
-  .get(auth('common'), UserController.getSingleUser)
+  .get(auth([USER_ROLE.user, USER_ROLE.provider, USER_ROLE.admin]), UserController.getSingleUser)
   .put(
     auth('common'),
     validateRequest(UserValidation.updateUserValidationSchema),

@@ -72,25 +72,25 @@ const auth = (allowedRoles: string | TUserRole[] = 'common') =>
       );
     }
 
-    // Handle special 'me' param
-    if (req.params.userId) {
-      if (req.params.userId === 'me' || req.params.userId === user._id.toString()) {
-        req.params.userId = user._id.toString();
+    // // Handle special 'me' param
+    // if (req.params.userId) {
+    //   if (req.params.userId === 'me' || req.params.userId === user._id.toString()) {
+    //     req.params.userId = user._id.toString();
 
-        // Safely clear sensitive fields from body (if body exists)
-        if (req.body) {
-          delete req.body.status;
-          delete req.body.role;
-          delete req.body.isDeleted;
-        }
-      } 
-      else if (user.role !== USER_ROLE.admin) {
-        throw new ApiError(
-          StatusCodes.FORBIDDEN,
-          "You don't have permission to access other user's data"
-        );
-      }
-    }
+    //     // Safely clear sensitive fields from body (if body exists)
+    //     if (req.body) {
+    //       delete req.body.status;
+    //       delete req.body.role;
+    //       delete req.body.isDeleted;
+    //     }
+    //   } 
+    //   else if (user.role !== USER_ROLE.admin) {
+    //     throw new ApiError(
+    //       StatusCodes.FORBIDDEN,
+    //       "You don't have permission to access other user's data"
+    //     );
+    //   }
+    // }
 
     next();
   });
