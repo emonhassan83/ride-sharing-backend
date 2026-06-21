@@ -182,39 +182,32 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
 
       // ── Socket payload — same structure as getDriverRideRequest REST ──────
       const ridePayload = {
-        rideId: ride._id.toString(),
-        passengerId: passenger._id.toString(),
-        riderInfo: {
+        _id: passenger._id,
+        userId: {
+          _id: rider?._id || null,
           name: rider?.name || '',
           profileImage: rider?.profileImage || null,
-          avgRating: rider?.avgRating || 0,
-          phone: rider?.phone || '',
         },
-        rideType: 'split',
+        rideId: {
+          _id: ride._id,
+          type: ride.type,
+          id: (ride as any).id || '',
+        },
         pickup: {
           address: pickup.address,
-          lat: pickup.lat,
-          lng: pickup.lng,
+          coordinates: [pickup.lng, pickup.lat],
         },
         destination: {
           address: destination.address,
-          lat: destination.lat,
-          lng: destination.lng,
+          coordinates: [destination.lng, destination.lat],
         },
-        requestedSeats,
-        malePassengers: malePassengers || 0,
-        femalePassengers: femalePassengers || 0,
-        luggageCount: luggageCounts || 0,
-        note: note || '',
-        estimatedFare: fareBreakdown.estimatedFare,
-        surchargePercent: fareBreakdown.surchargePercent,
-        surchargeAmount: fareBreakdown.surchargeAmount,
-        distance: roundTo2(actualDistance),
         departureDate: scheduledDate,
         departureTime: scheduledTime,
-        availableSeats:
-          ride.totalSeats - (ride.bookedSeats || 0) - requestedSeats,
-        vehicle: vehicleInfo,
+        requestedSeats,
+        estimatedFare: fareBreakdown.estimatedFare,
+        estimatedDistanceKm: roundTo2(actualDistance),
+        status: PASSENGER_STATUS.pending,
+        createdAt: passenger.createdAt,
       };
 
       // ── Notify driver ─────────────────────────────────────────────────────

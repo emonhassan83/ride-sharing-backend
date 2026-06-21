@@ -15,8 +15,8 @@ const BATCH_SIZE = 50;
 
 // ── Load settings with fallback ───────────────────────────────────────────────
 const getMatchingSettings = async (): Promise<{
-  notifyHours:  number; // re-notify X hours before departure
-  cancelHours:  number; // cancel Y hours before departure
+  notifyHours: number; // re-notify X hours before departure
+  cancelHours: number; // cancel Y hours before departure
 }> => {
   const settings = await Setting.find({
     key: { $in: ['matchingNoDriverNotifyHours', 'matchingLastNotifyHours'] },
@@ -27,14 +27,14 @@ const getMatchingSettings = async (): Promise<{
 
   return {
     notifyHours: map.matchingNoDriverNotifyHours ?? 48, // fallback 48h
-    cancelHours: map.matchingLastNotifyHours     ?? 24, // fallback 24h
+    cancelHours: map.matchingLastNotifyHours ?? 24, // fallback 24h
   };
 };
 
 export const checkNoDriverFound = async () => {
   const redis = getRedisClient();
-  const io    = getIO();
-  const now   = new Date();
+  const io = getIO();
+  const now = new Date();
 
   const { notifyHours, cancelHours } = await getMatchingSettings();
 
@@ -42,9 +42,9 @@ export const checkNoDriverFound = async () => {
   const reNotifyBefore = new Date(now.getTime() + notifyHours * 3600000);
 
   const ridesForRenotify = await Ride.find({
-    status:            RIDE_STATUS.pending,
-    departureDate:     { $lte: reNotifyBefore.toISOString().split('T')[0] },
-    reNotifiedAt:      { $exists: false }, // not yet re-notified
+    status: RIDE_STATUS.pending,
+    departureDate: { $lte: reNotifyBefore.toISOString().split('T')[0] },
+    reNotifiedAt: { $exists: false }, // not yet re-notified
   })
     .limit(BATCH_SIZE)
     .lean();
@@ -52,13 +52,16 @@ export const checkNoDriverFound = async () => {
   for (const ride of ridesForRenotify) {
     // Check departure is actually within the window
     const departureMs = new Date(
-      `${ride.departureDate}T${ride.departureTime}:00`,
+      `${ride.departureDate}T${ride.departureTime}:00`
     ).getTime();
 
     const hoursUntilDeparture = (departureMs - now.getTime()) / 3600000;
 
     // Only re-notify if within notify window but not yet in cancel window
-    if (hoursUntilDeparture > cancelHours && hoursUntilDeparture <= notifyHours) {
+    if (
+      hoursUntilDeparture > cancelHours &&
+      hoursUntilDeparture <= notifyHours
+    ) {
       const passenger = await Passenger.findOne({
         rideId: ride._id,
         status: PASSENGER_STATUS.pending,
@@ -66,27 +69,38 @@ export const checkNoDriverFound = async () => {
 
       if (!passenger) continue;
 
+      const rider = await User.findById((ride as any).rideCreatedBy)
+        .select('_id name profileImage')
+        .lean();
+
       // Re-notify nearby drivers
       const ridePayload = {
-        rideId:        ride._id.toString(),
-        passengerId:   passenger._id.toString(),
-        riderInfo:     {},
-        rideType:      ride.type,
+        _id: passenger._id,
+        userId: {
+          _id: rider?._id || null,
+          name: rider?.name || '',
+          profileImage: rider?.profileImage || null,
+        },
+        rideId: {
+          _id: ride._id,
+          type: ride.type,
+          id: (ride as any).id || '',
+        },
         pickup: {
-          lat:     ride.pickup.coordinates[1],
-          lng:     ride.pickup.coordinates[0],
           address: ride.pickup.address,
+          coordinates: ride.pickup.coordinates,
         },
         destination: {
-          lat:     ride.destination.coordinates[1],
-          lng:     ride.destination.coordinates[0],
           address: ride.destination.address,
+          coordinates: ride.destination.coordinates,
         },
+        departureDate: ride.departureDate,
+        departureTime: ride.departureTime,
         requestedSeats: ride.totalSeats,
-        estimatedFare:  (passenger as any).estimatedFare || 0,
-        departureDate:  ride.departureDate,
-        departureTime:  ride.departureTime,
-        phase:          2,
+        estimatedFare: (passenger as any).estimatedFare || 0,
+        estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,
+        status: PASSENGER_STATUS.pending,
+        createdAt: (passenger as any).createdAt,
       };
 
       const notified = await notifyNearbyDrivers(
@@ -95,7 +109,7 @@ export const checkNoDriverFound = async () => {
         ridePayload,
         redis,
         io,
-        passenger._id.toString(),
+        passenger._id.toString()
       );
 
       // Mark as re-notified
@@ -109,21 +123,23 @@ export const checkNoDriverFound = async () => {
         .lean();
 
       io.to(`user:${(ride as any).rideCreatedBy}`).emit('ride:re-matching', {
-        rideId:  ride._id,
+        rideId: ride._id,
         message: `We're still looking for a driver. ${notified} driver(s) notified.`,
       });
 
       if (riderUser?.fcmToken) {
         sendNotification([riderUser.fcmToken], {
-          receiver:    (ride as any).rideCreatedBy,
-          message:     'Still Searching for a Driver',
+          receiver: (ride as any).rideCreatedBy,
+          message: 'Still Searching for a Driver',
           description: `We're still trying to find a driver for your ride. ${notified} driver(s) have been notified.`,
-          reference:   ride._id.toString(),
-          modelType:   modeType.Ride,
+          reference: ride._id.toString(),
+          modelType: modeType.Ride,
         }).catch(() => {});
       }
 
-      console.log(`🔔 Phase 2 re-notify | ride ${ride._id} | ${notified} drivers | ${hoursUntilDeparture.toFixed(1)}h before departure`);
+      console.log(
+        `🔔 Phase 2 re-notify | ride ${ride._id} | ${notified} drivers | ${hoursUntilDeparture.toFixed(1)}h before departure`
+      );
     }
   }
 
@@ -131,7 +147,7 @@ export const checkNoDriverFound = async () => {
   const cancelBefore = new Date(now.getTime() + cancelHours * 3600000);
 
   const ridesForCancel = await Ride.find({
-    status:        RIDE_STATUS.pending,
+    status: RIDE_STATUS.pending,
     departureDate: { $lte: cancelBefore.toISOString().split('T')[0] },
   })
     .limit(BATCH_SIZE)
@@ -141,7 +157,7 @@ export const checkNoDriverFound = async () => {
 
   for (const ride of ridesForCancel) {
     const departureMs = new Date(
-      `${ride.departureDate}T${ride.departureTime}:00`,
+      `${ride.departureDate}T${ride.departureTime}:00`
     ).getTime();
 
     const hoursUntilDeparture = (departureMs - now.getTime()) / 3600000;
@@ -157,34 +173,34 @@ export const checkNoDriverFound = async () => {
   await Ride.updateMany(
     { _id: { $in: cancelRideIds }, status: RIDE_STATUS.pending },
     {
-      status:             RIDE_STATUS.cancelled,
+      status: RIDE_STATUS.cancelled,
       cancellationReason: 'no_driver_found',
-      cancelledBy:        CANCELLED_BY.system,
-      cancelledAt:        now,
-    },
+      cancelledBy: CANCELLED_BY.system,
+      cancelledAt: now,
+    }
   );
 
   // Bulk cancel passengers
   await Passenger.updateMany(
     { rideId: { $in: cancelRideIds }, status: PASSENGER_STATUS.pending },
     {
-      status:             PASSENGER_STATUS.cancelled,
+      status: PASSENGER_STATUS.cancelled,
       cancellationReason: 'no_driver_found',
-      cancelledBy:        CANCELLED_BY.system,
-    },
+      cancelledBy: CANCELLED_BY.system,
+    }
   );
 
   // Notify riders — cancelled
   const cancelledPassengers = await Passenger.find(
     { rideId: { $in: cancelRideIds }, cancellationReason: 'no_driver_found' },
-    'userId rideId',
+    'userId rideId'
   ).lean();
 
   for (const p of cancelledPassengers) {
     // Socket
     io.to(`user:${p.userId}`).emit('ride:no-driver-found', {
-      rideId:     p.rideId,
-      message:    'No driver accepted your ride. Booking has been cancelled.',
+      rideId: p.rideId,
+      message: 'No driver accepted your ride. Booking has been cancelled.',
       retryAfter: 5,
     });
 
@@ -192,11 +208,11 @@ export const checkNoDriverFound = async () => {
     const riderUser = await User.findById(p.userId).select('fcmToken').lean();
     if (riderUser?.fcmToken) {
       sendNotification([riderUser.fcmToken], {
-        receiver:    p.userId,
-        message:     'Ride Cancelled — No Driver Found',
+        receiver: p.userId,
+        message: 'Ride Cancelled — No Driver Found',
         description: `No driver was available for your ride. Your booking has been cancelled.`,
-        reference:   p.rideId.toString(),
-        modelType:   modeType.Ride,
+        reference: p.rideId.toString(),
+        modelType: modeType.Ride,
       }).catch(() => {});
     }
   }

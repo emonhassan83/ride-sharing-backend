@@ -196,30 +196,32 @@ export const rideRequestHandler = eventHandler<any>(
       .lean();
 
     const ridePayload = {
-      rideId:           ride._id.toString(),
-      passengerId:      passenger._id.toString(),
-      riderInfo: {
+      _id:  passenger._id,
+      userId: {
+        _id:          rider?._id          || null,
         name:         rider?.name         || '',
         profileImage: rider?.profileImage || null,
-        avgRating:    rider?.avgRating    || 0,
-        phone:        rider?.phone        || '',
       },
-      rideType:         type,
-      pickup,
-      destination,
+      rideId: {
+        _id:  ride._id,
+        type: ride.type,
+        id:   (ride as any).id || '',
+      },
+      pickup: {
+        address:     pickup.address,
+        coordinates: [pickup.lng, pickup.lat],
+      },
+      destination: {
+        address:     destination.address,
+        coordinates: [destination.lng, destination.lat],
+      },
+      departureDate:       scheduledDate,
+      departureTime:       scheduledTime,
       requestedSeats,
-      malePassengers:   malePassengers   || 0,
-      femalePassengers: femalePassengers || 0,
-      luggageCount:     luggageCounts    || 0,
-      note:             note             || '',
-      estimatedFare:    roundedBreakdown.totalFare,
-      distance:         roundTo2(actualDistance),
-      departureDate:    scheduledDate,
-      departureTime:    scheduledTime,
-      vehicle:          null,
-      availableSeats:   requestedSeats,
-      surchargePercent: 0,
-      surchargeAmount:  0,
+      estimatedFare:       roundTo2(fareBreakdown.totalFare),
+      estimatedDistanceKm: roundTo2(actualDistance),
+      status:              PASSENGER_STATUS.pending,
+      createdAt:           passenger.createdAt,
     };
 
     // ── Notify drivers ────────────────────────────────────────────────────────

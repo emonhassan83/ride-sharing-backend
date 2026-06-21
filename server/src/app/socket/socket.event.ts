@@ -57,8 +57,8 @@ export const registerSocketEvents = (socket: Socket) => {
   tSocket.on('seen', (data, callback) =>
     seenHandler.call(tSocket, data, callback)
   );
-  tSocket.on('typing', (data) => typingHandler.call(tSocket, data));
-  tSocket.on('stop-typing', (data) => stopTypingHandler.call(tSocket, data));
+  tSocket.on('typing', (data, callback) => typingHandler.call(tSocket, data, callback));
+  tSocket.on('stop-typing', (data, callback) => stopTypingHandler.call(tSocket, data, callback));
 
   // ==================== RIDE EVENTS ====================
 
