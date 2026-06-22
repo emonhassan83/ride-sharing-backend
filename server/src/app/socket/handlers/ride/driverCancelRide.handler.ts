@@ -23,16 +23,16 @@ import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { refundToWallet } from '../../../utils/splitFare.utils';
 
-// ── Helper: cancel booking + refund record + wallet + push notify ─────────────
+// ── Helper: cancel single passenger booking + refund + notify ─────────────────
 const cancelBookingWithRefund = async (
   passengerId: any,
   rideId: string,
   driverId: string,
   reason: string,
-  io: any
+  io: any,
 ) => {
   const booking = await Booking.findOne({ passengerId });
-  if (!booking) return { refundAmount: 0, passengerId: null };
+  if (!booking) return { refundAmount: 0, userId: null };
 
   const paidAmount = booking.amountPaid ?? 0;
 
@@ -60,11 +60,10 @@ const cancelBookingWithRefund = async (
       passenger.userId.toString(),
       paidAmount,
       'driver_cancelled',
-      io
+      io,
     );
   }
 
-  // ✅ Socket notify
   const refundAmount = paidAmount;
   const notifyMessage =
     refundAmount > 0
@@ -80,7 +79,6 @@ const cancelBookingWithRefund = async (
       message: notifyMessage,
     });
 
-    // ✅ FCM push notification
     const riderUser = await User.findById(passenger.userId)
       .select('fcmToken')
       .lean();
@@ -93,12 +91,75 @@ const cancelBookingWithRefund = async (
         reference: rideId,
         modelType: modeType.Ride,
       }).catch((err: any) =>
-        console.warn(`FCM failed for passenger ${passengerId}:`, err)
+        console.warn(`FCM failed for passenger ${passengerId}:`, err),
       );
     }
   }
 
-  return { refundAmount, passengerId: passenger?.userId };
+  return { refundAmount, userId: passenger?.userId };
+};
+
+// ── Helper: cancel entire ride (all active passengers) ────────────────────────
+const cancelEntireRide = async (
+  rideId: string,
+  driverId: string,
+  reason: string,
+  io: any,
+  redis: any,
+) => {
+  const activePassengers = await Passenger.find({
+    rideId,
+    status: {
+      $in: [
+        PASSENGER_STATUS.confirmed,
+        PASSENGER_STATUS.in_progress,
+        PASSENGER_STATUS.driver_arrived,
+      ],
+    },
+  }).select('_id userId requestedSeats');
+
+  let totalRefunded = 0
+
+  // Cancel all passengers + refund
+  for (const passenger of activePassengers) {
+    const { refundAmount } = await cancelBookingWithRefund(
+      passenger._id,
+      rideId,
+      driverId,
+      reason,
+      io,
+    );
+
+    totalRefunded += refundAmount
+
+    await Passenger.findByIdAndUpdate(passenger._id, {
+      status: PASSENGER_STATUS.cancelled,
+      cancellationReason: reason || 'Driver cancelled entire ride',
+      cancelledBy: CANCELLED_BY.driver,
+    });
+  }
+
+  // Cancel the ride itself
+  await Ride.findByIdAndUpdate(rideId, {
+    status: RIDE_STATUS.cancelled,
+    cancellationReason: reason || 'Driver cancelled entire ride',
+    cancelledBy: CANCELLED_BY.driver,
+    cancelledAt: new Date(),
+  });
+
+  // Redis cleanup
+  await Promise.all([
+    redis.del(`ride:active:${rideId}`),
+    redis.del(`ride:request:${rideId}`),
+    redis.del(`driver:${driverId}:activeRide`),
+    redis.zrem('ride:matching:queue', rideId),
+    redis.hset(`driver:${driverId}:details`, 'bookedSeats', 0),
+  ]);
+
+  return {
+    cancelledPassengerCount: activePassengers.length,
+    totalRefunded,
+  };
 };
 
 export const driverCancelRideHandler = eventHandler<any>(
@@ -112,10 +173,7 @@ export const driverCancelRideHandler = eventHandler<any>(
     const ride = await Ride.findById(rideId);
     if (!ride) return callback?.({ success: false, message: 'Ride not found' });
     if (ride.driverId?.toString() !== driverId)
-      return callback?.({
-        success: false,
-        message: 'Not assigned to this ride',
-      });
+      return callback?.({ success: false, message: 'Not assigned to this ride' });
 
     const cancellableStatuses = [RIDE_STATUS.accepted, RIDE_STATUS.started];
     if (!cancellableStatuses.includes(ride.status as any))
@@ -157,25 +215,23 @@ export const driverCancelRideHandler = eventHandler<any>(
               ],
             },
           });
-      if (!passenger)
-        return callback?.({
-          success: false,
-          message: 'No active passenger found',
-        });
 
-      // ✅ Socket + FCM inside helper
+      if (!passenger)
+        return callback?.({ success: false, message: 'No active passenger found' });
+
       const { refundAmount } = await cancelBookingWithRefund(
         passenger._id,
         rideId,
         driverId,
         reason,
-        io
+        io,
       );
 
-      passenger.status = PASSENGER_STATUS.cancelled;
-      passenger.cancellationReason = reason || 'Driver cancelled';
-      passenger.cancelledBy = CANCELLED_BY.driver;
-      await passenger.save();
+      await Passenger.findByIdAndUpdate(passenger._id, {
+        status: PASSENGER_STATUS.cancelled,
+        cancellationReason: reason || 'Driver cancelled',
+        cancelledBy: CANCELLED_BY.driver,
+      });
 
       await Ride.findByIdAndUpdate(rideId, {
         status: RIDE_STATUS.cancelled,
@@ -187,7 +243,7 @@ export const driverCancelRideHandler = eventHandler<any>(
       await redis.hincrby(
         `driver:${driverId}:details`,
         'bookedSeats',
-        -(passenger.requestedSeats || 1)
+        -(passenger.requestedSeats || 1),
       );
       await redisCleanup();
 
@@ -200,12 +256,36 @@ export const driverCancelRideHandler = eventHandler<any>(
 
     // ── SPLIT RIDE ────────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.split) {
-      if (!passengerId)
-        return callback?.({
-          success: false,
-          message: 'passengerId is required for split ride',
+
+      // ✅ Case 1: passengerId নেই — পুরো ride cancel করো
+      if (!passengerId) {
+        const { cancelledPassengerCount, totalRefunded } = await cancelEntireRide(
+          rideId,
+          driverId,
+          reason,
+          io,
+          redis,
+        );
+
+        // Notify driver
+        io.to(`driver:${driverId}`).emit('ride:cancelled-by-driver', {
+          rideId,
+          reason: reason || 'Driver cancelled entire ride',
+          message: `Entire ride cancelled. ${cancelledPassengerCount} passenger(s) notified and refunded.`,
         });
 
+        return callback?.({
+          success: true,
+          message: `Entire split ride cancelled. ${cancelledPassengerCount} passenger(s) affected.`,
+          data: {
+            rideCancelled: true,
+            cancelledPassengerCount,
+            totalRefunded,
+          },
+        });
+      }
+
+      // ✅ Case 2: passengerId আছে — শুধু সেই passenger cancel করো
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,
@@ -217,36 +297,35 @@ export const driverCancelRideHandler = eventHandler<any>(
           ],
         },
       });
-      if (!passenger)
-        return callback?.({
-          success: false,
-          message: 'Passenger not found or not active',
-        });
 
-      // ✅ Socket + FCM inside helper
+      if (!passenger)
+        return callback?.({ success: false, message: 'Passenger not found or not active' });
+
       const { refundAmount } = await cancelBookingWithRefund(
         passenger._id,
         rideId,
         driverId,
         reason,
-        io
+        io,
       );
 
-      passenger.status = PASSENGER_STATUS.cancelled;
-      passenger.cancellationReason = reason || 'Driver cancelled passenger';
-      passenger.cancelledBy = CANCELLED_BY.driver;
-      await passenger.save();
+      await Passenger.findByIdAndUpdate(passenger._id, {
+        status: PASSENGER_STATUS.cancelled,
+        cancellationReason: reason || 'Driver cancelled passenger',
+        cancelledBy: CANCELLED_BY.driver,
+      });
 
       await Ride.findByIdAndUpdate(rideId, {
         $inc: { bookedSeats: -(passenger.requestedSeats || 1) },
       });
+
       await redis.hincrby(
         `driver:${driverId}:details`,
         'bookedSeats',
-        -(passenger.requestedSeats || 1)
+        -(passenger.requestedSeats || 1),
       );
 
-      // Notify co-passengers
+      // Notify remaining co-passengers
       const remainingPassengers = await Passenger.find({
         rideId,
         status: {
@@ -272,20 +351,19 @@ export const driverCancelRideHandler = eventHandler<any>(
           message: 'A passenger has been removed by the driver.',
         });
 
-        // FCM to co-passengers
         const coUser = await User.findById(p.userId).select('fcmToken').lean();
         if (coUser?.fcmToken) {
           sendNotification([coUser.fcmToken], {
             receiver: p.userId,
             message: 'Passenger Removed',
-            description:
-              'A passenger has been removed from your split ride by the driver.',
+            description: 'A passenger has been removed from your split ride by the driver.',
             reference: rideId,
             modelType: modeType.Ride,
           }).catch(() => {});
         }
       }
 
+      // ✅ No passengers left → cancel entire ride
       let rideCancelled = false;
       if (remainingPassengers.length === 0) {
         await Ride.findByIdAndUpdate(rideId, {
@@ -302,7 +380,7 @@ export const driverCancelRideHandler = eventHandler<any>(
         success: true,
         message: rideCancelled
           ? 'Last passenger cancelled. Ride cancelled.'
-          : 'Passenger cancelled.',
+          : 'Passenger cancelled from split ride.',
         data: {
           remainingPassengers: remainingPassengers.length,
           rideCancelled,
@@ -312,5 +390,5 @@ export const driverCancelRideHandler = eventHandler<any>(
     }
 
     return callback?.({ success: false, message: 'Unknown ride type' });
-  }
+  },
 );
