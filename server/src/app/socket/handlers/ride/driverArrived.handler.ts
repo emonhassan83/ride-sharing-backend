@@ -33,7 +33,6 @@ const checkDriverNearPickup = async (
     driverLat = manualLat;
     driverLng = manualLng;
   }
-  console.log({ driverLat, driverLng });
 
   if (driverLat === null) {
     try {
@@ -69,8 +68,6 @@ const checkDriverNearPickup = async (
     pickupLat,
     pickupLng
   );
-
-  console.log({ driverLat, driverLng, pickupLat, pickupLng, distanceMeters });
 
   return {
     isNear: distanceMeters <= ARRIVAL_THRESHOLD_METERS,
@@ -135,7 +132,6 @@ export const driverArrivedHandler = eventHandler<any>(
         passengerId: passenger._id,
         driverId,
         message: 'Driver has arrived at your pickup location',
-        waitingTime: 2,
         isLastArrival,
       });
 
@@ -256,7 +252,11 @@ export const driverArrivedHandler = eventHandler<any>(
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,
-        status: PASSENGER_STATUS.confirmed,
+        status: [
+          PASSENGER_STATUS.confirmed,
+          PASSENGER_STATUS.in_progress,
+          PASSENGER_STATUS.driver_arrived,
+        ]
       });
       if (!passenger)
         return callback?.({
@@ -285,7 +285,11 @@ export const driverArrivedHandler = eventHandler<any>(
 
       const remaining = await Passenger.countDocuments({
         rideId,
-        status: PASSENGER_STATUS.confirmed,
+        status: [
+          PASSENGER_STATUS.confirmed,
+          PASSENGER_STATUS.in_progress,
+          PASSENGER_STATUS.driver_arrived,
+        ],
         arrivedNotified: false,
       });
 
@@ -304,7 +308,11 @@ export const driverArrivedHandler = eventHandler<any>(
     if (arriveAll) {
       const passengers = await Passenger.find({
         rideId,
-        status: PASSENGER_STATUS.confirmed,
+        status: [
+          PASSENGER_STATUS.confirmed,
+          PASSENGER_STATUS.in_progress,
+          PASSENGER_STATUS.driver_arrived,
+        ],
         arrivedNotified: false,
       });
       if (!passengers.length)
