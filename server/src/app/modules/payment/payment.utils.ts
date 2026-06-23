@@ -5,6 +5,8 @@ import { TPayment } from './payment.interface';
 import { TUser } from '../user/user.interface';
 import { modeType } from '../notification/notification.interface';
 import { sendNotification } from '../../utils/sentPushNotification';
+import ApiError from '../../errors/ApiError';
+import { StatusCodes } from 'http-status-codes';
 console.log(config.server.url);
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
@@ -27,7 +29,14 @@ interface TPayload {
 }
 
 export const createCheckoutSession = async (payload: TPayload) => {
-  const { customer: customerData } = payload;
+  const { customer: customerData, product } = payload;
+
+  // Best practice: Round to nearest cent before multiplying
+  const amountInCents = Math.round((product.amount || 0) * 100);
+
+  if (amountInCents <= 0) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid amount');
+  }
 
   const customer = await stripe.customers.create({
     name: 'name' in customerData ? customerData.name : undefined,
@@ -40,33 +49,18 @@ export const createCheckoutSession = async (payload: TPayload) => {
         price_data: {
           currency: 'usd',
           product_data: {
-            name: payload?.product?.name,
+            name: product?.name || 'Ride Booking',
           },
-          unit_amount: payload.product?.amount * 100,
+          unit_amount: amountInCents,
         },
-        quantity: payload.product?.quantity,
+        quantity: product?.quantity || 1,
       },
     ],
 
     success_url: `${config.server.url}/payments/confirm-payment?sessionId={CHECKOUT_SESSION_ID}&paymentId=${payload?.paymentId}`,
-    // cancel_url: config?.payment_cancel_url,
     mode: 'payment',
-    // metadata: {
-    //   user: JSON.stringify({
-    //     paymentId: payment.id,
-    //   }),
-    // },
-    invoice_creation: {
-      enabled: true,
-    },
+    invoice_creation: { enabled: true },
     customer: customer.id,
-    // payment_intent_data: {
-    //   metadata: {
-    //     payment: JSON.stringify({
-    //       ...payment,
-    //     }),
-    //   },
-    // },
     payment_method_types: ['card'],
   });
 
