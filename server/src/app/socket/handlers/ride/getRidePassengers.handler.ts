@@ -1,6 +1,7 @@
 // handlers/driver/getActivePassengers.handler.ts
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Passenger } from '../../../modules/passenger/passenger.model';
+import { Booking } from '../../../modules/booking/booking.model';
 import { Ride } from '../../../modules/ride/ride.model';
 import { User } from '../../../modules/user/user.model';
 import { haversineMeters } from '../../../utils/geo.utils';
@@ -20,7 +21,6 @@ export const getRidePassengersHandler = eventHandler<any>(
     if (lat == null || lng == null)
       return callback?.({ success: false, message: 'Missing driver location (lat, lng)' });
 
-    // ── Ride validation ───────────────────────────────────────────────────────
     const ride = await Ride.findById(rideId).lean();
     if (!ride)
       return callback?.({ success: false, message: 'Ride not found' });
@@ -35,7 +35,6 @@ export const getRidePassengersHandler = eventHandler<any>(
         message: `Cannot get passengers — ride status: ${ride.status}`,
       });
 
-    // ── Find in_progress passengers ───────────────────────────────────────────
     const passengers = await Passenger.find({
       rideId,
       status: { $in: [
@@ -56,59 +55,49 @@ export const getRidePassengersHandler = eventHandler<any>(
       });
     }
 
-    // ── Enrich with user info + distance from driver ───────────────────────────
+    // ✅ Batch fetch bookings for all passengers at once
+    const passengerIds = passengers.map(p => p._id);
+    const bookings     = await Booking.find({ passengerId: { $in: passengerIds } })
+      .select('passengerId _id')
+      .lean();
+
+    const bookingMap = new Map(
+      bookings.map(b => [b.passengerId.toString(), b._id]),
+    );
+
     const enriched = await Promise.all(
       passengers.map(async (passenger) => {
-        // User info
         const user = await User.findById(passenger.userId)
           .select('name profileImage phone avgRating')
           .lean();
 
-        // Pickup coordinates [lng, lat]
-        const pickupLng = passenger.pickup.coordinates[0];
-        const pickupLat = passenger.pickup.coordinates[1];
-
-        // Distance from driver current location to passenger pickup (meters)
+        const pickupLng      = passenger.pickup.coordinates[0];
+        const pickupLat      = passenger.pickup.coordinates[1];
         const distanceMeters = haversineMeters(lat, lng, pickupLat, pickupLng);
-        const distanceKm     = Math.round(distanceMeters / 10) / 100; // 2 decimal
 
         return {
-          passengerId:   passenger._id,
-          status:        passenger.status,
+          passengerId:    passenger._id,
+          bookingId:      bookingMap.get(passenger._id.toString()) || null, // ✅
+          status:         passenger.status,
           requestedSeats: passenger.requestedSeats,
-          estimatedFare: passenger.estimatedFare,
-
-          // User info
-          name:         user?.name         || '',
-          profileImage: user?.profileImage || null,
-
-          // Pickup
+          estimatedFare:  passenger.estimatedFare,
+          name:           user?.name         || '',
+          profileImage:   user?.profileImage || null,
           pickup: {
             address: passenger.pickup.address,
             lat:     pickupLat,
             lng:     pickupLng,
           },
-
-          // Destination
           destination: {
             address: passenger.destination.address,
             lat:     passenger.destination.coordinates[1],
             lng:     passenger.destination.coordinates[0],
           },
-
-          // Distance from driver → passenger pickup
-        //   distanceFromDriverKm: distanceKm,
-        //   distanceFromDriverM:  Math.round(distanceMeters),
-
-          // Trip timestamps
           arriveAt:   passenger.arriveAt   || null,
           pickedUpAt: passenger.pickedUpAt || null,
         };
       }),
     );
-
-    // Sort by distance ascending (nearest passenger first)
-    // enriched.sort((a, b) => a.distanceFromDriverM - b.distanceFromDriverM);
 
     return callback?.({
       success: true,
