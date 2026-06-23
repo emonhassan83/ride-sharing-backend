@@ -59,7 +59,7 @@ const createPaymentIntent = async (payload: {
 
   const commissionPercent = Number(commissionSetting?.value ?? 10); // default 10%
 
-  const totalFare = booking.totalFare;
+  const totalFare = Math.round(booking.totalFare * 100) / 100;
   const platformCommission =
     Math.round(((totalFare * commissionPercent) / 100) * 100) / 100;
   const providerEarning =
