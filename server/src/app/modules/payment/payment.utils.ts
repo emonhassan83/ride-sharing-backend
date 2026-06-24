@@ -7,7 +7,6 @@ import { modeType } from '../notification/notification.interface';
 import { sendNotification } from '../../utils/sentPushNotification';
 import ApiError from '../../errors/ApiError';
 import { StatusCodes } from 'http-status-codes';
-console.log(config.server.url);
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-05-27.dahlia',
