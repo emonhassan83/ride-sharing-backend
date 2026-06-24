@@ -121,7 +121,7 @@ const updateStatusIntoDB = async (
       // First, update User KYC status
       await User.findByIdAndUpdate(
         provider.userId,
-        { status: USER_STATUS.active },
+        { status: USER_STATUS.active, isKycVerified: true },
         { session }
       );
 

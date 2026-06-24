@@ -15,7 +15,7 @@ router.post(
 );
 
 router.patch(
-  '/:userId',
+  '/:id',
   auth(USER_ROLE.admin),
   validateRequest(ProviderValidation.updateStatusZodSchema),
   ProviderController.updateAIntoDB,
