@@ -13,7 +13,7 @@ import { stopTypingHandler } from './handlers/chat/stopTyping.handler';
 
 // Driver events
 import { driverGoOnlineHandler } from './handlers/ride/driverGoOnline.handler';
-import { driverGoOfflineHandler } from './handlers/ride/driverGoOffline.handler';
+import { driverGoOfflineSocketHandler } from './handlers/ride/driverGoOffline.handler';
 import { driverLocationUpdateHandler } from './handlers/ride/driverLocationUpdate.handler';
 import { driverAcceptRideHandler } from './handlers/ride/driverAcceptRide.handler';
 import { driverRejectRideHandler } from './handlers/ride/driverRejectRide.handler';
@@ -68,7 +68,7 @@ export const registerSocketEvents = (socket: Socket) => {
     driverGoOnlineHandler.call(tSocket, data, callback)
   );
   tSocket.on('driver:go-offline', (data, callback) =>
-    driverGoOfflineHandler.call(tSocket, data, callback)
+    driverGoOfflineSocketHandler.call(tSocket, data, callback)
   );
 
   // Driver Location
