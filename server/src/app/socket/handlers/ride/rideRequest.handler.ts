@@ -48,6 +48,7 @@ const hasAvailableDriversNearby = async (
     role:      USER_ROLE.provider,
     isDeleted: false,
     status:    USER_STATUS.active,
+    isKycVerified: true,
     location: {
       $nearSphere: {
         $geometry:    { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
