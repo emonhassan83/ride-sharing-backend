@@ -131,7 +131,7 @@ const getRiderRides = async (
     _id: { $in: rideIds },
     ...rideStatusFilter,
   })
-    .populate([{ path: 'driverId', select: 'name' }])
+    .populate([{ path: 'driverId', select: 'name profileImage phone email' }])
     .select('id type status driverId departureDate departureTime totalSeats bookedSeats malePassengers femalePassengers createdAt')
     .lean();
 

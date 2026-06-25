@@ -9,7 +9,7 @@ import ApiError from '../../errors/ApiError';
 import { StatusCodes } from 'http-status-codes';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
-  apiVersion: '2026-05-27.dahlia',
+  apiVersion: '2026-06-24.dahlia',
   typescript: true,
 });
 interface TPayload {
