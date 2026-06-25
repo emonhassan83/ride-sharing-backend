@@ -119,7 +119,12 @@ export async function notifyNearbyDrivers(
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    // ✅ Availability check
+    // KYC check for online drivers
+    const driverDoc = await User.findById(driverId)
+      .select('isKycVerified fcmToken _id')
+      .lean();
+    if (!driverDoc?.isKycVerified) continue;
+
     const availability = await hasDriverRideAtDateTime(
       driverId,
       departureDate,
@@ -127,22 +132,15 @@ export async function notifyNearbyDrivers(
       rideType,
       requestedSeats
     );
-
-    if (!availability.available) {
-      console.log(
-        `⏭️ Skipping online driver ${driverId} — ${availability.reason}`
-      );
-      continue;
-    }
+    if (!availability.available) continue;
 
     io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
     notifiedIds.push(driverId);
     notifiedCount++;
 
-    const driver = await User.findById(driverId).select('_id fcmToken').lean();
-    if (driver?.fcmToken) {
-      sendNotification([(driver as any).fcmToken], {
-        receiver: driver._id,
+    if (driverDoc?.fcmToken) {
+      sendNotification([driverDoc.fcmToken], {
+        receiver: driverDoc._id,
         message: 'New Ride Request!',
         description: `New ${rideType} ride from ${ridePayload.pickup?.address || 'nearby'}`,
         reference: passengerId,
@@ -158,6 +156,7 @@ export async function notifyNearbyDrivers(
     role: USER_ROLE.provider,
     isDeleted: false,
     status: USER_STATUS.active,
+    isKycVerified: true,
     location: {
       $nearSphere: {
         $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
@@ -285,8 +284,10 @@ export async function notifyNearbyDriversForSplitRide(
     }
 
     const dbDriver = await User.findById(driverId)
-      .select('_id fcmToken location')
+      .select('_id fcmToken location isKycVerified')
       .lean();
+    if (!dbDriver?.isKycVerified) continue;
+
     const location = await getDriverCurrentLocation(redis, driverId, dbDriver);
     if (location && !isNearRoute(location.lat, location.lng)) continue;
 
@@ -312,6 +313,7 @@ export async function notifyNearbyDriversForSplitRide(
     role: USER_ROLE.provider,
     isDeleted: false,
     status: USER_STATUS.active,
+    isKycVerified: true, 
     location: {
       $nearSphere: {
         $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
