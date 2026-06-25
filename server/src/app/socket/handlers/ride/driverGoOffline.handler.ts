@@ -3,7 +3,10 @@ import { getRedisClient } from '../../../config/redis.config';
 import { User } from '../../../modules/user/user.model';
 import { removeDriverLocation } from '../../../utils/geo.utils';
 import { getIO } from '../../socket.init';
+import { TSocket } from '../../interface/index.interface';
+import eventHandler from '../../utils/eventHandler';
 
+// ── Core offline logic (reusable — called from socket + disconnect) ───────────
 export const driverGoOfflineHandler = async (
   driverId: string,
   options: { lat?: number; lng?: number } = {},
@@ -66,10 +69,27 @@ export const driverGoOfflineHandler = async (
     const onlineCount = await redis.scard('users:online');
     io.emit('onlineUser', onlineCount);
 
-    console.log(`🚗 Driver ${driverId} offline | last location: lat=${lastLat}, lng=${lastLng}`);
     return { success: true, message: 'Driver offline successfully' };
   } catch (error) {
     console.error('Error in driverGoOfflineHandler:', error);
     return { success: false, message: 'Failed to go offline' };
   }
 };
+
+// ── Socket event handler — driver:go-offline (with callback) ─────────────────
+export const driverGoOfflineSocketHandler = eventHandler<any>(
+  async (socket: TSocket, data: any, callback?: any) => {
+    const driverId = socket.auth?._id?.toString();
+
+    if (!driverId)
+      return callback?.({ success: false, message: 'Unauthorized' });
+
+    const { lat, lng } = data || {};
+
+    const result = await driverGoOfflineHandler(driverId, { lat, lng });
+    console.log({result});
+    
+
+    return callback?.(result);
+  },
+);

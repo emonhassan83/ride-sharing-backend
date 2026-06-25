@@ -94,14 +94,6 @@ const initializeSocketIO = (server: HttpServer) => {
         console.log(`✅ Driver rejoined room: ride:${activeRide._id}`);
       }
 
-      // ── Online status update ──────────────────────────────────────────────
-      await User.findByIdAndUpdate(userId, {
-        isOnline:     true,
-        lastOnlineAt: new Date(),
-      });
-
-      console.log(`✅ User connected: ${userId}`);
-
       // ── Disconnect handler ────────────────────────────────────────────────
       socket.on('disconnect', async () => {
         delete onlineUsers[userId];
