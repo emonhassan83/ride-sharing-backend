@@ -8,7 +8,7 @@ class StripeService {
 
   constructor() {
     this.stripeInstance = new Stripe(config.pay?.secretKey as string, {
-      apiVersion: '2026-05-27.dahlia',
+      apiVersion: '2026-06-24.dahlia',
       typescript: true,
     });
   }
