@@ -8,7 +8,6 @@ import { Ride } from '../../../modules/ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { TUser } from '../../../modules/user/user.interface';
 import { TVehicle } from '../../../modules/vehicle/vehicle.interface';
-import { Passenger } from '../../../modules/passenger/passenger.model';
 import { User } from '../../../modules/user/user.model';
 import { ISplitRideRequest } from '../../interface/ride';
 
@@ -20,11 +19,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
   ) => {
     if (!data) return callback?.({ success: false, message: 'Invalid data' });
 
-    const { pickup, destination, departureDate, departureTime, passengers } =
-      data;
-
-    const CORRIDOR_RADIUS_METERS = 5000; // ✅ 5km corridor
-    const EARTH_RADIUS_METERS = 6378100;
+    const { pickup, destination, departureDate, passengers } = data;
 
     const redisClient = getRedisClient();
 
@@ -65,10 +60,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
             const { lat, lng } = JSON.parse(raw);
             driverLocationMap[driverId] = { lat, lng };
           } else {
-            // DB fallback
-            const user = await User.findById(driverId)
-              .select('location')
-              .lean();
+            const user = await User.findById(driverId).select('location').lean();
             const coords = user?.location?.coordinates;
             if (coords && (coords[0] !== 0 || coords[1] !== 0)) {
               driverLocationMap[driverId] = { lat: coords[1], lng: coords[0] };
@@ -85,23 +77,17 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
     // ── DB query — basic filter only ──────────────────────────────────────────
     const rides = await Ride.find({
       type: RIDE_TYPE.split,
-      status: RIDE_STATUS.accepted,
+      status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted, RIDE_STATUS.started] },
       departureDate,
-      driverId: { $in: nearbyDriverIds },
       $expr: {
         $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, passengers],
       },
     })
       .populate<{ driverId: TUser }>(
         'driverId',
-        'name profileImage avgRating phone gender'
+        'name email profileImage avgRating phone gender location'
       )
       .populate<{ vehicleId: TVehicle }>('vehicleId', 'name number year seats')
-      .lean();
-
-    const rideIds = rides.map((r: any) => r._id.toString());
-    const passengersInfos = await Passenger.find({ rideId: { $in: rideIds } })
-      .select('rideId requestedSeats malePassengers femalePassengers')
       .lean();
 
     // ── Application level corridor + direction filter ─────────────────────────
@@ -109,146 +95,103 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
       const coords = ride.routeGeometry?.coordinates ?? [];
       if (!coords.length) return false;
 
-      // Check pickup is near route
-      const pickupNear = isPointNearRoute(
-        pickup.lat,
-        pickup.lng,
-        coords
-      );
+      // Client sends lat/lng with swapped names vs GeoJSON convention;
+      // isPointNearRoute expects standard (lat, lng) matching GeoJSON [lng, lat] decoding.
+      const pickupNear = isPointNearRoute(pickup.lng, pickup.lat, coords);
       if (!pickupNear) return false;
 
-      // Check destination is near route
-      const destNear = isPointNearRoute(
-        destination.lat,
-        destination.lng,
-        coords
-      );
+      const destNear = isPointNearRoute(destination.lng, destination.lat, coords);
       if (!destNear) return false;
 
-      // Direction check — pickup index < destination index on route
-      let pickupIdx = -1,
-        destIdx = -1;
-      let pickupDist = Infinity,
-        destDist = Infinity;
+      // Direction check — pickup index must appear before destination index on route
+      let pickupIdx = -1, destIdx = -1;
+      let pickupDist = Infinity, destDist = Infinity;
 
       coords.forEach(([lng, lat]: [number, number], i: number) => {
-        const pd = haversineMeters(pickup.lat, pickup.lng, lat, lng);
-        const dd = haversineMeters(destination.lat, destination.lng, lat, lng);
-        if (pd < pickupDist) {
-          pickupDist = pd;
-          pickupIdx = i;
-        }
-        if (dd < destDist) {
-          destDist = dd;
-          destIdx = i;
-        }
+        const pd = haversineMeters(pickup.lng, pickup.lat, lat, lng);
+        const dd = haversineMeters(destination.lng, destination.lat, lat, lng);
+        if (pd < pickupDist) { pickupDist = pd; pickupIdx = i; }
+        if (dd < destDist) { destDist = dd; destIdx = i; }
       });
 
       return destIdx > pickupIdx;
     });
 
-    // ── Group passengers by rideId ────────────────────────────────────────────
-    const passengersByRideId = passengersInfos.reduce(
-      (acc: Record<string, typeof passengersInfos>, p: any) => {
-        const key = p.rideId.toString();
-        if (!acc[key]) acc[key] = [];
-        acc[key].push(p);
-        return acc;
-      },
-      {}
-    );
-
     // ── Build response ────────────────────────────────────────────────────────
-    const addMinutesToTime = (time: string, minutes: number): string => {
-      const [h, m] = time.split(':').map(Number);
-      const total = h * 60 + m + minutes;
-      const hh = Math.floor(total / 60) % 24;
-      const mm = total % 60;
-      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-    };
-
-    const result = await Promise.all(
-      filteredRides.map(async (ride: any) => {
-        const driver = ride.driverId as TUser & { _id: any };
+    const drivers = await Promise.all(
+      filteredRides
+        .filter((ride: any) => ride.driverId && ride.vehicleId) // skip rides with deleted/missing driver or vehicle
+        .map(async (ride: any) => {
+        const driver = ride.driverId as TUser & { _id: any; email?: string; location?: { coordinates: number[] } };
         const vehicle = ride.vehicleId as TVehicle & { _id: any };
-        const ridePassengers = passengersByRideId[ride._id.toString()] ?? [];
 
-        const totalRequestedSeats = ridePassengers.reduce(
-          (s: number, p: any) => s + (p.requestedSeats ?? 0),
-          0
-        );
-        const totalMale = ridePassengers.reduce(
-          (s: number, p: any) => s + (p.malePassengers ?? 0),
-          0
-        );
-        const totalFemale = ridePassengers.reduce(
-          (s: number, p: any) => s + (p.femalePassengers ?? 0),
-          0
-        );
+        // Redis real-time location → DB populated location → ride pickup fallback
+        let driverLocation: { lat: number; lng: number } | null =
+          driverLocationMap[driver?._id?.toString()] ?? null;
+        if (!driverLocation) {
+          const coords = driver?.location?.coordinates;
+          if (coords && (coords[0] !== 0 || coords[1] !== 0)) {
+            driverLocation = { lat: coords[1], lng: coords[0] };
+          }
+        }
 
-        const { distanceKm, durationMinutes } = await getRealDistanceAndETA(
-          { lat: ride.pickup.coordinates[1], lng: ride.pickup.coordinates[0] },
-          { lat: pickup.lat, lng: pickup.lng }
-        );
+        // Distance & ETA from driver's current position to user's pickup
+        const from = driverLocation
+          ? { lat: driverLocation.lat, lng: driverLocation.lng }
+          : { lat: ride.pickup.coordinates[1], lng: ride.pickup.coordinates[0] };
 
-        const estimatedPickupTime = addMinutesToTime(
-          ride.departureTime,
-          durationMinutes
-        );
+        let distance = 0;
+        let eta = 0;
+        try {
+          const maps = await getRealDistanceAndETA(from, {
+            lat: pickup.lat,
+            lng: pickup.lng,
+          });
+          distance = parseFloat(maps.distanceKm.toFixed(2));
+          eta = Math.round(maps.durationMinutes);
+        } catch {
+          /* keep 0 defaults */
+        }
 
         return {
-          ride: {
-            _id: ride._id,
-            type: ride.type,
-            status: ride.status,
-            departureDate: ride.departureDate,
-            departureTime: ride.departureTime,
-            estimatedPickupTime,
-            distanceFromRidePickupToUserPickupKm: distanceKm,
-            totalSeats: ride.totalSeats,
-            bookedSeats: ride.bookedSeats,
-            availableSeats: ride.totalSeats - ride.bookedSeats,
-            pickup: ride.pickup,
-            destination: ride.destination,
-          },
-          requestedPickup: {
-            address: pickup.address ?? null,
-            coordinates: [pickup.lng, pickup.lat],
-          },
-          requestedDestination: {
-            address: destination.address ?? null,
-            coordinates: [destination.lng, destination.lat],
-          },
-          driver: {
-            _id: driver?._id,
-            name: driver?.name,
-            profileImage: driver?.profileImage,
-            avgRating: driver?.avgRating,
-            phone: driver?.phone,
-            gender: driver?.gender,
-            currentLocation: driverLocationMap[driver?._id?.toString()] ?? null,
-          },
+          driverId: driver?._id,
+          driverName: driver?.name,
+          driverEmail: driver?.email ?? null,
+          driverPhone: driver?.phone,
+          driverPhoto: driver?.profileImage,
+          driverRating: driver?.avgRating,
           vehicle: {
-            _id: vehicle?._id,
-            name: vehicle?.name,
+            model: vehicle?.name,
             number: vehicle?.number,
-            year: vehicle?.year,
             seats: vehicle?.seats,
+            availableSeats: ride.totalSeats - ride.bookedSeats,
           },
-          passengers: {
-            count: ridePassengers.length,
-            totalRequestedSeats,
-            totalMale,
-            totalFemale,
-          },
+          location: driverLocation,
+          distance,
+          eta,
+          departureTime: ride.departureTime,
+          departureDate: ride.departureDate,
         };
       })
     );
 
     callback?.({
       success: true,
-      message: `${result.length} nearby split ride(s) found`,
-      data: result,
+      message: `${drivers.length} nearby split ride(s) found`,
+      data: {
+        pickup: {
+          lat: pickup.lat,
+          lng: pickup.lng,
+          address: pickup.address ?? null,
+        },
+        destination: {
+          lat: destination.lat,
+          lng: destination.lng,
+          address: destination.address ?? null,
+        },
+        driverCount: drivers.length,
+        drivers,
+      },
     });
   }
 );

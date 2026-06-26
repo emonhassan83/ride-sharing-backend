@@ -316,7 +316,11 @@ export const driverCancelRideHandler = eventHandler<any>(
       });
 
       await Ride.findByIdAndUpdate(rideId, {
-        $inc: { bookedSeats: -(passenger.requestedSeats || 1) },
+        $inc: {
+          bookedSeats:      -(passenger.requestedSeats  || 1),
+          malePassengers:   -(passenger.malePassengers  || 0),
+          femalePassengers: -(passenger.femalePassengers || 0),
+        },
       });
 
       await redis.hincrby(

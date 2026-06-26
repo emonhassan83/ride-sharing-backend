@@ -379,13 +379,35 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       session
     );
     if (passenger) {
+      await Passenger.findByIdAndUpdate(
+        booking.passengerId,
+        { paymentStatus: PAYMENT_STATUS.paid },
+        { session }
+      );
+
       const ride = await Ride.findById(booking.rideId).session(session);
       if (ride) {
         await Ride.findByIdAndUpdate(
           ride._id,
-          { $inc: { bookedSeats: passenger.requestedSeats || 1 } },
+          {
+            $inc: {
+              bookedSeats:     passenger.requestedSeats  || 1,
+              malePassengers:  passenger.malePassengers  || 0,
+              femalePassengers: passenger.femalePassengers || 0,
+            },
+          },
           { session }
         );
+
+        const driverId = booking.driverId?.toString();
+        if (driverId) {
+          const redis = getRedisClient();
+          await redis.hincrby(
+            `driver:${driverId}:details`,
+            'bookedSeats',
+            passenger.requestedSeats || 1
+          );
+        }
       }
     }
 

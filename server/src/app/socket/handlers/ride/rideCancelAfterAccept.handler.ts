@@ -124,7 +124,11 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
 
     // ── Decrement seats ───────────────────────────────────────────────────────
     await Ride.findByIdAndUpdate(rideId, {
-      $inc: { bookedSeats: -(passenger.requestedSeats || 1) },
+      $inc: {
+        bookedSeats:      -(passenger.requestedSeats  || 1),
+        malePassengers:   -(passenger.malePassengers  || 0),
+        femalePassengers: -(passenger.femalePassengers || 0),
+      },
     });
     if (ride.driverId) {
       await redis.hincrby(

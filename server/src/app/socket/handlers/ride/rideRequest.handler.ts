@@ -16,6 +16,8 @@ import eventHandler from '../../utils/eventHandler';
 import { notifyNearbyDrivers } from '../../../utils/notifyDrivers.utils';
 import { hasDriverRideAtDateTime } from '../../../utils/geo.utils';
 import { USER_ROLE, USER_STATUS } from '../../../modules/user/user.constant';
+import { Vehicle } from '../../../modules/vehicle/vehicle.model';
+import { RIDE_TYPE } from '../../../modules/ride/ride.constant';
 
 // ── Helper: check if any available driver exists nearby ───────────────────────
 const hasAvailableDriversNearby = async (
@@ -148,6 +150,17 @@ export const rideRequestHandler = eventHandler<any>(
     const roundedBreakdown = roundObjectNumbers(fareBreakdown);
     const fareType         = getFareType(departureDateTime);
 
+    // ── Determine totalSeats from vehicle for split rides ────────────────────
+    let totalSeats = requestedSeats;
+    if (type === RIDE_TYPE.split) {
+      const vehicle = await Vehicle.findOne({
+        userId,
+        isDefault: true,
+        isDeleted: false,
+      }).select('seats').lean();
+      totalSeats = vehicle?.seats || requestedSeats;
+    }
+
     // ── Create Ride ───────────────────────────────────────────────────────────
     const ride = await Ride.create({
       type,
@@ -156,7 +169,7 @@ export const rideRequestHandler = eventHandler<any>(
       destination:   { address: destination.address, coordinates: [destination.lng, destination.lat] },
       departureDate: scheduledDate,
       departureTime: scheduledTime,
-      totalSeats:    requestedSeats,
+      totalSeats,
       bookedSeats:   0,
       status:        RIDE_STATUS.pending,
       routeGeometry,
