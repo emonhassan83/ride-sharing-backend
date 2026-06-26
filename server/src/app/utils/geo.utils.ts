@@ -488,7 +488,7 @@ export const haversineMeters = (
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-const CORRIDOR_RADIUS_METERS = 10000;
+const CORRIDOR_RADIUS_METERS = 10000; // 10 km corridor
 export function isPointNearRoute(
   lat: number,
   lng: number,
@@ -498,25 +498,7 @@ export function isPointNearRoute(
   for (let i = 0; i < routeCoordinates.length - 1; i++) {
     const [lng1, lat1] = routeCoordinates[i];
     const [lng2, lat2] = routeCoordinates[i + 1];
-    const toRad = (d: number) => (d * Math.PI) / 180;
-    const dx = (lng2 - lng1) * Math.cos(toRad((lat1 + lat2) / 2));
-    const dy = lat2 - lat1;
-    const denom = dx * dx + dy * dy || 1;
-    const t = Math.max(
-      0,
-      Math.min(
-        1,
-        ((lng - lng1) * Math.cos(toRad((lat1 + lat2) / 2)) * dx +
-          (lat - lat1) * dy) /
-          denom
-      )
-    );
-    const dist = haversineMeters(
-      lat,
-      lng,
-      lat1 + t * (lat2 - lat1),
-      lng1 + t * (lng2 - lng1)
-    );
+    const dist = pointToSegmentDistance(lat, lng, lat1, lng1, lat2, lng2);
     if (dist <= CORRIDOR_RADIUS_METERS) return true;
   }
   return false;
