@@ -22,11 +22,11 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     const {
       pickup,
       destination,
-      seats,
+      passengers,
       malePassengers,
       femalePassengers,
-      scheduledDate,
-      scheduledTime,
+      departureDate,
+      departureTime,
       luggageCounts,
       note,
     } = data;
@@ -38,22 +38,22 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         success: false,
         message: 'Pickup and destination are required',
       });
-    if (!scheduledDate || !scheduledTime)
+    if (!departureDate || !departureTime)
       return callback?.({
         success: false,
-        message: 'scheduledDate and scheduledTime are required',
+        message: 'departureDate and departureTime are required',
       });
 
-    const requestedSeats = seats || 1;
-    const [year, month, day] = scheduledDate.split('-').map(Number);
-    const [hour, minute] = scheduledTime.split(':').map(Number);
+    const requestedSeats = passengers || 1;
+    const [year, month, day] = departureDate.split('-').map(Number);
+    const [hour, minute] = departureTime.split(':').map(Number);
     const departureDateTime = new Date(year, month - 1, day, hour, minute);
 
     // ── Find matching split rides ─────────────────────────────────────────────
     const nearbySplitRides = await Ride.find({
       type: RIDE_TYPE.split,
       status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
-      departureDate: scheduledDate,
+      departureDate: departureDate,
       $expr: {
         $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats],
       },
@@ -97,7 +97,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       .select('name profileImage avgRating phone')
       .lean();
 
-    const passengers: any[] = [];
+    const passengerList: any[] = [];
     const notifiedRides: any[] = [];
 
     for (const ride of matchingRides) {
@@ -116,7 +116,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         requestedSeats,
         totalSeatsAfterJoin,
         luggageCounts || 0,
-        scheduledTime,
+        departureTime,
         departureDateTime
       );
 
@@ -132,8 +132,8 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
           address: destination.address,
           coordinates: [destination.lng, destination.lat],
         },
-        departureDate: scheduledDate,
-        departureTime: scheduledTime,
+        departureDate: departureDate,
+        departureTime: departureTime,
         requestedSeats,
         malePassengers: malePassengers || 0,
         femalePassengers: femalePassengers || 0,
@@ -154,7 +154,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         status: PASSENGER_STATUS.pending,
       });
 
-      passengers.push(passenger);
+      passengerList.push(passenger);
       socket.join(`ride:${ride._id}`);
       socket.join(`passenger:${passenger._id}`);
 
@@ -201,8 +201,8 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
           address: destination.address,
           coordinates: [destination.lng, destination.lat],
         },
-        departureDate: scheduledDate,
-        departureTime: scheduledTime,
+        departureDate: departureDate,
+        departureTime: departureTime,
         requestedSeats,
         estimatedFare: fareBreakdown.estimatedFare,
         estimatedDistanceKm: roundTo2(actualDistance),
@@ -278,7 +278,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       });
     }
 
-    if (!passengers.length)
+    if (!passengerList.length)
       return callback?.({
         success: false,
         message: 'You have already joined all nearby split rides.',
