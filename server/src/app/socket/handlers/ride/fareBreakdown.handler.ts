@@ -12,11 +12,11 @@ export const fareBreakdownHandler = eventHandler<any>(
       pickup,
       destination,
       type,
-      seats,
+      passengers,
       malePassengers,
       femalePassengers,
-      scheduledDate,
-      scheduledTime,
+      departureDate,
+      departureTime,
       luggageCounts,
     } = data;
 
@@ -26,13 +26,13 @@ export const fareBreakdownHandler = eventHandler<any>(
     if (!type)
       return callback?.({ success: false, message: 'Ride type is required' });
 
-    const requestedSeats = seats || 1;
+    const requestedSeats = passengers || 1;
 
     // ── Departure datetime ────────────────────────────────────────────────────
     let departureDateTime = new Date();
-    if (scheduledDate && scheduledTime) {
-      const [year, month, day] = scheduledDate.split('-').map(Number);
-      const [hour, minute]     = scheduledTime.split(':').map(Number);
+    if (departureDate && departureTime) {
+      const [year, month, day] = departureDate.split('-').map(Number);
+      const [hour, minute]     = departureTime.split(':').map(Number);
       departureDateTime = new Date(year, month - 1, day, hour, minute);
     }
 
@@ -59,7 +59,7 @@ export const fareBreakdownHandler = eventHandler<any>(
     const fareBreakdown = await calculateFareBreakdown({
       distanceKm:     actualDistance,
       departureDate:  departureDateTime,
-      departureTime:  scheduledTime || new Date().toLocaleTimeString(),
+      departureTime:  departureTime || new Date().toLocaleTimeString(),
       luggageCount:   luggageCounts || 0,
       requestedSeats,
       rideType:       type,
@@ -77,8 +77,8 @@ export const fareBreakdownHandler = eventHandler<any>(
         estimatedDuration: actualDuration,
         fareBreakdown:     roundedBreakdown,
         rideDetails: {
-          bookingDate:      scheduledDate  || new Date().toISOString().split('T')[0],
-          bookingTime:      scheduledTime  || new Date().toLocaleTimeString(),
+          bookingDate:      departureDate  || new Date().toISOString().split('T')[0],
+          bookingTime:      departureTime  || new Date().toLocaleTimeString(),
           pickup,
           destination,
           rideType:         type,

@@ -75,9 +75,9 @@ const hasAvailableDriversNearby = async (
 export const rideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const {
-      pickup, destination, type, seats,
+      pickup, destination, type, passengers,
       malePassengers, femalePassengers,
-      scheduledDate, scheduledTime,
+      departureDate, departureTime,
       luggageCounts, note,
     } = data;
     const userId = socket.auth?._id?.toString();
@@ -85,13 +85,13 @@ export const rideRequestHandler = eventHandler<any>(
     if (!userId || !pickup || !destination || !type)
       return callback?.({ success: false, message: 'Missing required fields' });
 
-    if (!scheduledDate || !scheduledTime)
-      return callback?.({ success: false, message: 'scheduledDate and scheduledTime are required' });
+    if (!departureDate || !departureTime)
+      return callback?.({ success: false, message: 'departureDate and departureTime are required' });
 
-    const requestedSeats = seats || 1;
+    const requestedSeats = passengers || 1;
 
-    const [year, month, day] = scheduledDate.split('-').map(Number);
-    const [hour, minute]     = scheduledTime.split(':').map(Number);
+    const [year, month, day] = departureDate.split('-').map(Number);
+    const [hour, minute]     = departureTime.split(':').map(Number);
     const departureDateTime  = new Date(year, month - 1, day, hour, minute);
 
     const redis = getRedisClient();
@@ -101,8 +101,8 @@ export const rideRequestHandler = eventHandler<any>(
     const driversAvailable = await hasAvailableDriversNearby(
       redis,
       pickup,
-      scheduledDate,
-      scheduledTime,
+      departureDate,
+      departureTime,
       type,
       requestedSeats,
     );
@@ -141,7 +141,7 @@ export const rideRequestHandler = eventHandler<any>(
     const fareBreakdown = await calculateFareBreakdown({
       distanceKm:     actualDistance,
       departureDate:  departureDateTime,
-      departureTime:  scheduledTime,
+      departureTime:  departureTime,
       luggageCount:   luggageCounts || 0,
       requestedSeats,
       rideType:       type,
@@ -167,8 +167,8 @@ export const rideRequestHandler = eventHandler<any>(
       rideCreatedBy: userId,
       pickup:        { address: pickup.address,      coordinates: [pickup.lng, pickup.lat] },
       destination:   { address: destination.address, coordinates: [destination.lng, destination.lat] },
-      departureDate: scheduledDate,
-      departureTime: scheduledTime,
+      departureDate: departureDate,
+      departureTime: departureTime,
       totalSeats,
       bookedSeats:   0,
       status:        RIDE_STATUS.pending,
@@ -181,8 +181,8 @@ export const rideRequestHandler = eventHandler<any>(
       rideId:                   ride._id,
       pickup:                   { address: pickup.address,      coordinates: [pickup.lng, pickup.lat] },
       destination:              { address: destination.address, coordinates: [destination.lng, destination.lat] },
-      departureDate:            scheduledDate,
-      departureTime:            scheduledTime,
+      departureDate:            departureDate,
+      departureTime:            departureTime,
       requestedSeats,
       malePassengers:           malePassengers   || 0,
       femalePassengers:         femalePassengers || 0,
@@ -229,8 +229,8 @@ export const rideRequestHandler = eventHandler<any>(
         address:     destination.address,
         coordinates: [destination.lng, destination.lat],
       },
-      departureDate:       scheduledDate,
-      departureTime:       scheduledTime,
+      departureDate:       departureDate,
+      departureTime:       departureTime,
       requestedSeats,
       estimatedFare:       roundTo2(fareBreakdown.totalFare),
       estimatedDistanceKm: roundTo2(actualDistance),
@@ -258,8 +258,8 @@ export const rideRequestHandler = eventHandler<any>(
       destination:        JSON.stringify(destination),
       seats:              requestedSeats.toString(),
       estimatedFare:      fareBreakdown.totalFare.toString(),
-      scheduledDate,
-      scheduledTime,
+      departureDate,
+      departureTime,
       departureTimestamp: departureDateTime.getTime().toString(),
       notifiedCount:      notifiedCount.toString(),
       timestamp:          Date.now().toString(),
@@ -283,8 +283,8 @@ export const rideRequestHandler = eventHandler<any>(
         estimatedDuration: actualDuration,
         fareBreakdown:     roundedBreakdown,
         rideDetails: {
-          bookingDate: scheduledDate,
-          bookingTime: scheduledTime,
+          bookingDate: departureDate,
+          bookingTime: departureTime,
           pickup:      passenger.pickup,
           destination: passenger.destination,
           rideType:    ride.type,
