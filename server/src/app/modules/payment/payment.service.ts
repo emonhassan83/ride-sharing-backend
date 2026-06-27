@@ -16,8 +16,10 @@ import { createCheckoutSession, paymentNotifyToUser } from './payment.utils';
 import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
 import { Ride } from '../ride/ride.model';
+import { RIDE_TYPE } from '../ride/ride.constant';
 import { Setting } from '../settings/settings.model';
 import { getRedisClient } from '../../config/redis.config';
+import { recalculateSplitFares } from '../../utils/splitFare.utils';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-06-24.dahlia',
@@ -122,6 +124,7 @@ const confirmPayment = async (query: Record<string, any>) => {
   const session = await startSession();
   let paymentIntentId: string | null = null;
   let transactionStarted = false;
+  let recalcRideId: string | null = null;
 
   try {
     const PaymentSession = await stripe.checkout.sessions.retrieve(sessionId);
@@ -191,6 +194,10 @@ const confirmPayment = async (query: Record<string, any>) => {
     const ride = await Ride.findById(booking.rideId).session(session);
     if (!ride) throw new ApiError(httpStatus.NOT_FOUND, 'Ride not found');
 
+    if (ride.type === RIDE_TYPE.split) {
+      recalcRideId = ride._id.toString();
+    }
+
     // ✅ Seat availability check
     const newBookedSeats =
       (ride.bookedSeats || 0) + (passenger.requestedSeats || 1);
@@ -259,6 +266,13 @@ const confirmPayment = async (query: Record<string, any>) => {
     if (user?.fcmToken) await paymentNotifyToUser('SUCCESS', payment, user);
 
     await session.commitTransaction();
+
+    if (recalcRideId) {
+      recalculateSplitFares(recalcRideId, 'passenger_paid').catch((err) =>
+        console.error('Recalculate error after payment:', err)
+      );
+    }
+
     return payment;
   } catch (error: any) {
     if (transactionStarted) await session.abortTransaction();
@@ -285,6 +299,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
   const { booking: bookingId, user: userId } = payload;
 
   const session = await mongoose.startSession();
+  let recalcRideId: string | null = null;
   session.startTransaction();
 
   try {
@@ -387,6 +402,10 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
 
       const ride = await Ride.findById(booking.rideId).session(session);
       if (ride) {
+        if (ride.type === RIDE_TYPE.split) {
+          recalcRideId = ride._id.toString();
+        }
+
         await Ride.findByIdAndUpdate(
           ride._id,
           {
@@ -432,6 +451,12 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
     if (user?.fcmToken) await paymentNotifyToUser('SUCCESS', payment[0], user);
 
     await session.commitTransaction();
+
+    if (recalcRideId) {
+      recalculateSplitFares(recalcRideId, 'passenger_paid').catch((err) =>
+        console.error('Recalculate error after wallet payment:', err)
+      );
+    }
 
     return {
       success: true,

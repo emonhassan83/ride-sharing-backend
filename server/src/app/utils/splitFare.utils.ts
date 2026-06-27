@@ -225,7 +225,11 @@ export const chargeUser = async (
 // ── Main recalculate (Cases 6, 29, 30, 31) ───────────────────────────────────
 export const recalculateSplitFares = async (
   rideId: string,
-  reason: 'passenger_joined' | 'passenger_cancelled' | 'passenger_rejected',
+  reason:
+    | 'passenger_joined'
+    | 'passenger_paid'
+    | 'passenger_cancelled'
+    | 'passenger_rejected',
   io?: any
 ): Promise<void> => {
   // ── Acquire lock (Case 31) ────────────────────────────────────────────────

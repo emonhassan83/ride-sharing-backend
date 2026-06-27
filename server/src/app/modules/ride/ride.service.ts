@@ -93,7 +93,43 @@ const getDriverRides = async (
     rideQuery.countTotal(),
   ]);
 
-  return { meta, result };
+  if (!result.length) return { meta, result };
+
+  const rideIds = result.map(r => r._id);
+  const allPassengers = await Passenger.find({
+    rideId: { $in: rideIds },
+    status: {
+      $nin: [
+        PASSENGER_STATUS.pending,
+        PASSENGER_STATUS.cancelled,
+        PASSENGER_STATUS.rejected,
+      ],
+    },
+  })
+    .populate('userId', 'name')
+    .lean();
+
+  const passengerMap = new Map<string, string[]>();
+  for (const p of allPassengers) {
+    const rideId = typeof p.rideId === 'object' && p.rideId
+      ? (p.rideId as any)._id || p.rideId
+      : p.rideId;
+    const rideIdStr = rideId.toString();
+    if (!passengerMap.has(rideIdStr)) {
+      passengerMap.set(rideIdStr, []);
+    }
+    const userName = (p as any).userId?.name || '';
+    if (userName) {
+      passengerMap.get(rideIdStr)!.push(userName);
+    }
+  }
+
+  const resultWithPassengers = result.map(ride => ({
+    ...ride.toObject ? ride.toObject() : ride,
+    passengers: passengerMap.get(ride._id.toString()) || [],
+  }));
+
+  return { meta, result: resultWithPassengers };
 };
 
 const getRiderRides = async (
