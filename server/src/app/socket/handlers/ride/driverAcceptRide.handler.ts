@@ -180,13 +180,42 @@ export const driverAcceptRideHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io = getIO();
 
-    // ── Driver details from Redis ─────────────────────────────────────────────
-    const driverDetails = await redis.hgetall(`driver:${driverId}:details`);
-    if (!driverDetails || !Object.keys(driverDetails).length)
-      return callback?.({
-        success: false,
-        message: 'Driver data not found. Please go online first.',
-      });
+    // ── Driver details from Redis (fallback to DB if TTL expired) ────────────
+    let driverDetails = await redis.hgetall(`driver:${driverId}:details`);
+    if (!driverDetails || !Object.keys(driverDetails).length) {
+      const driverUser = await User.findById(driverId)
+        .select('name email phone avgRating profileImage isOnline')
+        .lean();
+
+      if (!driverUser?.isOnline)
+        return callback?.({
+          success: false,
+          message: 'Driver data not found. Please go online first.',
+        });
+
+      const driverVehicle = await Vehicle.findOne({
+        userId: driverId,
+        isDefault: true,
+        isDeleted: false,
+      }).lean();
+
+      driverDetails = {
+        name:          driverUser.name          || '',
+        email:         driverUser.email         || '',
+        phone:         driverUser.phone         || '',
+        rating:        (driverUser.avgRating    || 0).toString(),
+        photo:         driverUser.profileImage  || '',
+        vehicleModel:  driverVehicle?.name      || '',
+        vehicleNumber: driverVehicle?.number    || '',
+        seats:         (driverVehicle?.seats    || 4).toString(),
+        bookedSeats:   '0',
+        status:        'online',
+        lastUpdate:    Date.now().toString(),
+      };
+
+      await redis.hset(`driver:${driverId}:details`, driverDetails);
+      await redis.expire(`driver:${driverId}:details`, 7200);
+    }
 
     // ── Driver's default vehicle — DB থেকে (Redis stale হতে পারে) ─────────────
     const defaultVehicle = await Vehicle.findOne({
@@ -264,6 +293,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
         driverId,
         vehicleId,
         status: RIDE_STATUS.accepted,
+        ...(ride.totalSeats === 0 && { totalSeats: vehicleTotalSeats }),
       });
 
       const booking = await Booking.create({
@@ -391,6 +421,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       if (!ride.driverId) {
         rideUpdate.driverId = driverId;
         rideUpdate.vehicleId = vehicleId;
+        if (ride.totalSeats === 0) rideUpdate.totalSeats = vehicleTotalSeats;
       }
       if (isLastPassenger) rideUpdate.status = RIDE_STATUS.accepted;
 

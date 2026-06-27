@@ -68,7 +68,7 @@ const rideSchema = new Schema<TRide>(
       },
     },
 
-    totalSeats: { type: Number, required: true, min: 1 },
+    totalSeats: { type: Number, required: true, min: 0 },
     bookedSeats: { type: Number, default: 0 },
     malePassengers: { type: Number, default: 0, required: true },
     femalePassengers: { type: Number, default: 0, required: true },
@@ -88,6 +88,7 @@ const rideSchema = new Schema<TRide>(
       type: String,
       enum: Object.values(CANCELLED_BY),
     },
+    reNotifiedAt: { type: Date },
   },
   {
     timestamps: true,
