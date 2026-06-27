@@ -15,7 +15,7 @@ import { calcSplitPassengerFare } from '../../../utils/splitFare.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
-import { isPointNearRoute } from '../../../utils/geo.utils';
+import { haversineMeters, isPointNearRoute } from '../../../utils/geo.utils';
 
 export const joinSplitRideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -54,15 +54,31 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       type: RIDE_TYPE.split,
       status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
       departureDate: departureDate,
-      $expr: {
-        $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats],
-      },
+      $or: [
+        { totalSeats: 0 }, // pending ride, no driver yet — no seat constraint
+        { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },
+      ],
     }).lean();
 
     const matchingRides = nearbySplitRides.filter((ride) => {
       const coords = (ride as any).routeGeometry?.coordinates;
       if (!coords?.length) return false;
-      return isPointNearRoute(pickup.lat, pickup.lng, coords);
+
+      if (!isPointNearRoute(pickup.lat, pickup.lng, coords)) return false;
+      if (!isPointNearRoute(destination.lat, destination.lng, coords)) return false;
+
+      // Direction check — passenger's pickup must appear before their destination on the route
+      let pickupIdx = -1, destIdx = -1;
+      let pickupDist = Infinity, destDist = Infinity;
+
+      coords.forEach(([lng, lat]: [number, number], i: number) => {
+        const pd = haversineMeters(pickup.lat, pickup.lng, lat, lng);
+        const dd = haversineMeters(destination.lat, destination.lng, lat, lng);
+        if (pd < pickupDist) { pickupDist = pd; pickupIdx = i; }
+        if (dd < destDist) { destDist = dd; destIdx = i; }
+      });
+
+      return destIdx > pickupIdx;
     });
 
     if (!matchingRides.length)
