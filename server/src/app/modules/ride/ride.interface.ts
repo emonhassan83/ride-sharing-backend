@@ -50,6 +50,7 @@ export interface TRide {
   cancelledAt: Date;
   arrivedAt: Date;
   cancelledBy: TCancelledBy;
+  reNotifiedAt?: Date;
 
   createdAt: Date;
   updatedAt: Date;

@@ -41,10 +41,14 @@ export const checkNoDriverFound = async () => {
   // ── Phase 2: Re-notify drivers (X hours before departure) ────────────────
   const reNotifyBefore = new Date(now.getTime() + notifyHours * 3600000);
 
+  // Grace period: ignore rides created in the last 30 minutes (already notified by rideRequest handler)
+  const gracePeriodCutoff = new Date(now.getTime() - 30 * 60 * 1000);
+
   const ridesForRenotify = await Ride.find({
     status: RIDE_STATUS.pending,
     departureDate: { $lte: reNotifyBefore.toISOString().split('T')[0] },
-    reNotifiedAt: { $exists: false }, // not yet re-notified
+    reNotifiedAt: { $exists: false },
+    createdAt: { $lte: gracePeriodCutoff },
   })
     .limit(BATCH_SIZE)
     .lean();
@@ -96,7 +100,7 @@ export const checkNoDriverFound = async () => {
         },
         departureDate: ride.departureDate,
         departureTime: ride.departureTime,
-        requestedSeats: ride.totalSeats,
+        requestedSeats: (passenger as any).requestedSeats || 1,
         estimatedFare: (passenger as any).estimatedFare || 0,
         estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,
         status: PASSENGER_STATUS.pending,

@@ -151,15 +151,15 @@ export const rideRequestHandler = eventHandler<any>(
     const fareType         = getFareType(departureDateTime);
 
     // ── Determine totalSeats from vehicle for split rides ────────────────────
-    let totalSeats = requestedSeats;
-    if (type === RIDE_TYPE.split) {
-      const vehicle = await Vehicle.findOne({
-        userId,
-        isDefault: true,
-        isDeleted: false,
-      }).select('seats').lean();
-      totalSeats = vehicle?.seats || requestedSeats;
-    }
+    // let totalSeats = requestedSeats;
+    // if (type === RIDE_TYPE.split) {
+    //   const vehicle = await Vehicle.findOne({
+    //     userId,
+    //     isDefault: true,
+    //     isDeleted: false,
+    //   }).select('seats').lean();
+    //   totalSeats = vehicle?.seats || requestedSeats;
+    // }
 
     // ── Create Ride ───────────────────────────────────────────────────────────
     const ride = await Ride.create({
@@ -169,7 +169,7 @@ export const rideRequestHandler = eventHandler<any>(
       destination:   { address: destination.address, coordinates: [destination.lng, destination.lat] },
       departureDate: departureDate,
       departureTime: departureTime,
-      totalSeats,
+      totalSeats:    0,
       bookedSeats:   0,
       status:        RIDE_STATUS.pending,
       routeGeometry,
@@ -249,6 +249,17 @@ export const rideRequestHandler = eventHandler<any>(
     );
 
     console.log(`📡 Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);
+
+    // ── Rollback if no drivers were notified ──────────────────────────────────
+    if (notifiedCount === 0) {
+      await Ride.findByIdAndDelete(ride._id);
+      await Passenger.findByIdAndDelete(passenger._id);
+      return callback?.({
+        success: false,
+        message: 'No available drivers found for this date and time. Please try again later.',
+        code: 'NO_DRIVERS_AVAILABLE',
+      });
+    }
 
     // ── Redis ─────────────────────────────────────────────────────────────────
     await redis.hset(`ride:request:${ride._id}`, {
