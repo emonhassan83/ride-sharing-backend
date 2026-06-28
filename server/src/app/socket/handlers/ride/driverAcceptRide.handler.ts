@@ -16,7 +16,6 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import onlineUsers from '../../utils/onlineUsers';
 import eventHandler from '../../utils/eventHandler';
-import { recalculateSplitFares } from '../../../utils/splitFare.utils';
 import { ILatLng } from '../../interface/ride';
 import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';

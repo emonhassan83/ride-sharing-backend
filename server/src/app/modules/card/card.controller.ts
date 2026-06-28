@@ -5,7 +5,7 @@ import httpStatus from 'http-status';
 import { CardServices } from './card.service';
 
 const setupInitiate = catchAsync(async (req: Request, res: Response) => {
-  const result = await CardServices.setupInitiate(req.body);
+  const result = await CardServices.setupInitiate(req.body, req.user.userId);
   sendResponse(res, {
     code: httpStatus.OK,
     message: result.message,
