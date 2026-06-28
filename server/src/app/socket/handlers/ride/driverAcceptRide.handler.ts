@@ -458,9 +458,8 @@ export const driverAcceptRideHandler = eventHandler<any>(
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
 
-      recalculateSplitFares(rideId, 'passenger_joined', io).catch((err) =>
-        console.error('Recalculate error after accept:', err)
-      );
+      // NOTE: Do not recalculate fares on accept. Recalculation should happen
+      // after the passenger payment is completed, not immediately on acceptance.
 
       if (isLastPassenger) {
         await redis.hset(`ride:active:${rideId}`, {
