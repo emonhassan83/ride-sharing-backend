@@ -33,13 +33,12 @@ const createStripeCustomer = async (user: TUser): Promise<string> => {
 };
 
 const setupInitiate = async (payload: {
-  paymentMethodId: string;
-  userId: string;
-}) => {
-  const { paymentMethodId, userId } = payload;
+  paymentMethodId: string
+}, userId: string) => {
+  const { paymentMethodId } = payload;
 
   try {
-    const user = await User.findById(payload.userId);
+    const user = await User.findById(userId);
   if (!user) throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
 
   // create customerId
