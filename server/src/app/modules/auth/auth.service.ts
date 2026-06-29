@@ -26,7 +26,7 @@ import { getEmailQueueInstance } from '../../utils/queueHelper';
 const OTP_EXPIRE = 60 * 5; // 5 minutes in seconds
 
 const createUser = async (payload: any) => {
-  const { email, phone, ...rest } = payload;
+  const { email, phone, fcmToken, ...rest } = payload;
 
   // Prevent users from assigning themselves admin role during registration
   if (payload.role === USER_ROLE.admin) {
@@ -71,6 +71,7 @@ const createUser = async (payload: any) => {
     ...rest,
     email,
     phone,
+    fcmToken,
     status:
       payload.role === USER_ROLE.provider
         ? USER_STATUS.pending
