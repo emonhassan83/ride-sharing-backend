@@ -28,6 +28,8 @@ const createUserValidationSchema = z.object({
       role: z.enum(Object.values(USER_ROLE) as [string, ...string[]], {
         message: 'Role is required.',
       }),
+
+      fcmToken: z.string().optional(),
     })
     .strict(),
 });

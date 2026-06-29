@@ -4,7 +4,7 @@ import { Ride } from './ride.model';
 import QueryBuilder from '../../builder/QueryBuilder';
 import { RIDE_STATUS } from './ride.constant';
 import { Passenger } from '../passenger/passenger.model';
-import { PASSENGER_STATUS } from '../passenger/passenger.constant';
+import { PASSENGER_STATUS, PAYMENT_STATUS } from '../passenger/passenger.constant';
 import { Booking } from '../booking/booking.model';
 
 const getAllIntoDB = async (query: Record<string, unknown>) => {
@@ -63,16 +63,72 @@ const getDriverRides = async (
   userId: string,
   query: Record<string, unknown>
 ) => {
+  // 1. Fetch all rides for the driver that are not pending/cancelled/rejected
+  const driverRides = await Ride.find({
+    driverId: userId,
+    status: {
+      $nin: [
+        RIDE_STATUS.pending,
+        RIDE_STATUS.cancelled,
+        RIDE_STATUS.rejected,
+      ],
+    },
+  }).select('_id');
+
+  const driverRideIds = driverRides.map(r => r._id);
+
+  // 2. Fetch all passengers of these rides who are not pending/cancelled/rejected
+  const passengers = await Passenger.find({
+    rideId: { $in: driverRideIds },
+    status: {
+      $nin: [
+        PASSENGER_STATUS.pending,
+        PASSENGER_STATUS.cancelled,
+        PASSENGER_STATUS.rejected,
+      ],
+    },
+  }).select('rideId paymentStatus');
+
+  // 3. Count passengers per ride and check payment status
+  const ridePassengerMap = new Map<string, { count: number; hasPaid: boolean }>();
+  for (const p of passengers) {
+    const rideIdStr = p.rideId.toString();
+    if (!ridePassengerMap.has(rideIdStr)) {
+      ridePassengerMap.set(rideIdStr, { count: 0, hasPaid: false });
+    }
+    const info = ridePassengerMap.get(rideIdStr)!;
+    info.count += 1;
+    if (p.paymentStatus === PAYMENT_STATUS.paid) {
+      info.hasPaid = true;
+    }
+  }
+
+  // 4. Identify eligible rides:
+  // - Show if passenger count > 1
+  // - Show if passenger count === 1 and that passenger has paid (paymentStatus is 'paid')
+  const eligibleRideIds: string[] = [];
+  for (const [rideIdStr, info] of ridePassengerMap.entries()) {
+    if (info.count > 1 || (info.count === 1 && info.hasPaid)) {
+      eligibleRideIds.push(rideIdStr);
+    }
+  }
+
+  // 5. If no rides are eligible, return empty result with pagination metadata
+  if (!eligibleRideIds.length) {
+    return {
+      meta: {
+        page: Number(query.page) || 1,
+        limit: Number(query.limit) || 10,
+        total: 0,
+        totalPage: 0,
+      },
+      result: [],
+    };
+  }
+
   const rideQuery = new QueryBuilder(
     Ride.find({
-      driverId: userId,
-      status: {
-        $nin: [
-          RIDE_STATUS.pending,
-          RIDE_STATUS.cancelled,
-          RIDE_STATUS.rejected,
-        ],
-      },
+      _id: { $in: eligibleRideIds },
     })
       .populate([
         { path: 'driverId', select: 'name' },

@@ -9,7 +9,7 @@ import { getRedisClient } from '../../../config/redis.config';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
-import { sendNotification } from '../../../utils/sentPushNotification';   // ← Import করো
+import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { RIDE_STATUS } from '../../../modules/ride/ride.constant';
 
