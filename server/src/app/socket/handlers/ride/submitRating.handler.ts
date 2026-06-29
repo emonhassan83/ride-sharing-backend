@@ -3,12 +3,15 @@ import { User } from '../../../modules/user/user.model';
 import { Review } from '../../../modules/review/review.model';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
+import { Booking } from '../../../modules/booking/booking.model';
+import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
 import { getRedisClient } from '../../../config/redis.config';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { sendNotification } from '../../../utils/sentPushNotification';   // ← Import করো
 import { modeType } from '../../../modules/notification/notification.interface';
+import { RIDE_STATUS } from '../../../modules/ride/ride.constant';
 
 export const submitRatingHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -52,8 +55,15 @@ export const submitRatingHandler = eventHandler<any>(
       }
 
       // 3. Check if ride is completed
-      if (ride.status !== 'completed') {
-        return callback?.({ success: false, message: 'You can only rate completed rides' });
+      if (ride.status !== RIDE_STATUS.completed) {
+        const reviewerBooking = await Booking.findOne({
+          passengerId: passengerRecord._id,
+          bookingStatus: BOOKING_STATUS.completed,
+        }).lean();
+
+        if (!reviewerBooking) {
+          return callback?.({ success: false, message: 'You can only rate completed rides' });
+        }
       }
 
       // 4. Prevent duplicate review

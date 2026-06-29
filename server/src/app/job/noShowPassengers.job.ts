@@ -106,14 +106,27 @@ export const checkNoShowPassengers = async (): Promise<void> => {
         status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
       });
 
-      if (remaining === 0) {
+      if (remaining <= 1) {
+        const isLast = remaining === 0;
         await Ride.findByIdAndUpdate(passenger.rideId, {
           status: RIDE_STATUS.cancelled,
-          cancellationReason: 'all_passengers_no_show',
+          cancellationReason: isLast ? 'all_passengers_no_show' : 'Only one passenger remaining. Ride cancelled.',
         });
 
         const redis = getRedisClient();
-        await redis.del(`ride:active:${passenger.rideId}`);
+        await Promise.all([
+          redis.del(`ride:active:${passenger.rideId}`),
+          redis.zrem('ride:matching:queue', passenger.rideId.toString()),
+          redis.del(`ride:request:${passenger.rideId}`),
+        ]);
+
+        // Notify driver if ride was cancelled
+        if (ride.driverId) {
+          io.to(`driver:${ride.driverId}`).emit('ride:cancelled', {
+            rideId: passenger.rideId,
+            message: isLast ? 'All passengers no-show. Ride cancelled.' : 'Only one passenger remaining. Ride cancelled.',
+          });
+        }
       }
 
       console.log(`🚫 No-show processed: passenger ${passenger._id}`);

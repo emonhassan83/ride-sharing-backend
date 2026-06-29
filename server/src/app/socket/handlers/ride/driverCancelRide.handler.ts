@@ -329,16 +329,11 @@ export const driverCancelRideHandler = eventHandler<any>(
         -(passenger.requestedSeats || 1),
       );
 
-      // Notify remaining co-passengers
+      // Notify remaining co-passengers (all active passengers except current)
       const remainingPassengers = await Passenger.find({
         rideId,
-        status: {
-          $in: [
-            PASSENGER_STATUS.confirmed,
-            PASSENGER_STATUS.in_progress,
-            PASSENGER_STATUS.driver_arrived,
-          ],
-        },
+        _id: { $ne: passenger._id },
+        status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
       }).select('userId');
 
       const updatedRide = await Ride.findById(rideId)
@@ -369,10 +364,10 @@ export const driverCancelRideHandler = eventHandler<any>(
 
       // ✅ No passengers left → cancel entire ride
       let rideCancelled = false;
-      if (remainingPassengers.length === 0) {
+      if (remainingPassengers.length <= 1) {
         await Ride.findByIdAndUpdate(rideId, {
           status: RIDE_STATUS.cancelled,
-          cancellationReason: 'No passengers left',
+          cancellationReason: remainingPassengers.length === 0 ? 'No passengers left' : 'Only one passenger remaining. Ride cancelled.',
           cancelledBy: CANCELLED_BY.driver,
           cancelledAt: new Date(),
         });
@@ -383,7 +378,7 @@ export const driverCancelRideHandler = eventHandler<any>(
       return callback?.({
         success: true,
         message: rideCancelled
-          ? 'Last passenger cancelled. Ride cancelled.'
+          ? 'Only one passenger remaining. Ride cancelled.'
           : 'Passenger cancelled from split ride.',
         data: {
           remainingPassengers: remainingPassengers.length,

@@ -62,6 +62,27 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     // ── SPLIT RIDE ────────────────────────────────────────────────────────────
     // Case 3: was this the rideCreatedBy?
     if (ride.rideCreatedBy?.toString() === userId) {
+      const remainingAfterCreator = await Passenger.countDocuments({
+        rideId,
+        _id: { $ne: passenger._id },
+        status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
+      });
+
+      if (remainingAfterCreator <= 1) {
+        await Ride.findByIdAndUpdate(rideId, {
+          status: RIDE_STATUS.cancelled,
+          cancellationReason: remainingAfterCreator === 0 ? 'Creator cancelled before acceptance' : 'Creator cancelled, only one passenger remaining. Ride cancelled.',
+          cancelledBy: CANCELLED_BY.user, cancelledAt: new Date(),
+        });
+        await redisCleanup();
+        if (ride.driverId) {
+          io.to(`driver:${ride.driverId}`).emit('ride:cancelled', {
+            rideId, message: remainingAfterCreator === 0 ? 'All passengers cancelled.' : 'Only one passenger remaining. Ride cancelled.',
+          });
+        }
+        return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+      }
+
       const transferred = await transferRideOwnership(rideId, userId, io);
       if (!transferred) {
         await Ride.findByIdAndUpdate(rideId, {
@@ -90,10 +111,10 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
       rideId, _id: { $ne: passenger._id }, status: { $ne: PASSENGER_STATUS.cancelled },
     }).select('userId');
 
-    if (remaining.length === 0) {
+    if (remaining.length <= 1) {
       await Ride.findByIdAndUpdate(rideId, {
         status: RIDE_STATUS.cancelled,
-        cancellationReason: 'Last passenger cancelled',
+        cancellationReason: remaining.length === 0 ? 'Last passenger cancelled' : 'Only one passenger remaining. Ride cancelled.',
         cancelledBy: CANCELLED_BY.user, cancelledAt: new Date(),
       });
       await redisCleanup();
