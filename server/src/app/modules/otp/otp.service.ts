@@ -125,7 +125,7 @@ const verifyOTP = async (
 
     if (user.role === USER_ROLE.provider) {
       const provider = await Provider.findOne({ userId: user._id });
-      
+
       isKycSubmitted = !!provider;
 
       const vehicle = await Vehicle.findOne({ userId: user._id });
@@ -138,6 +138,7 @@ const verifyOTP = async (
         accessToken,
         refreshToken,
         user: {
+          _id: user._id,
           name: user.name,
           email: user.email,
           role: user.role,
