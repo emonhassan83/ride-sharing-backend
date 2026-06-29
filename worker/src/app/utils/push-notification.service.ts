@@ -1,5 +1,5 @@
 // worker/utils/push-notification.service.ts
-import admin from 'firebase-admin';
+import { getMessaging, Message } from 'firebase-admin/messaging';
 
 export const sendPushNotification = async (
   payload: {
@@ -14,7 +14,7 @@ export const sendPushNotification = async (
     return { success: false };
   }
 
-  const message: admin.messaging.Message = {
+  const message: Message = {
     token: payload.fcmToken,
     notification: {
       title: payload.title,
@@ -26,7 +26,7 @@ export const sendPushNotification = async (
   };
 
   try {
-    const messageId = await admin.messaging().send(message);
+    const messageId = await getMessaging().send(message);
     console.log(`📱 Push sent successfully | MessageId: ${messageId}`);
     return { success: true, messageId };
   } catch (error: any) {

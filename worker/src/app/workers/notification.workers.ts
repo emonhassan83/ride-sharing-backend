@@ -13,7 +13,7 @@ export const createNotificationWorker = (): Worker => {
   const worker = new Worker(
     'notification-queue',
     async (job: Job) => {
-      const { id, name, data } = job;
+      const { id, data } = job;
       const traceId = (job.data as any)?.traceId ?? 'NO_TRACE_ID';
 
       return requestContext.run({ traceId }, async () => {
