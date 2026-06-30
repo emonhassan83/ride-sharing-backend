@@ -487,7 +487,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
         }
       );
 
-      io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
+      io.to(`user:${passenger.userId.toString()}`).emit('ride:driver-accepted', payload);
       console.log(
         `✅ Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
       );
