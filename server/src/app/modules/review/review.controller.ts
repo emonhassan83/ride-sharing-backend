@@ -14,8 +14,11 @@ const createReviews = catchAsync(async (req, res) => {
 
 const getReviewsByUser = catchAsync(
   async (req, res) => {
-    req.query['user'] = req.params.userId
-    const result = await ReviewsService.getAllReviews(req.query)
+    const query = {
+      ...req.query,
+      user: req.params.userId,
+    }
+    const result = await ReviewsService.getAllReviews(query)
 
     sendResponse(res, {
       code: StatusCodes.OK,
