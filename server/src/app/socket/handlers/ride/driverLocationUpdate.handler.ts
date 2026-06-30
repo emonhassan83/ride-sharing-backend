@@ -16,7 +16,7 @@ const ARRIVAL_COOLDOWN_SECONDS = 30;
 
 export const driverLocationUpdateHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    const { lat, lng, speed, heading } = data;
+    const { lat, lng, speed, heading, encodedRoute } = data;
     const driverId = socket.auth?._id?.toString();
 
     if (!driverId || lat == null || lng == null) {
@@ -45,12 +45,15 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     let ride = null;
     if (activeRideId) {
       ride = await Ride.findById(activeRideId);
+      if (ride && ride.status !== RIDE_STATUS.started) {
+        ride = null;
+      }
     }
 
     if (!ride) {
       ride = await Ride.findOne({
         driverId,
-        status: { $in: [RIDE_STATUS.accepted, RIDE_STATUS.started] },
+        status: { $in: [RIDE_STATUS.started] },
       });
     }
 
@@ -64,7 +67,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
         speed: speed || 0,
         heading: heading || 0,
         timestamp: Date.now(),
-        routeGeometry: null,
+        encodedRoute: null,
       });
     }
 
@@ -89,7 +92,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       eta: eta.etaMinutes,
       distance: eta.distanceKm,
       timestamp: Date.now(),
-      routeGeometry: ride.routeGeometry,
+      encodedRoute: encodedRoute || null,
     });
 
     // ── 6. Arrival check — only when accepted ─────────────────────────────────
@@ -103,7 +106,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
         speed: speed || 0,
         heading: heading || 0,
         timestamp: Date.now(),
-        routeGeometry: ride.routeGeometry,
+        encodedRoute: encodedRoute || null,
       });
     }
 
@@ -121,7 +124,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
           speed: speed || 0,
           heading: heading || 0,
           timestamp: Date.now(),
-          routeGeometry: ride.routeGeometry,
+          encodedRoute: encodedRoute || null,
         });
       }
     }
@@ -153,7 +156,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
         speed: speed || 0,
         heading: heading || 0,
         timestamp: Date.now(),
-        routeGeometry: ride.routeGeometry,
+        encodedRoute: encodedRoute || null,
       });
     }
 
@@ -184,7 +187,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
         speed: speed || 0,
         heading: heading || 0,
         timestamp: Date.now(),
-        routeGeometry: ride.routeGeometry,
+        encodedRoute: encodedRoute || null,
       });
     }
 
@@ -197,7 +200,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       speed: speed || 0,
       heading: heading || 0,
       timestamp: Date.now(),
-      routeGeometry: ride.routeGeometry,
+      encodedRoute: encodedRoute || null,
     });
   },
 );
