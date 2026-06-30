@@ -16,6 +16,7 @@ import {
 import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { User } from '../../../modules/user/user.model';
+import { roundTo2 } from '../../../utils/number.utils';
 
 export const pickUpRideHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -60,11 +61,15 @@ export const pickUpRideHandler = eventHandler<any>(
         }
       }
 
+      const currentTotalFare = passenger.totalFare || passenger.estimatedFare || 0;
+      const updatedTotalFare = currentTotalFare + waitingCharge;
+
       await Passenger.findByIdAndUpdate(passenger._id, {
         status:            PASSENGER_STATUS.picked_up,
         pickedUpAt,
         waitingCharge,
         waitingChargePaid: waitingCharge > 0,
+        totalFare:         roundTo2(updatedTotalFare),
       });
 
       const pickupPayload = {
@@ -79,8 +84,6 @@ export const pickUpRideHandler = eventHandler<any>(
 
       // ✅ Rider এ notify — user room (reliable, rider always in this room)
       io.to(`user:${passenger.userId}`).emit('ride:passenger-picked-up', pickupPayload);
-      // ✅ ride room এও emit (rider যদি ride room এ থাকে)
-      io.to(`ride:${rideId}`).emit('ride:passenger-picked-up', pickupPayload);
 
       // FCM — rider
       const riderUser = await User.findById(passenger.userId).select('fcmToken').lean();

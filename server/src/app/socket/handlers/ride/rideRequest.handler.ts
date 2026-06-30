@@ -194,6 +194,7 @@ export const rideRequestHandler = eventHandler<any>(
       holidayTripCharge:        fareBreakdown.holidaySurcharge,
       vat:                      fareBreakdown.vat,
       estimatedFare:            roundTo2(fareBreakdown.totalFare),
+      totalFare:                roundTo2(fareBreakdown.totalFare),
       waitingCharge:            fareBreakdown.waitingCharge || 0,
       estimatedDistanceKm:      actualDistance,
       estimatedDurationMinutes: actualDuration,
