@@ -162,6 +162,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         surchargePercent: fareBreakdown.surchargePercent,
         surchargeAmount: fareBreakdown.surchargeAmount,
         estimatedFare: fareBreakdown.estimatedFare,
+        totalFare: fareBreakdown.estimatedFare,
         waitingCharge: 0,
         estimatedDistanceKm: actualDistance,
         estimatedDurationMinutes: actualDuration,
