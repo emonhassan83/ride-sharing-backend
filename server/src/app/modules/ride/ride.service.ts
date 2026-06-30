@@ -42,7 +42,7 @@ const getAllIntoDB = async (query: Record<string, unknown>) => {
         { path: 'rideCreatedBy', select: 'name' },
       ])
       .select(
-        'pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
+        'id pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
       ),
     query
   )
@@ -190,7 +190,7 @@ const getDriverRides = async (
 
 const getRiderRides = async (
   userId: string,
-  query:  Record<string, unknown>,
+  query: Record<string, unknown>,
 ) => {
   // ── Step 1: Ride status filter ────────────────────────────────────────────
   const rideStatusFilter: Record<string, any> = {};
@@ -216,7 +216,7 @@ const getRiderRides = async (
     return { meta: { page: 1, limit: 10, total: 0, totalPage: 0 }, result: [] };
 
   const passengerIds = passengerDocs.map(p => p._id);
-  const rideIds      = passengerDocs.map(p => p.rideId);
+  const rideIds = passengerDocs.map(p => p.rideId);
 
   // ── Step 3: Find rides with status filter ─────────────────────────────────
   const rides = await Ride.find({
@@ -245,29 +245,29 @@ const getRiderRides = async (
   const result = passengerDocs
     .filter(p => rideMap.has(p.rideId.toString()))
     .map(p => {
-      const ride    = rideMap.get(p.rideId.toString())!;
+      const ride = rideMap.get(p.rideId.toString())!;
       const booking = bookingMap.get(p._id.toString());
 
       return {
         // Passenger
         userId,
-        passengerId:     p._id,
-        requestedSeats:  p.requestedSeats,
-        estimatedFare:   p.estimatedFare,
-        pickup:          p.pickup,
-        destination:     p.destination,
-        departureDate:   p.departureDate,
-        departureTime:   p.departureTime,
+        passengerId: p._id,
+        requestedSeats: p.requestedSeats,
+        estimatedFare: p.estimatedFare,
+        pickup: p.pickup,
+        destination: p.destination,
+        departureDate: p.departureDate,
+        departureTime: p.departureTime,
 
         // Booking
-        bookingId:       booking?._id     || null,
-        bookingShortId:       booking?.id     || null,
-        paymentStatus:   booking?.paymentStatus || null, 
+        bookingId: booking?._id || null,
+        bookingShortId: booking?.id || null,
+        paymentStatus: booking?.paymentStatus || null,
 
         // Ride
-        rideId:          ride._id,
-        rideType:        ride.type,
-        rideStatus:      ride.status,
+        rideId: ride._id,
+        rideType: ride.type,
+        rideStatus: ride.status,
 
         // Driver
         driver: ride.driverId || null,
@@ -275,9 +275,9 @@ const getRiderRides = async (
     });
 
   // ── Step 6: Pagination ────────────────────────────────────────────────────
-  const page  = parseInt(String(query.page  || 1));
+  const page = parseInt(String(query.page || 1));
   const limit = parseInt(String(query.limit || 10));
-  const skip  = (page - 1) * limit;
+  const skip = (page - 1) * limit;
   const total = result.length;
 
   const paginated = result.slice(skip, skip + limit);
