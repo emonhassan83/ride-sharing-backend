@@ -9,24 +9,32 @@ router.post('/', NotificationControllers.createNotification);
 
 router.delete(
   '/my-notifications',
-  auth('common'),
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
   NotificationControllers.deleteAllNotifications
 );
 
 router.delete(
   '/:id',
-  auth('common'),
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
   NotificationControllers.deleteANotification
 );
 
 router.patch(
   '/',
-  auth('common'),
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
   NotificationControllers.markAsDoneNotification
 );
 
-router.get('/', auth('common'), NotificationControllers.getAllNotifications);
+router.get(
+  '/',
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  NotificationControllers.getAllNotifications
+);
 
-router.get('/:id', auth('common'), NotificationControllers.getANotification);
+router.get(
+  '/:id',
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  NotificationControllers.getANotification
+);
 
 export const NotificationRoutes = router;

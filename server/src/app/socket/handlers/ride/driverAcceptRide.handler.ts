@@ -199,17 +199,17 @@ export const driverAcceptRideHandler = eventHandler<any>(
       }).lean();
 
       driverDetails = {
-        name:          driverUser.name          || '',
-        email:         driverUser.email         || '',
-        phone:         driverUser.phone         || '',
-        rating:        (driverUser.avgRating    || 0).toString(),
-        photo:         driverUser.profileImage  || '',
-        vehicleModel:  driverVehicle?.name      || '',
-        vehicleNumber: driverVehicle?.number    || '',
-        seats:         (driverVehicle?.seats    || 4).toString(),
-        bookedSeats:   '0',
-        status:        'online',
-        lastUpdate:    Date.now().toString(),
+        name: driverUser.name || '',
+        email: driverUser.email || '',
+        phone: driverUser.phone || '',
+        rating: (driverUser.avgRating || 0).toString(),
+        photo: driverUser.profileImage || '',
+        vehicleModel: driverVehicle?.name || '',
+        vehicleNumber: driverVehicle?.number || '',
+        seats: (driverVehicle?.seats || 4).toString(),
+        bookedSeats: '0',
+        status: 'online',
+        lastUpdate: Date.now().toString(),
       };
 
       await redis.hset(`driver:${driverId}:details`, driverDetails);
@@ -259,14 +259,14 @@ export const driverAcceptRideHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId
         ? await Passenger.findOne({
-            _id: passengerId,
-            rideId,
-            status: { $in: [PASSENGER_STATUS.pending] },
-          })
+          _id: passengerId,
+          rideId,
+          status: { $in: [PASSENGER_STATUS.pending] },
+        })
         : await Passenger.findOne({
-            rideId,
-            status: { $in: [PASSENGER_STATUS.pending] },
-          });
+          rideId,
+          status: { $in: [PASSENGER_STATUS.pending] },
+        });
       if (!passenger)
         return callback?.({
           success: false,
@@ -319,7 +319,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
           description: `Your driver is on the way. ETA: ${estimatedArrival} minutes.`,
           reference: passenger._id.toString(),
           modelType: modeType.Passenger,
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
@@ -452,7 +452,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
           description: `Your booking is confirmed. ETA: ${estimatedArrival} minutes.`,
           reference: passenger._id.toString(),
           modelType: modeType.Passenger,
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
