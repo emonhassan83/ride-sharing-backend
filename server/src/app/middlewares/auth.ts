@@ -83,7 +83,7 @@ const auth = (allowedRoles: string | TUserRole[] = 'common') =>
           delete req.body.role;
           delete req.body.isDeleted;
         }
-      } 
+      }
       // else if (user.role !== USER_ROLE.admin) {
       //   throw new ApiError(
       //     StatusCodes.FORBIDDEN,

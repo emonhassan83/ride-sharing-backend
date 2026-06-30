@@ -61,7 +61,7 @@ const seenMessage = catchAsync(async (req: Request, res: Response) => {
   }
 
   const result = await messagesService.seenMessage(
-    req.user._id,
+    req.user.userId,
     req.params.chatId as string,
   )
 

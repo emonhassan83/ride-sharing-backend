@@ -24,13 +24,13 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     }
 
     const redis = getRedisClient();
-    const io    = getIO();
+    const io = getIO();
 
     // ── 1. Save driver current location ──────────────────────────────────────
     const locationData = JSON.stringify({
       driverId, lat, lng,
-      speed:     speed   || 0,
-      heading:   heading || 0,
+      speed: speed || 0,
+      heading: heading || 0,
       timestamp: Date.now(),
     });
 
@@ -57,13 +57,14 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     // ── No active ride ────────────────────────────────────────────────────────
     if (!ride) {
       return callback?.({
-        success:   true,
-        hasRide:   false,
+        success: true,
+        hasRide: false,
         lat,
         lng,
-        speed:     speed   || 0,
-        heading:   heading || 0,
+        speed: speed || 0,
+        heading: heading || 0,
         timestamp: Date.now(),
+        routeGeometry: null,
       });
     }
 
@@ -83,24 +84,26 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       driverId,
       lat,
       lng,
-      speed:     speed   || 0,
-      heading:   heading || 0,
-      eta:       eta.etaMinutes,
-      distance:  eta.distanceKm,
+      speed: speed || 0,
+      heading: heading || 0,
+      eta: eta.etaMinutes,
+      distance: eta.distanceKm,
       timestamp: Date.now(),
+      routeGeometry: ride.routeGeometry,
     });
 
     // ── 6. Arrival check — only when accepted ─────────────────────────────────
     if (ride.status !== RIDE_STATUS.accepted) {
       return callback?.({
-        success:   true,
-        hasRide:   true,
+        success: true,
+        hasRide: true,
         rideId,
         lat,
         lng,
-        speed:     speed   || 0,
-        heading:   heading || 0,
+        speed: speed || 0,
+        heading: heading || 0,
         timestamp: Date.now(),
+        routeGeometry: ride.routeGeometry,
       });
     }
 
@@ -110,14 +113,15 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       const elapsed = Date.now() - parseInt(lastNotify);
       if (elapsed < ARRIVAL_COOLDOWN_SECONDS * 1000) {
         return callback?.({
-          success:   true,
-          hasRide:   true,
+          success: true,
+          hasRide: true,
           rideId,
           lat,
           lng,
-          speed:     speed   || 0,
-          heading:   heading || 0,
+          speed: speed || 0,
+          heading: heading || 0,
           timestamp: Date.now(),
+          routeGeometry: ride.routeGeometry,
         });
       }
     }
@@ -126,7 +130,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.private) {
       const passenger = await Passenger.findOne({
         rideId,
-        status:          PASSENGER_STATUS.confirmed,
+        status: PASSENGER_STATUS.confirmed,
         arrivedNotified: false,
       });
 
@@ -141,14 +145,15 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       }
 
       return callback?.({
-        success:   true,
-        hasRide:   true,
+        success: true,
+        hasRide: true,
         rideId,
         lat,
         lng,
-        speed:     speed   || 0,
-        heading:   heading || 0,
+        speed: speed || 0,
+        heading: heading || 0,
         timestamp: Date.now(),
+        routeGeometry: ride.routeGeometry,
       });
     }
 
@@ -156,7 +161,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     if (ride.type === RIDE_TYPE.split) {
       const passengers = await Passenger.find({
         rideId,
-        status:          PASSENGER_STATUS.confirmed,
+        status: PASSENGER_STATUS.confirmed,
         arrivedNotified: false,
       });
 
@@ -171,26 +176,28 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       }
 
       return callback?.({
-        success:   true,
-        hasRide:   true,
+        success: true,
+        hasRide: true,
         rideId,
         lat,
         lng,
-        speed:     speed   || 0,
-        heading:   heading || 0,
+        speed: speed || 0,
+        heading: heading || 0,
         timestamp: Date.now(),
+        routeGeometry: ride.routeGeometry,
       });
     }
 
     return callback?.({
-      success:   true,
-      hasRide:   true,
+      success: true,
+      hasRide: true,
       rideId,
       lat,
       lng,
-      speed:     speed   || 0,
-      heading:   heading || 0,
+      speed: speed || 0,
+      heading: heading || 0,
       timestamp: Date.now(),
+      routeGeometry: ride.routeGeometry,
     });
   },
 );
