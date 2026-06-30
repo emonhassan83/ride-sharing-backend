@@ -23,7 +23,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
       return callback?.({ success: false, message: 'Missing required fields' });
 
     const redis = getRedisClient();
-    const io    = getIO();
+    const io = getIO();
 
     const ride = await Ride.findById(rideId);
     if (!ride)
@@ -33,8 +33,8 @@ export const driverCompleteTripHandler = eventHandler<any>(
     if (ride.status !== RIDE_STATUS.started)
       return callback?.({ success: false, message: `Cannot complete — status: ${ride.status}` });
 
-    const locationKey     = `ride:${rideId}:live`;
-    const locations       = await redis.lrange(locationKey, 0, -1);
+    const locationKey = `ride:${rideId}:live`;
+    const locations = await redis.lrange(locationKey, 0, -1);
     const parsedLocations = locations.map((loc: string) => JSON.parse(loc));
 
     // ── Determine which passengers to complete ────────────────────────────────
@@ -74,7 +74,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
           receiver: passenger.userId, message: 'Trip Completed!',
           description: `Total fare: £${totalFare}. Thank you for riding with us!`,
           reference: rideId, modelType: modeType.Ride,
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       io.to(`user:${passenger.userId}`).emit('ride:trip-completed', {
@@ -115,7 +115,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
     return callback?.({
       success: true,
       message: allComplete ? 'Ride completed successfully' : 'Passenger(s) completed. Ride still in progress.',
-      data:    { rideId, totalFare: grandTotal, passengerCount: passengers.length, allComplete },
+      data: { rideId, totalFare: grandTotal, passengerCount: passengers.length, allComplete },
     });
   },
 );
