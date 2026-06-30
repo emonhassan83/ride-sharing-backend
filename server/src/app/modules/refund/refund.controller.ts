@@ -15,8 +15,11 @@ const getAllRefunds = catchAsync(async (req, res) => {
 })
 
 const getMyRefunds = catchAsync(async (req, res) => {
-  req.query.user = req.user?.userId
-  const result = await RefundServices.getAllRefundsFromDB(req.query)
+  const query = {
+    ...req.query,
+    user: req.user?.userId,
+  }
+  const result = await RefundServices.getAllRefundsFromDB(query)
 
   sendResponse(res, {
     code: httpStatus.OK,
