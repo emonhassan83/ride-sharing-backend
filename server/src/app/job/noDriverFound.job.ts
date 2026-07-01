@@ -10,6 +10,12 @@ import { modeType } from '../modules/notification/notification.interface';
 import { sendNotification } from '../utils/sentPushNotification';
 import { notifyNearbyDrivers } from '../utils/notifyDrivers.utils';
 import { getIO } from '../socket/socket.init';
+import { Booking } from '../modules/booking/booking.model';
+import { Payment } from '../modules/payment/payment.model';
+import { Refund } from '../modules/refund/refund.model';
+import { BOOKING_STATUS, PAYMENT_STATUS } from '../modules/booking/booking.constant';
+import { REFUND_STATUS, REFUND_TYPE } from '../modules/refund/refund.constant';
+import { refundToWallet } from '../utils/splitFare.utils';
 
 const BATCH_SIZE = 50;
 
@@ -184,9 +190,64 @@ export const checkNoDriverFound = async () => {
     }
   );
 
+  // Query and refund bookings first
+  const bookingsToRefund = await Booking.find({
+    rideId: { $in: cancelRideIds },
+    bookingStatus: { $ne: BOOKING_STATUS.cancelled },
+  });
+
+  for (const booking of bookingsToRefund) {
+    const paidAmount = booking.amountPaid ?? 0;
+    if (paidAmount > 0) {
+      // Find corresponding payment record
+      const payment = await Payment.findOne({ booking: booking._id, status: PAYMENT_STATUS.paid });
+      if (payment) {
+        payment.status = PAYMENT_STATUS.refunded as any;
+        payment.isPaid = false;
+        await payment.save();
+
+        // Deduct from driver's wallet if driver was somehow assigned and paid
+        if (payment.providerEarning && payment.providerEarning > 0 && booking.driverId) {
+          await User.findByIdAndUpdate(booking.driverId, {
+            $inc: { wallet: -payment.providerEarning }
+          });
+        }
+      }
+
+      // Create Refund record
+      await Refund.create({
+        user: booking.userId,
+        ride: booking.rideId,
+        type: REFUND_TYPE.cancel_ride,
+        paymentIntentId: booking.transactionId || payment?.transactionId || '',
+        amount: paidAmount,
+        reason: 'No driver found',
+        note: `Ride ${booking.rideId} cancelled due to no driver found`,
+        status: REFUND_STATUS.confirmed,
+      });
+
+      // Update Booking
+      booking.bookingStatus = BOOKING_STATUS.cancelled;
+      booking.paymentStatus = PAYMENT_STATUS.refunded as any;
+      booking.refundAmount = paidAmount;
+      await booking.save();
+
+      // Refund user
+      await refundToWallet(
+        booking.userId.toString(),
+        paidAmount,
+        'no_driver_found',
+        io
+      );
+    } else {
+      booking.bookingStatus = BOOKING_STATUS.cancelled;
+      await booking.save();
+    }
+  }
+
   // Bulk cancel passengers
   await Passenger.updateMany(
-    { rideId: { $in: cancelRideIds }, status: PASSENGER_STATUS.pending },
+    { rideId: { $in: cancelRideIds }, status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.completed] } },
     {
       status: PASSENGER_STATUS.cancelled,
       cancellationReason: 'no_driver_found',

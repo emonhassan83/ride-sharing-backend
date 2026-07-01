@@ -20,9 +20,6 @@ async function main() {
     await mongoose.connect(config.database.mongoUrl as string);
     logger.info(colors.green('🚀 Database connected successfully'));
 
-    // Run the corn all jobs
-    startBackgroundJobs();
-
     const port =
       typeof config.port === 'number' ? config.port : Number(config.port);
 
@@ -33,6 +30,9 @@ async function main() {
           `♻️  Application listening on port ${config.backend.baseUrl}`
         )
       );
+
+      // Start cron jobs AFTER the server is fully listening —
+      startBackgroundJobs();
     });
 
     // @ts-ignore

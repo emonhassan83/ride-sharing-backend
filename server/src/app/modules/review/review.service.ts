@@ -93,7 +93,7 @@ const getAllReviews = async (query: Record<string, any>) => {
   const reviewsModel = new QueryBuilder(
     Review.find()
       .populate([{ path: 'reviewer', select: 'name profileImage role' }])
-      .select('reviewer review rating createdAt'),
+      .select('reviewer comment rating createdAt'),
     query
   )
     .search([''])

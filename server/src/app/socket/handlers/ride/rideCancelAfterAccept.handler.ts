@@ -1,12 +1,15 @@
 // handlers/ride/rideCancelAfterAccept.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import { RIDE_STATUS, CANCELLED_BY, RIDE_TYPE } from '../../../modules/ride/ride.constant';
-import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
+import { BOOKING_STATUS, PAYMENT_STATUS } from '../../../modules/booking/booking.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
 import { User } from '../../../modules/user/user.model';
+import { Refund } from '../../../modules/refund/refund.model';
+import { Payment } from '../../../modules/payment/payment.model';
+import { REFUND_STATUS, REFUND_TYPE } from '../../../modules/refund/refund.constant';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { sendNotification } from '../../../utils/sentPushNotification';
 import { TSocket } from '../../interface/index.interface';
@@ -108,13 +111,46 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       refundAmount,
     });
 
-    await Booking.findOneAndUpdate(
-      { passengerId: passenger._id },
-      { bookingStatus: BOOKING_STATUS.cancelled, refundAmount },
-    );
+    const bookingDoc = await Booking.findOne({ passengerId: passenger._id });
+    if (bookingDoc) {
+      bookingDoc.bookingStatus = BOOKING_STATUS.cancelled;
+      bookingDoc.refundAmount = refundAmount;
+      if (refundAmount > 0) {
+        bookingDoc.paymentStatus = PAYMENT_STATUS.refunded as any;
+      }
+      await bookingDoc.save();
+    }
 
-    // ── Refund to wallet ──────────────────────────────────────────────────────
-    if (refundAmount > 0) {
+    if (refundAmount > 0 && bookingDoc) {
+      // 1. Find and update the payment record
+      const payment = await Payment.findOne({ booking: bookingDoc._id, status: PAYMENT_STATUS.paid });
+      if (payment) {
+        payment.status = PAYMENT_STATUS.refunded as any;
+        payment.isPaid = false;
+        await payment.save();
+
+        // 2. Revert the driver's wallet credit for the booking
+        if (payment.providerEarning && payment.providerEarning > 0 && ride.driverId) {
+          await User.findByIdAndUpdate(ride.driverId, {
+            $inc: { wallet: -payment.providerEarning }
+          });
+          console.log(`💰 Deducted driver earning: £${payment.providerEarning} from driver: ${ride.driverId}`);
+        }
+      }
+
+      // 3. Create Refund record
+      await Refund.create({
+        user: userId,
+        ride: rideId,
+        type: REFUND_TYPE.cancel_ride,
+        paymentIntentId: bookingDoc.transactionId || payment?.transactionId || '',
+        amount: refundAmount,
+        reason: `Rider cancelled: ${reason || refundReason}`,
+        note: `Ride ${rideId} cancelled by rider. Reason: ${refundReason}`,
+        status: REFUND_STATUS.confirmed,
+      });
+
+      // 4. Refund to passenger's wallet
       await refundToWallet(userId, refundAmount, `cancel_${refundReason}`, io);
     }
 
