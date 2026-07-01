@@ -6,7 +6,7 @@ import {
   RIDE_TYPE,
 } from '../../../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
-import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
+import { BOOKING_STATUS, PAYMENT_STATUS } from '../../../modules/booking/booking.constant';
 import {
   REFUND_STATUS,
   REFUND_TYPE,
@@ -16,6 +16,7 @@ import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
 import { Refund } from '../../../modules/refund/refund.model';
 import { User } from '../../../modules/user/user.model';
+import { Payment } from '../../../modules/payment/payment.model';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { sendNotification } from '../../../utils/sentPushNotification';
 import { TSocket } from '../../interface/index.interface';
@@ -38,6 +39,9 @@ const cancelBookingWithRefund = async (
 
   booking.bookingStatus = BOOKING_STATUS.cancelled;
   booking.refundAmount = paidAmount;
+  if (paidAmount > 0) {
+    booking.paymentStatus = PAYMENT_STATUS.refunded;
+  }
   await booking.save();
 
   const passenger = await Passenger.findById(passengerId)
@@ -45,17 +49,35 @@ const cancelBookingWithRefund = async (
     .lean();
 
   if (paidAmount > 0 && passenger?.userId) {
+    // 1. Find and update the payment record
+    const payment = await Payment.findOne({ booking: booking._id, status: PAYMENT_STATUS.paid });
+    if (payment) {
+      payment.status = PAYMENT_STATUS.refunded as any;
+      payment.isPaid = false;
+      await payment.save();
+
+      // Deduct driver (provider) earning from driver's wallet
+      if (payment.providerEarning && payment.providerEarning > 0) {
+        await User.findByIdAndUpdate(driverId, {
+          $inc: { wallet: -payment.providerEarning }
+        });
+        console.log(`💰 Deducted driver earning: £${payment.providerEarning} from driver: ${driverId}`);
+      }
+    }
+
+    // 2. Create Refund document
     await Refund.create({
       user: passenger.userId,
       ride: rideId,
       type: REFUND_TYPE.cancel_ride,
-      paymentIntentId: booking.transactionId,
+      paymentIntentId: booking.transactionId || payment?.transactionId || '',
       amount: paidAmount,
       reason: `Driver cancelled: ${reason}`,
       note: `Ride ${rideId} cancelled by driver`,
       status: REFUND_STATUS.confirmed,
     });
 
+    // 3. Refund to passenger's wallet
     await refundToWallet(
       passenger.userId.toString(),
       paidAmount,
