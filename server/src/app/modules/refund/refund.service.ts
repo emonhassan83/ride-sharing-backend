@@ -17,12 +17,8 @@ const getAllRefundsFromDB = async (query: Record<string, unknown>) => {
         select: 'name profileImage',
       },
       {
-        path: 'order',
-        select: 'id passengerId',
-         populate: {
-          path: 'passengerId',
-          select: 'pickup destination requestedSeats',
-        },
+        path: 'ride',
+        select: 'id pickup destination'
       },
     ]),
     query,
@@ -50,13 +46,13 @@ const getARefundFromDB = async (id: string) => {
       select: 'name email profileImage phone',
     },
     {
-        path: 'order',
-        select: 'id passengerId',
-         populate: {
-          path: 'passengerId',
-          select: 'pickup destination requestedSeats',
-        },
+      path: 'order',
+      select: 'id passengerId',
+      populate: {
+        path: 'passengerId',
+        select: 'pickup destination requestedSeats',
       },
+    },
   ])
   if (!refund) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Refund request not found')
@@ -95,7 +91,7 @@ const updateRefundStatusFromDB = async (
 
     if (status === REFUND_STATUS.confirmed) {
       // === ALWAYS REFUND TO WALLET (No Stripe Refund) ===
-      
+
       // Add money back to user's wallet
       const user = await User.findByIdAndUpdate(
         refund.user,
@@ -118,7 +114,7 @@ const updateRefundStatusFromDB = async (
       );
 
       console.log(`💰 Refunded ${refund.amount} to wallet | User: ${refund.user}`);
-    } 
+    }
     else if (status === REFUND_STATUS.rejected) {
       updatedRefund = await Refund.findByIdAndUpdate(
         id,
