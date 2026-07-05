@@ -111,7 +111,7 @@ const getAllUsersFromDB = async (query: Record<string, unknown>) => {
 
 const getSingleUser = async (userId: string): Promise<TUser | null> => {
   const result: any = await User.findById(userId)
-    .select('-wallet -expireAt -updatedAt -__v')
+    .select('-expireAt -updatedAt -__v')
     .lean();
   if (!result || result.isDeleted)
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
