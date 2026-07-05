@@ -268,9 +268,15 @@ const confirmPayment = async (query: Record<string, any>) => {
     await session.commitTransaction();
 
     if (recalcRideId) {
-      recalculateSplitFares(recalcRideId, 'passenger_paid').catch((err) =>
-        console.error('Recalculate error after payment:', err)
-      );
+      // Do not report payment completion before existing split passengers
+      // have received their fare adjustment.
+      try {
+        await recalculateSplitFares(recalcRideId, 'passenger_paid');
+      } catch (err) {
+        // The payment transaction is already committed. A recalculation
+        // failure must not trigger the payment rollback/refund path below.
+        console.error('Recalculate error after payment:', err);
+      }
     }
 
     return payment;
@@ -453,9 +459,11 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
     await session.commitTransaction();
 
     if (recalcRideId) {
-      recalculateSplitFares(recalcRideId, 'passenger_paid').catch((err) =>
-        console.error('Recalculate error after wallet payment:', err)
-      );
+      try {
+        await recalculateSplitFares(recalcRideId, 'passenger_paid');
+      } catch (err) {
+        console.error('Recalculate error after wallet payment:', err);
+      }
     }
 
     return {
