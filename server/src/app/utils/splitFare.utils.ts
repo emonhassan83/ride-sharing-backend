@@ -9,6 +9,11 @@ import { isPublicHoliday, loadFareSettings } from './fareCalculator';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { sendNotification } from './sentPushNotification';
 import { modeType } from '../modules/notification/notification.interface';
+import { Refund } from '../modules/refund/refund.model';
+import {
+  REFUND_STATUS,
+  REFUND_TYPE,
+} from '../modules/refund/refund.constant';
 
 // ── Surcharge based on total seats ────────────────────────────────────────────
 export const getSurchargeMultiplier = (
@@ -50,7 +55,7 @@ export const calcSplitPassengerFare = async (
         (initial + kmCharge + lugCharge) *
           (s.holidayIncreasePercentage / 100) *
           100
-      ) / 100 
+      ) / 100
     : 0;
 
   const { multiplier, percent } = getSurchargeMultiplier(totalSeats);
@@ -109,15 +114,17 @@ export const refundToWallet = async (
   await User.findByIdAndUpdate(userId, { $inc: { wallet: rounded } });
   console.log(`💰 Wallet refund £${rounded} → ${userId} (${reason})`);
 
-  const user = await User.findById(userId)
+  const user = await User.findById(userId);
   if (user && user?.fcmToken) {
     sendNotification([user.fcmToken], {
-        receiver:    userId,
-        message:     'Ride refund amount transfer',
-        description: `£${rounded.toFixed(2)} refunded to your wallet.`,
-        // reference:   rideId,
-        modelType:   modeType.Refund,
-      }).catch((err: any) => console.warn(`FCM failed for passenger ${userId}:`, err));
+      receiver: userId,
+      message: 'Ride refund amount transfer',
+      description: `£${rounded.toFixed(2)} refunded to your wallet.`,
+      // reference:   rideId,
+      modelType: modeType.Refund,
+    }).catch((err: any) =>
+      console.warn(`FCM failed for passenger ${userId}:`, err)
+    );
   }
 };
 
@@ -135,7 +142,9 @@ export const chargeUser = async (
 
   // ── Idempotency check (Case 33) ───────────────────────────────────────────
   const redis = getRedisClient();
-  const idemKey = `payment:charged:${rideId}:${userId}:${Math.round(rounded * 100)}`;
+  const idemKey = `payment:charged:${rideId}:${userId}:${Math.round(
+    rounded * 100
+  )}`;
   const already = await redis.get(idemKey);
   if (already) return { success: true, method: 'already_charged' };
 
@@ -288,11 +297,25 @@ export const recalculateSplitFares = async (
       if (Math.abs(diff) < 0.01) continue; // Case 13 — ignore rounding noise
 
       if (diff < 0) {
-        // Fare decreased → wallet refund (Case 26)
+        const refundAmount = Math.abs(diff);
+        const refundReason = `fare_recalculate_${reason}`;
+
+        // 1. Create Refund record for split ride adjustment
+        await Refund.create({
+          user: passenger.userId,
+          ride: rideId,
+          amount: refundAmount,
+          type: REFUND_TYPE.split_ride,
+          reason: refundReason,
+          note: `Fare automatically adjusted for split ride. Reason: ${reason}.`,
+          status: REFUND_STATUS.confirmed,
+        });
+
+        // 2. Add the amount to the user's wallet
         await refundToWallet(
           passenger.userId.toString(),
-          Math.abs(diff),
-          `fare_recalculate_${reason}`,
+          refundAmount,
+          refundReason,
           io
         );
       } else {
@@ -361,6 +384,14 @@ export const calculateCancellationRefund = async (
   platformAmount: number;
   refundReason: string;
 }> => {
+  if (paidAmount <= 0) {
+    return {
+      refundAmount: 0,
+      platformAmount: 0,
+      refundReason: 'no_amount_paid',
+    };
+  }
+
   const settings = await Setting.find({
     key: {
       $in: ['cancellationFreeWindowHours', 'cancellationPercentage50Hours'],
@@ -377,15 +408,25 @@ export const calculateCancellationRefund = async (
   const hoursSinceBook = (now.getTime() - bookingTime.getTime()) / 3600000;
   const hoursBeforeDep = (departureTime.getTime() - now.getTime()) / 3600000;
 
-  // Free window
-  if (hoursSinceBook <= freeWindowHours)
+  // Case 1: Cancellation AFTER departure time (no refund)
+  if (hoursBeforeDep < 0) {
+    return {
+      refundAmount: 0,
+      platformAmount: paidAmount,
+      refundReason: 'cancelled_after_departure',
+    };
+  }
+
+  // Case 2: Free cancellation window after booking
+  if (hoursSinceBook <= freeWindowHours) {
     return {
       refundAmount: paidAmount,
       platformAmount: 0,
       refundReason: 'free_window',
     };
+  }
 
-  // 50% penalty
+  // Case 3: 50% penalty if cancelled close to departure
   if (hoursBeforeDep <= penalty50Hours) {
     const refund = Math.round(paidAmount * 0.5 * 100) / 100;
     return {
@@ -395,7 +436,7 @@ export const calculateCancellationRefund = async (
     };
   }
 
-  // Outside penalty window — full refund
+  // Case 4: Full refund if cancelled outside the penalty window
   return {
     refundAmount: paidAmount,
     platformAmount: 0,
