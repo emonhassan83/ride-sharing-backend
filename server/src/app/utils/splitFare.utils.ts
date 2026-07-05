@@ -88,11 +88,14 @@ export const acquireRecalculateLock = async (
   ttl = 15
 ): Promise<boolean> => {
   const redis = getRedisClient();
-  // Use argument-style flags for older redis client typings: EX <seconds> NX
-  const result = await (redis as any).set(
+  // ioredis expects SET options as separate arguments. Passing the
+  // node-redis options object here can prevent the lock from being acquired.
+  const result = await redis.set(
     `ride:recalculate:lock:${rideId}`,
     '1',
-    { NX: true, EX: ttl }
+    'EX',
+    ttl,
+    'NX'
   );
   return result === 'OK';
 };

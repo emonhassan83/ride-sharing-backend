@@ -2,7 +2,7 @@
 
 ## Overview
 `recalculateSplitFares` automatically adjusts passenger fares for split rides when:
-- A new passenger joins (`passenger_joined`)
+- A new passenger completes payment (`passenger_paid`)
 - A passenger cancels (`passenger_cancelled`)
 - A passenger is rejected (`passenger_rejected`)
 
@@ -163,11 +163,11 @@ Always releases the lock, even if an exception occurred.
 
 ---
 
-## Event Sequence in `driverAcceptRide.handler.ts`
+## Event Sequence in `payment.service.ts`
 
-When a driver accepts a split ride:
+When a passenger completes payment for a split ride:
 1. Passenger status → `PASSENGER_STATUS.confirmed`
-2. `recalculateSplitFares(rideId, 'passenger_joined', io)` is called asynchronously.
+2. After the payment transaction commits, `recalculateSplitFares(rideId, 'passenger_paid')` is awaited before the response returns.
 3. The same function is triggered during:
    - `rideCancelAfterAccept.handler.ts` → `'passenger_cancelled'`
    - `splitRideRequest.handler.ts` (rejection path) → `'passenger_rejected'`
