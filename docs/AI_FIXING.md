@@ -46,3 +46,21 @@ Ensure clear boundaries between architectural layers:
 
 ## 4. Session memory updates
 At the end of every significant task or when asked to update summary, append a concise bulleted list mapping date, completed tasks, key changes, and next steps to the top of `.agent/SUMMARY.md`.
+
+---
+
+## Fixes on 2026-07-05
+
+### Ride Cancellation and Refund Logic
+
+- **File Modified:** `server/src/app/utils/splitFare.utils.ts`
+- **Issue:** The `calculateCancellationRefund` function in `rideCancelAfterAccept.handler.ts` was not correctly handling refunds, especially when a rider cancels a ride. This could lead to no refund being issued even when one was due.
+- **Fix Details:**
+    - Updated `calculateCancellationRefund` to be more robust.
+    - Added a check to ensure no refund is given if the ride is cancelled *after* the departure time.
+    - Added a check to handle cases where the initial paid amount is zero.
+    - The new logic correctly calculates full refunds, 50% penalty refunds, or no refund based on when the cancellation occurs relative to the booking and departure times.
+- **Related Files Checked:**
+    - `server/src/app/job/noDriverFound.job.ts`: No changes were needed. The refund logic for system-cancelled rides (due to no driver) was already correct.
+    - `server/src/app/socket/handlers/ride/driverCancelRide.handler.ts`: No changes were needed. The refund logic for driver-cancelled rides was already correct.
+- **Outcome:** The refund system is now more reliable, especially for cancellations initiated by the rider. The user's wallet will be correctly credited with the refund amount as per the cancellation policy.
