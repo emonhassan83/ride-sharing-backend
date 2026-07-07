@@ -14,63 +14,7 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { notifyNearbyDrivers } from '../../../utils/notifyDrivers.utils';
-import { hasDriverRideAtDateTime } from '../../../utils/geo.utils';
-import { USER_ROLE, USER_STATUS } from '../../../modules/user/user.constant';
-import { Vehicle } from '../../../modules/vehicle/vehicle.model';
-import { RIDE_TYPE } from '../../../modules/ride/ride.constant';
-
-// ── Helper: check if any available driver exists nearby ───────────────────────
-const hasAvailableDriversNearby = async (
-  redis:          any,
-  pickup:         { lat: number; lng: number },
-  departureDate:  string,
-  departureTime:  string,
-  rideType:       string,
-  requestedSeats: number,
-  radiusKm        = 10,
-): Promise<boolean> => {
-
-  // Check online drivers from Redis GEOSET
-  type GeoResult = Array<[string, string]>;
-  const onlineDrivers = (await redis.georadius(
-    'drivers:location', pickup.lng, pickup.lat, radiusKm, 'km', 'WITHDIST',
-  )) as GeoResult;
-
-  for (const [driverId] of onlineDrivers) {
-    const availability = await hasDriverRideAtDateTime(
-      driverId, departureDate, departureTime, rideType, requestedSeats,
-    );
-    if (availability.available) return true;
-  }
-
-  const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
-
-  // Check offline drivers from DB
-  const offlineDrivers = await User.find({
-    role:      USER_ROLE.provider,
-    isDeleted: false,
-    status:    USER_STATUS.active,
-    isKycVerified: true,
-    location: {
-      $nearSphere: {
-        $geometry:    { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
-        $maxDistance: radiusKm * 1000,
-      },
-    },
-  }).select('_id').lean();
-
-  for (const driver of offlineDrivers) {
-    const driverId = driver._id.toString();
-    if (onlineDriverIds.has(driverId)) continue;
-
-    const availability = await hasDriverRideAtDateTime(
-      driverId, departureDate, departureTime, rideType, requestedSeats,
-    );
-    if (availability.available) return true;
-  }
-
-  return false;
-};
+import { fetchDriversWithinRadius } from '../../../utils/geo.utils';
 
 export const rideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -79,6 +23,7 @@ export const rideRequestHandler = eventHandler<any>(
       malePassengers, femalePassengers,
       departureDate, departureTime,
       luggageCounts, note,
+      selectedDriverId, driverId,
     } = data;
     const userId = socket.auth?._id?.toString();
 
@@ -88,7 +33,7 @@ export const rideRequestHandler = eventHandler<any>(
     if (!departureDate || !departureTime)
       return callback?.({ success: false, message: 'departureDate and departureTime are required' });
 
-    const requestedSeats = passengers || 1;
+    const requestedSeats = Number(passengers) > 0 ? Number(passengers) : 1;
 
     const [year, month, day] = departureDate.split('-').map(Number);
     const [hour, minute]     = departureTime.split(':').map(Number);
@@ -98,14 +43,23 @@ export const rideRequestHandler = eventHandler<any>(
     const io    = getIO();
 
     // ✅ Check available drivers BEFORE creating ride/passenger
-    const driversAvailable = await hasAvailableDriversNearby(
+    const eligibleDrivers = await fetchDriversWithinRadius(
       redis,
-      pickup,
-      departureDate,
-      departureTime,
+      pickup.lng,
+      pickup.lat,
+      10,
       type,
       requestedSeats,
+      destination,
+      departureDate,
+      departureTime,
     );
+    const requestedDriverId = selectedDriverId || driverId;
+    const driversAvailable = requestedDriverId
+      ? eligibleDrivers.some(
+          (driver: any) => driver.driverId === requestedDriverId.toString()
+        )
+      : eligibleDrivers.length > 0;
 
     if (!driversAvailable) {
       return callback?.({
@@ -232,6 +186,7 @@ export const rideRequestHandler = eventHandler<any>(
       },
       departureDate:       departureDate,
       departureTime:       departureTime,
+      rideType:            type,
       requestedSeats,
       estimatedFare:       roundTo2(fareBreakdown.totalFare),
       estimatedDistanceKm: roundTo2(actualDistance),
@@ -247,6 +202,8 @@ export const rideRequestHandler = eventHandler<any>(
       redis,
       io,
       passenger._id.toString(),
+      10,
+      requestedDriverId ? [requestedDriverId.toString()] : undefined,
     );
 
     console.log(`📡 Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);

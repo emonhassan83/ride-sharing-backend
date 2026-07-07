@@ -30,8 +30,8 @@ export const getNearbyDriversHandler = eventHandler<any>(
       });
 
     const redis = getRedisClient();
-    const requestedSeats =
-      rideType === 'split' && passengers > 0 ? passengers : 1;
+    // Keep seat eligibility identical to ride submission for all ride types.
+    const requestedSeats = Number(passengers) > 0 ? Number(passengers) : 1;
 
     try {
       // ── Find nearby drivers (5km first, expand to 10km if none) ────────────
