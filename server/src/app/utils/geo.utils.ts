@@ -286,6 +286,7 @@ export async function fetchDriversWithinRadius(
     role: USER_ROLE.provider,
     isDeleted: false,
     status: USER_STATUS.active,
+    isKycVerified: true,
     location: {
       $nearSphere: {
         $geometry: {

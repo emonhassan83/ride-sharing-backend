@@ -91,7 +91,8 @@ export async function notifyNearbyDrivers(
   redis: any,
   io: any,
   passengerId?: string,
-  radiusKm = 10
+  radiusKm = 10,
+  targetDriverIds?: string[]
 ): Promise<number> {
   let notifiedCount = 0;
   const notifiedIds: string[] = [];
@@ -116,6 +117,7 @@ export async function notifyNearbyDrivers(
 
   // ── Online drivers — availability check + socket + FCM ───────────────────
   for (const [driverId] of onlineDrivers) {
+    if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
@@ -169,6 +171,7 @@ export async function notifyNearbyDrivers(
 
   for (const driver of offlineDrivers) {
     const driverId = driver._id.toString();
+    if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
     if (onlineDriverIds.has(driverId)) continue;
 
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
