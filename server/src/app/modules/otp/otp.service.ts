@@ -23,18 +23,31 @@ const verifyOTP = async (
 ) => {
   const { type } = query;
 
-  const token = tokenWithBearer.split(' ')[1];
-  if (!token) {
-    throw new ApiError(StatusCodes.UNAUTHORIZED, 'You are not authorized');
+  let token = '';
+  if (tokenWithBearer && typeof tokenWithBearer === 'string') {
+    const trimmed = tokenWithBearer.trim();
+    token = trimmed.startsWith('Bearer ')
+      ? trimmed.slice(7).trim()
+      : trimmed.split(' ').pop()?.trim() || '';
+  }
+
+  if (!token || token === 'null' || token === 'undefined') {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Verification token is missing or invalid.');
   }
 
   let decode: JwtPayload;
   try {
     decode = jwt.verify(token, config.jwt.accessSecret as Secret) as JwtPayload;
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.name === 'TokenExpiredError') {
+      throw new ApiError(
+        StatusCodes.FORBIDDEN,
+        'OTP session has expired. Please request a new OTP.'
+      );
+    }
     throw new ApiError(
       StatusCodes.FORBIDDEN,
-      'Session has expired. Please request a new OTP.'
+      'Invalid verification token. Please request a new OTP.'
     );
   }
 
@@ -270,6 +283,7 @@ const sendOtpViaTokenInPhone = async (
     console.log(res);
 
     return {
+      token,
       verificationToken: token,
     };
   } catch (error: any) {
@@ -317,6 +331,7 @@ const sendOtpViaDirectPhone = async (payload: { phone: string }) => {
     // For testing mock data generate
     return {
       token,
+      verificationToken: token,
       otp,
       mock: true,
     };
@@ -335,6 +350,7 @@ const sendOtpViaDirectPhone = async (payload: { phone: string }) => {
 
     return {
       token,
+      verificationToken: token,
     };
   } catch (error: any) {
     console.error('Twilio SMS Error:', error);
