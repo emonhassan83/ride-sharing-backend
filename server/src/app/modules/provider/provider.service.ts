@@ -209,9 +209,20 @@ const updateStatusIntoDB = async (
   }
 };
 
+const getProviderByUserId = async (userId: string) => {
+  const result = await Provider.findOne({ userId }).populate([
+    { path: 'userId', select: 'name email phone profileImage isKycVerified' },
+  ]);
+  if (!result) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Oops! Provider not found');
+  }
+  return result;
+};
+
 export const ProviderService = {
   insertIntoDB,
   getAllIntoDB,
   getAIntoDB,
   updateStatusIntoDB,
+  getProviderByUserId,
 };
