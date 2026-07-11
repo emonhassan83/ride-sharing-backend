@@ -5,6 +5,7 @@ import { Support } from './support.model';
 import QueryBuilder from '../../builder/QueryBuilder';
 import { TSupportStatus } from './support.constant';
 import { User } from '../user/user.model';
+import { Booking } from '../booking/booking.model';
 import { getEmailQueueInstance } from '../../utils/queueHelper';
 import {
   getCache,
@@ -18,6 +19,14 @@ const create = async (userId: string, payload: Partial<TSupport>) => {
   const author = await User.findById(userId);
   if (!author || author?.isDeleted) {
     throw new ApiError(StatusCodes.FORBIDDEN, 'This user is not found !');
+  }
+
+  if (payload.booking) {
+    const booking = await Booking.findOne({ id: String(payload.booking) });
+    if (!booking) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found with this ID');
+    }
+    payload.booking = booking._id;
   }
 
   payload.user = author._id;
