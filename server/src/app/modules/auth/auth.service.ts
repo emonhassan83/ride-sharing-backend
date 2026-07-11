@@ -45,10 +45,10 @@ const createUser = async (payload: any) => {
     // Check if user existing
     if (!existingUser.isDeleted && existingUser.isSignUpOtpVerified) {
       // Sent exact error message in user
-      const message = existingUser.email === email 
-        ? 'User already exists with this email' 
+      const message = existingUser.email === email
+        ? 'User already exists with this email'
         : 'User already exists with this phone number';
-        
+
       throw new ApiError(StatusCodes.FORBIDDEN, message);
     }
 
@@ -309,7 +309,7 @@ const loginWithPhone = async (payload: TLoginWithPhone) => {
   //* checking if the user is exist
   const user = await User.findOne({ phone });
   if (!user || user?.isDeleted) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'This user is not found !');
+    throw new ApiError(StatusCodes.NOT_FOUND, 'This user is not found ! Please check your phone and country code');
   }
 
   // if user is not verify yet throw error
