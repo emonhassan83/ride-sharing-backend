@@ -87,7 +87,7 @@ const verifyOTP = async (
       break;
 
     default:
-      throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid OTP type');
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid OTP verification type');
   }
 
   const user = await User.findOneAndUpdate(
@@ -97,7 +97,19 @@ const verifyOTP = async (
   );
 
   if (!user) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+    let errorMessage = 'User not found';
+    if (type === 'signup') {
+      errorMessage = 'No signed up account found with this email.';
+    } else if (type === 'forgot') {
+      errorMessage = 'No user account found with this email to reset password.';
+    } else if (type === 'login') {
+      errorMessage = 'No user account found with this email to verify login.';
+    } else if (type === 'changeEmail') {
+      errorMessage = 'User not found to update email address.';
+    } else if (type === 'changePhone') {
+      errorMessage = 'User not found to update phone number.';
+    }
+    throw new ApiError(StatusCodes.NOT_FOUND, errorMessage);
   }
 
   // ==================== LOGIN, SIGNUP, FORGOT → Return Tokens ====================
