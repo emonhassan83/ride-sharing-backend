@@ -17,7 +17,7 @@ const refundSchema = new Schema<TRefund>(
     },
     order: {
       type: Schema.Types.ObjectId,
-      ref: 'Order',
+      ref: 'Booking',
       required: true,
     },
     paymentIntentId: { type: String },

@@ -5,6 +5,9 @@ import onlineUsers from './utils/onlineUsers';
 import { TSocket } from './interface/socket.interface';
 import registerSocketEvents from './socket.event';
 import { User } from '../modules/user/user.model';
+import { Passenger } from '../modules/passenger/passenger.model';
+import { Ride } from '../modules/ride/ride.model';
+import { USER_ROLE } from '../modules/user/user.constant';
 
 let ioInstance: Server | null = null;
 
@@ -19,6 +22,7 @@ const initializeSocketIO = (server: HttpServer) => {
   ioInstance.on('connection', async (socket: any) => {
     try {
       const userId = socket.auth?._id?.toString();
+      const userRole = socket.auth?.role;
       if (!userId) {
         socket.disconnect();
         return;
@@ -38,7 +42,41 @@ const initializeSocketIO = (server: HttpServer) => {
       tSocket.data = { user: socket.auth };
 
       tSocket.join(userId);
+      tSocket.join(`user:${userId}`);
       onlineUsers[userId] = tSocket;
+
+      // ✅ Driver হলে driver room এও join করুন
+      if (userRole === USER_ROLE.provider) {
+        tSocket.join(`driver:${userId}`);
+        console.log(`✅ Driver joined room: driver:${userId}`);
+      }
+
+      // ✅ Reconnect হলে active ride room এ rejoin
+      const [activePassenger, activeRide] = await Promise.all([
+        Passenger.findOne({
+          userId,
+          // status: { $in: [PASSENGER_STATUS.searching, PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
+        })
+          .select('rideId')
+          .lean(),
+
+        Ride.findOne({
+          driverId: userId,
+          // status: { $in: [RIDE_STATUS.accepted, RIDE_STATUS.driver_assigned, RIDE_STATUS.started] },
+        })
+          .select('_id')
+          .lean(),
+      ]);
+
+      if (activePassenger?.rideId) {
+        tSocket.join(`ride:${activePassenger.rideId}`);
+        console.log(`✅ Rider rejoined room: ride:${activePassenger.rideId}`);
+      }
+
+      if (activeRide?._id) {
+        tSocket.join(`ride:${activeRide._id}`);
+        console.log(`✅ Driver rejoined room: ride:${activeRide._id}`);
+      }
 
       console.log(`✅ User connected: ${userId}`);
 
