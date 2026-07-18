@@ -1,10 +1,10 @@
 # ---------- BUILD STAGE ----------
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
 # Set time zone to Asia/Dhaka
-RUN apk add --no-cache tzdata && \
+RUN apk add --no-cache tzdata curl && \
     ln -sf /usr/share/zoneinfo/Asia/Dhaka /etc/localtime && \
     echo "Asia/Dhaka" > /etc/timezone
 
@@ -19,12 +19,12 @@ RUN npm run build
 
 
 # ---------- RUNTIME STAGE ----------
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
 # Set time zone to Asia/Dhaka
-RUN apk add --no-cache tzdata && \
+RUN apk add --no-cache tzdata curl && \
     ln -sf /usr/share/zoneinfo/Asia/Dhaka /etc/localtime && \
     echo "Asia/Dhaka" > /etc/timezone
 
