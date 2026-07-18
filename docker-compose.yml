@@ -43,7 +43,6 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: myStrongRedisPassword
-      DATABASE_URL: postgresql://postgres:myStrongPostgresPassword@postgres:5432/splitride
       NODE_ENV: production
     volumes:
       - ./worker/logs:/app/logs
@@ -65,7 +64,8 @@ services:
       - ./server/.env
     environment:
       - NODE_ENV=production
-      - TZ=Asia/Dhaka
+      - TZ=Asia/Nicosia
+      - TIME_ZONE=Asia/Nicosia
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 30s
