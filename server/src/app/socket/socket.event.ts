@@ -1,6 +1,6 @@
 // src/app/socket/socket.event.ts
 import { Socket } from 'socket.io';
-import { TSocket } from './interface/socket.interface';
+import { TSocket } from './interface/index.interface';
 
 // Chat events
 import { myChatListHandler } from './handlers/chat/myChatList.handler';
@@ -13,24 +13,30 @@ import { stopTypingHandler } from './handlers/chat/stopTyping.handler';
 
 // Driver events
 import { driverGoOnlineHandler } from './handlers/ride/driverGoOnline.handler';
-import { driverGoOfflineHandler } from './handlers/ride/driverGoOffline.handler';
+import { driverGoOfflineSocketHandler } from './handlers/ride/driverGoOffline.handler';
 import { driverLocationUpdateHandler } from './handlers/ride/driverLocationUpdate.handler';
 import { driverAcceptRideHandler } from './handlers/ride/driverAcceptRide.handler';
 import { driverRejectRideHandler } from './handlers/ride/driverRejectRide.handler';
 import { driverCancelRideHandler } from './handlers/ride/driverCancelRide.handler';
 import { driverArrivedHandler } from './handlers/ride/driverArrived.handler';
 import { driverStartTripHandler } from './handlers/ride/driverStartTrip.handler';
+import { pickUpRideHandler } from './handlers/ride/pickUpRide.handler';
+import { driverDropOffPassengerHandler } from './handlers/ride/driverDropOffPassenger.handler';
 import { driverCompleteTripHandler } from './handlers/ride/driverCompleteTrip.handler';
 
 // Passenger/Ride events
 import { getNearbyDriversHandler } from './handlers/ride/getNearbyDrivers.handler';
+import { fareBreakdownHandler } from './handlers/ride/fareBreakdown.handler';
 import { rideRequestHandler } from './handlers/ride/rideRequest.handler';
 import { rideCancelBeforeAcceptHandler } from './handlers/ride/rideCancelBeforeAccept.handler';
 import { rideCancelAfterAcceptHandler } from './handlers/ride/rideCancelAfterAccept.handler';
 import { submitRatingHandler } from './handlers/ride/submitRating.handler';
+import { findNearbySplitRideHandler } from './handlers/ride/findNearBySplitRide.handler';
+import { joinSplitRideRequestHandler } from './handlers/ride/splitRideRequest.handler';
 
 // Disconnect handler
 import disconnectHandler from './handlers/disconnect.handler';
+import { getRidePassengersHandler } from './handlers/ride/getRidePassengers.handler';
 
 export const registerSocketEvents = (socket: Socket) => {
   const tSocket = socket as TSocket; // Cast to TSocket
@@ -51,8 +57,8 @@ export const registerSocketEvents = (socket: Socket) => {
   tSocket.on('seen', (data, callback) =>
     seenHandler.call(tSocket, data, callback)
   );
-  tSocket.on('typing', (data) => typingHandler.call(tSocket, data));
-  tSocket.on('stop-typing', (data) => stopTypingHandler.call(tSocket, data));
+  tSocket.on('typing', (data, callback) => typingHandler.call(tSocket, data, callback));
+  tSocket.on('stop-typing', (data, callback) => stopTypingHandler.call(tSocket, data, callback));
 
   // ==================== RIDE EVENTS ====================
 
@@ -62,12 +68,12 @@ export const registerSocketEvents = (socket: Socket) => {
     driverGoOnlineHandler.call(tSocket, data, callback)
   );
   tSocket.on('driver:go-offline', (data, callback) =>
-    driverGoOfflineHandler.call(tSocket, data, callback)
+    driverGoOfflineSocketHandler.call(tSocket, data, callback)
   );
 
   // Driver Location
-  tSocket.on('driver:location-update', (data) =>
-    driverLocationUpdateHandler.call(tSocket, data)
+  tSocket.on('driver:location-update', (data, callback) =>
+    driverLocationUpdateHandler.call(tSocket, data, callback)
   );
 
   // Driver Ride Actions
@@ -80,11 +86,20 @@ export const registerSocketEvents = (socket: Socket) => {
   tSocket.on('driver:cancel-ride', (data, callback) =>
     driverCancelRideHandler.call(tSocket, data, callback)
   );
-  tSocket.on('driver:arrived-pickup', (data) =>
-    driverArrivedHandler.call(tSocket, data)
+  tSocket.on('driver:arrived-pickup', (data, callback) =>
+    driverArrivedHandler.call(tSocket, data, callback)
   );
   tSocket.on('driver:start-trip', (data, callback) =>
     driverStartTripHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('driver:ride-passenger', (data, callback) =>
+    getRidePassengersHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('driver:pickup-ride', (data, callback) =>
+    pickUpRideHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('driver:drop-off-passenger', (data, callback) =>
+    driverDropOffPassengerHandler.call(tSocket, data, callback)
   );
   tSocket.on('driver:complete-trip', (data, callback) =>
     driverCompleteTripHandler.call(tSocket, data, callback)
@@ -95,6 +110,9 @@ export const registerSocketEvents = (socket: Socket) => {
   tSocket.on('ride:get-nearby-drivers', (data, callback) =>
     getNearbyDriversHandler.call(tSocket, data, callback)
   );
+  tSocket.on('ride:fare-breakdown', (data, callback) =>
+    fareBreakdownHandler.call(tSocket, data, callback)
+  );
   tSocket.on('ride:request', (data, callback) =>
     rideRequestHandler.call(tSocket, data, callback)
   );
@@ -104,14 +122,25 @@ export const registerSocketEvents = (socket: Socket) => {
   tSocket.on('ride:cancel-after-accept', (data, callback) =>
     rideCancelAfterAcceptHandler.call(tSocket, data, callback)
   );
-
-  // Rating
   tSocket.on('ride:submit-rating', (data, callback) =>
     submitRatingHandler.call(tSocket, data, callback)
   );
 
+  /**
+   * ==============================================
+   * --------------SPLIT RIDE EVENTS --------------
+   * ==============================================
+   */
+
+  tSocket.on('ride:find-nearby-split-ride', (data, callback) =>
+    findNearbySplitRideHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('ride:join-split-ride', (data, callback) =>
+    joinSplitRideRequestHandler.call(tSocket, data, callback)
+  );
+
   // ==================== DISCONNECT ====================
-  tSocket.on('disconnect', () => disconnectHandler.call(tSocket, undefined));
+  tSocket.on('disconnect', () => disconnectHandler(tSocket));
 };
 
 export default registerSocketEvents;

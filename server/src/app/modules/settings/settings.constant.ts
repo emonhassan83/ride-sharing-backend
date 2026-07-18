@@ -1,15 +1,28 @@
 export const GENERAL_KEYS = [
+  'bookingMaxDaysAhead',
+  "bookingMinDaysAhead",
+  "matchingNoDriverNotifyHours",
+  "matchingLastNotifyHours",
+  "cancellationFreeWindowHours",
+  "cancellationPercentage50Hours",
+  "waitingReminderIntervals",
+  "waitingTimeMinutes",
+
+  // ride charge keys
   'dayFareInitialCharge',
   'dayFarePerKMRate',
   'dayFareWaitingCharge',
   'nightFareInitialCharge',
   'nightFarePerKMRate',
   'nightFareWaitingCharge',
-  'publicHolidayIncrease',
+  'holidayIncreasePercentage',
   'perLuggageCharge',
-  'fourPassengerTaxiTax',
-  'sixPassengerTaxiTaxPercentage',
+  'fivePassengerExtraCharge',
+  'sixPassengerExtraChargePercentage',
   'platformVat',
+  "platformCommissionPercent",
+
+  // platform info
   'supportContract',
   'supportEmail',
 ] as const;

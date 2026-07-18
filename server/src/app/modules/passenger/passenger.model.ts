@@ -4,6 +4,7 @@ import {
   FARE_TYPE,
   PASSENGER_STATUS,
   CANCELLED_BY,
+  PAYMENT_STATUS,
 } from './passenger.constant';
 
 const passengerSchema = new Schema<TPassenger>(
@@ -37,14 +38,17 @@ const passengerSchema = new Schema<TPassenger>(
 
     departureDate: { type: String, required: true },
     departureTime: { type: String, required: true },
-
     requestedSeats: { type: Number, required: true, min: 1 },
+    malePassengers: { type: Number, default: 0, required: true },
+    femalePassengers: { type: Number, default: 0, required: true },
 
     fareType: {
       type: String,
       enum: Object.values(FARE_TYPE),
       required: true,
     },
+
+    // ── Fare fields ──────────────────────────────────────────────────────────
     initialCharge: { type: Number, default: 0 },
     perKmCharge: { type: Number, default: 0 },
     totalKmCharge: { type: Number, default: 0 },
@@ -53,17 +57,34 @@ const passengerSchema = new Schema<TPassenger>(
     vat: { type: Number, default: 0 },
     estimatedFare: { type: Number, default: 0 },
     waitingCharge: { type: Number, default: 0 },
-    extraCharge: { type: Number, default: 0 },
+    fivePassengerCharge: { type: Number, default: 0 },
+    sixPassengerCharge: { type: Number, default: 0 },
+    totalFare: { type: Number, default: 0 },
+
+    // ── Split fare tracking (new) ─────────────────────────────────────────────
+    surchargePercent: { type: Number, default: 0 }, // 0, 20, or 40
+    surchargeAmount: { type: Number, default: 0 },
+    paidAmount: { type: Number, default: 0 }, // actually charged
+    refundAmount: { type: Number, default: 0 }, // total refunded so far
+
+    // ── Payment status (new) ──────────────────────────────────────────────────
+    paymentStatus: {
+      type: String,
+     enum: Object.values(PAYMENT_STATUS),
+      default: PAYMENT_STATUS.pending,
+    },
+    refundedToWallet: { type: Boolean, default: false },
+    isNoShow: { type: Boolean, default: false },
+
     estimatedDistanceKm: { type: Number, default: 0 },
     estimatedDurationMinutes: { type: Number, default: 0 },
-
     luggageCounts: { type: Number, default: 0 },
     note: { type: String },
 
     status: {
       type: String,
       enum: Object.values(PASSENGER_STATUS),
-      default: PASSENGER_STATUS.searching,
+      default: PASSENGER_STATUS.pending,
     },
 
     cancellationReason: { type: String },
@@ -73,13 +94,13 @@ const passengerSchema = new Schema<TPassenger>(
       enum: Object.values(CANCELLED_BY),
     },
 
-    arriveAt: { type: Date },
-    arrivedNotified: { type: Boolean, default: false },
-    pickedUpAt: { type: Date },
-    waitingTime: { type: Number },
-    pickupOdometer: { type: Number },
-    droppedOffAt: { type: Date },
-    dropOffOdometer: { type: Number },
+    // ── Trip tracking ─────────────────────────────────────────────────────────
+    arriveAt:          { type: Date },
+    arrivedNotified:   { type: Boolean, default: false },
+    pickedUpAt:        { type: Date },
+    waitingStartedAt:  { type: Date,    default: null },
+    waitingChargePaid: { type: Boolean, default: false },
+    droppedOffAt:      { type: Date },
   },
   {
     timestamps: true,
@@ -90,7 +111,6 @@ const passengerSchema = new Schema<TPassenger>(
 // Indexes for performance
 passengerSchema.index({ userId: 1, status: 1 });
 passengerSchema.index({ rideId: 1, status: 1 });
-passengerSchema.index({ 'pickup.coordinates': '2dsphere' });
 
 export const Passenger = mongoose.model<TPassenger, TPassengerModel>(
   'Passenger',

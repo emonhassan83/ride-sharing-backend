@@ -14,8 +14,11 @@ export interface NearbyDriver {
 
 export interface TRide {
   _id: Types.ObjectId;
+  id: string;
   driverId: Types.ObjectId;
   vehicleId?: Types.ObjectId;
+  rideCreatedBy: Types.ObjectId;
+  notifiedDriverIds: Types.ObjectId[];
   type: TRideType;
 
   pickup: {
@@ -32,18 +35,22 @@ export interface TRide {
 
   totalSeats: number;
   bookedSeats: number;
-  startOdometer: number;
-  endOdometer: number;
+  malePassengers: number;
+  femalePassengers: number;
+  
   routeGeometry?: {
     type: 'LineString';
     coordinates: number[][];
   };
+
+  currentSurchargePercent: number
 
   status: TRideStatus;
   cancellationReason: string;
   cancelledAt: Date;
   arrivedAt: Date;
   cancelledBy: TCancelledBy;
+  reNotifiedAt?: Date;
 
   createdAt: Date;
   updatedAt: Date;

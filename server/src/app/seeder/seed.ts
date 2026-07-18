@@ -27,7 +27,7 @@ const adminSeeder = async () => {
       status: USER_STATUS.active,
       isSignUpOtpVerified: true,
       isLoginOTPVerified: true,
-      expireAt: null
+      expireAt: undefined, // never expire
     });
       console.log('✅ Admin user created');
   } else {

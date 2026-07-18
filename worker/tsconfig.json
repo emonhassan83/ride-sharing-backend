@@ -3,6 +3,7 @@
   "compilerOptions": {
     // File Layout
     "rootDir": "./src",
+    "ignoreDeprecations": "6.0",
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {

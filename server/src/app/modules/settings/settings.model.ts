@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import ISetting from './settings.interface';
 
-const schema = new Schema<ISetting>(
+const settingsSchema = new Schema<ISetting>(
   {
     key: {
       type: String,
@@ -16,4 +16,4 @@ const schema = new Schema<ISetting>(
   },
 );
 
-export const Setting = mongoose.model<ISetting>('Setting', schema);
+export const Setting = mongoose.model<ISetting>('Setting', settingsSchema);

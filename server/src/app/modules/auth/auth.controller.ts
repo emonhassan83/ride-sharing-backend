@@ -10,7 +10,7 @@ const register = catchAsync(async (req, res) => {
   const sendOtp = await otpServices.sendOtpViaTokenInPhone(
     result._id.toString(),
     {
-      phoneNumber: result.phone as string,
+      phone: result.phone as string,
     },
   );
 

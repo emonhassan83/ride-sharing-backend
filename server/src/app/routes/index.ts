@@ -20,10 +20,10 @@ import { WithdrawRoutes } from '../modules/withdraw/withdraw.route';
 import { RefundRoutes } from '../modules/refund/refund.route';
 import { MetaRoutes } from '../modules/meta/meta.routes';
 import { UserLocationRoutes } from '../modules/savedPlaces/savedPlaces.routes';
-import { RiderHistoryRoutes } from '../modules/riderHistory/riderHistory.route';
 import { LocationHistoryRoutes } from '../modules/locationHistory/locationHistory.route';
 import { AccountDeletionRoutes } from '../modules/accountDeletion/accountDeletion.routes';
 import { PassengerRoutes } from '../modules/passenger/passenger.routes';
+import { CardRoutes } from '../modules/card/card.route';
 
 const router = express.Router();
 
@@ -61,10 +61,6 @@ const apiRoutes = [
     route: BookingRoutes,
   },
   {
-    path: '/rider-histories',
-    route: RiderHistoryRoutes,
-  },
-  {
     path: '/location-histories',
     route: LocationHistoryRoutes,
   },
@@ -91,6 +87,10 @@ const apiRoutes = [
   {
     path: '/stripe',
     route: StripeRoute,
+  },
+  {
+    path: '/cards',
+    route: CardRoutes,
   },
   {
     path: '/withdraw',

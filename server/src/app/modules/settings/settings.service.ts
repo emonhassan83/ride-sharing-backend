@@ -77,7 +77,7 @@ const createOrUpdate = async (key: string, payload: any) => {
   const setting = await Setting.findOneAndUpdate(
     { key },
     { key, value: payload.value ?? payload, name: payload.name },
-    { new: true, upsert: true },
+    { returnDocument: 'after', upsert: true },
   ).select('-__v');
 
   // 2. Invalidate caches (delete, not update)
@@ -108,7 +108,7 @@ const updateGenerals = async (payload: Record<string, any>) => {
     Setting.findOneAndUpdate(
       { key },
       { value: payload[key] },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: 'after' },
     ).select('-__v'),
   );
 

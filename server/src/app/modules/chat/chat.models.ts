@@ -1,6 +1,6 @@
-import { Schema, model } from 'mongoose'
-import { TChat, TChatModel } from './chat.interface'
-import { CHAT_STATUS } from './chat.constants'
+import { Schema, model } from 'mongoose';
+import { TChat, TChatModel } from './chat.interface';
+import { CHAT_STATUS } from './chat.constants';
 
 const chatSchema = new Schema<TChat>(
   {
@@ -21,10 +21,9 @@ const chatSchema = new Schema<TChat>(
       default: CHAT_STATUS.accepted,
     },
   },
-  { timestamps: true },
-)
+  { timestamps: true }
+);
 
-chatSchema.index({ booking: 1 }, { unique: true });
 chatSchema.index({ participants: 1 });
 
-export const Chat = model<TChat, TChatModel>('Chat', chatSchema)
+export const Chat = model<TChat, TChatModel>('Chat', chatSchema);

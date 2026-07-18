@@ -4,13 +4,12 @@ import catchAsync from '../../utils/catchAsync';
 import sendResponse from '../../utils/sendResponse';
 import { PassengerService } from './passenger.service';
 
-// Create passenger (testing purpose)
-const createPassenger = catchAsync(async (req: Request, res: Response) => {
-  const result = await PassengerService.createPassenger(req.user?.userId, req.body);
+const getDriverRideRequest = catchAsync(async (req: Request, res: Response) => {
+  const result = await PassengerService.getDriverRideRequest(req.user?.userId);
 
   sendResponse(res, {
     code: StatusCodes.CREATED,
-    message: 'Passenger added successfully',
+    message: 'Request ride passenger fetch successfully',
     data: result,
   });
 });
@@ -38,7 +37,7 @@ const getAPassenger = catchAsync(async (req: Request, res: Response) => {
 });
 
 export const PassengerController = {
-  createPassenger,
+  getDriverRideRequest,
   getPassengersByRide,
   getAPassenger,
 };

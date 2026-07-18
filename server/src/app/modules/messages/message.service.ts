@@ -91,7 +91,7 @@ const getAllMessages = async (query: Record<string, any>) => {
 
 // Update messages
 const updateMessages = async (id: string, payload: Partial<TMessages>) => {
-  const result = await Message.findByIdAndUpdate(id, payload, { new: true })
+  const result = await Message.findByIdAndUpdate(id, payload, { returnDocument: 'after' })
   if (!result) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Message update failed')
   }
@@ -99,19 +99,19 @@ const updateMessages = async (id: string, payload: Partial<TMessages>) => {
 }
 
 // Get messages by chat ID
-const getMessagesByBookingId = async (
-  bookingId: string,
+const getMessagesByChatId = async (
+  chatId: string,
   query: Record<string, any>,
 ) => {
-  const chat = await Chat.findOne({ booking: bookingId })
+  const chat = await Chat.findById(chatId)
   if (!chat) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Chat not found')
   }
 
   const messageQuery = new QueryBuilder(
     Message.find({ chat: chat._id })
-      .populate([{ path: 'sender', select: 'name profileImage _id' }])
-      .select('text imageUrl seen sender createdAt')
+      // .populate([{ path: 'sender', select: 'name profileImage _id' }])
+      .select('text imageUrl seen isEdited sender createdAt')
       .sort({ createdAt: 1 }),
     query,
   )
@@ -208,7 +208,7 @@ const deleteMessagesByChatId = async (chatId: string) => {
 
 export const messagesService = {
   createMessages,
-  getMessagesByBookingId,
+  getMessagesByChatId,
   getMessagesById,
   updateMessages,
   getAllMessages,

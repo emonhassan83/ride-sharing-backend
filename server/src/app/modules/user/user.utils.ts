@@ -1,23 +1,26 @@
-import { TUser } from './user.interface';
-import { modeType } from '../notification/notification.interface';
+// modules/user/utils/sendUserStatusNotification.ts
 import { sendNotification } from '../../utils/sentPushNotification';
+import { modeType } from '../notification/notification.interface';
+import { TUser } from './user.interface';
 
-// Notification
 export const sendUserStatusNotifYToUser = async (
   status: 'active' | 'blocked' | 'pending',
   user: TUser
 ) => {
-  if (!user || !user?.fcmToken) return;
+  if (!user || !user?._id || !user?.fcmToken) return;
 
-  let message;
-  let description;
+  let message: string;
+  let description: string;
 
   if (status === 'active') {
-    message = 'User account activated';
-    description = `Your account has been successfully activated. You can now access all available features.`;
+    message = '✅ Account Activated';
+    description = 'Your account has been successfully activated. You can now access all available features.';
+  } else if (status === 'blocked') {
+    message = '🚫 Account Blocked';
+    description = 'Your account has been blocked. Please contact support for further assistance.';
   } else {
-    message = 'User account Blocked.';
-    description = `Your account has been blocked. Please contact support for further assistance.`;
+    message = '⏳ Account Status Updated';
+    description = 'Your account status has been updated.';
   }
 
   const notifyPayload = {
@@ -26,7 +29,7 @@ export const sendUserStatusNotifYToUser = async (
     description,
     reference: user._id,
     modelType: modeType.User,
-  };
+  }
 
-  await sendNotification([user.fcmToken], notifyPayload);
+  await sendNotification([user.fcmToken], notifyPayload)
 };

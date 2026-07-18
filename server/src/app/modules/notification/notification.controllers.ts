@@ -26,8 +26,11 @@ const sentGeneralNotification = catchAsync(async (req, res) => {
 })
 
 const getAllNotifications = catchAsync(async (req, res) => {
-  req.query['receiver'] = req.user._id 
-  const result = await NotificationService.getAllNotificationFromDB(req.query)
+  const query = {
+    ...req.query,
+    receiver: req.user.userId,
+  }
+  const result = await NotificationService.getAllNotificationFromDB(query)
 
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -48,7 +51,7 @@ const getANotification = catchAsync(async (req, res) => {
 })
 
 const markAsDoneNotification = catchAsync(async (req, res) => {
-  const result = await NotificationService.markAsDoneFromDB(req?.user?._id)
+  const result = await NotificationService.markAsDoneFromDB(req?.user?.userId)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Notification marked as read successfully',
@@ -69,7 +72,7 @@ const deleteANotification = catchAsync(async (req, res) => {
 })
 
 const deleteAllNotifications = catchAsync(async (req, res) => {
-  const result = await NotificationService.deleteAllNotificationsFromDB(req.user._id )
+  const result = await NotificationService.deleteAllNotificationsFromDB(req.user.userId)
 
   sendResponse(res, {
     code: StatusCodes.OK,

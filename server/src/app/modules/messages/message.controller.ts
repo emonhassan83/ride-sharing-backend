@@ -20,8 +20,8 @@ const createMessages = catchAsync(async (req: Request, res: Response) => {
 })
 
 // Get messages by chat ID
-const getMessagesByBookingId = catchAsync(async (req: Request, res: Response) => {
-  const result = await messagesService.getMessagesByBookingId(req.params.bookingId as string, req.query)
+const getMessagesByChatId = catchAsync(async (req: Request, res: Response) => {
+  const result = await messagesService.getMessagesByChatId(req.params.chatId as string, req.query)
 
   sendResponse(res, {
     code: 200,
@@ -61,7 +61,7 @@ const seenMessage = catchAsync(async (req: Request, res: Response) => {
   }
 
   const result = await messagesService.seenMessage(
-    req.user._id,
+    req.user.userId,
     req.params.chatId as string,
   )
 
@@ -109,7 +109,7 @@ const deleteMessagesByChatId = catchAsync(async (req: Request, res: Response) =>
 
 export const messagesController = {
   createMessages,
-  getMessagesByBookingId,
+  getMessagesByChatId,
   getMessagesById,
   updateMessages,
   deleteMessages,

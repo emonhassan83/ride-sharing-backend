@@ -1,9 +1,15 @@
 import mongoose, { Schema } from 'mongoose';
 import { TRide, TRideModel } from './ride.interface';
 import { CANCELLED_BY, RIDE_STATUS, RIDE_TYPE } from './ride.constant';
+import { generateCryptoString } from '../../utils/generateCryptoString';
 
 const rideSchema = new Schema<TRide>(
   {
+    id: {
+      type: String,
+      unique: true,
+      default: () => generateCryptoString(10),
+    },
     driverId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -14,6 +20,16 @@ const rideSchema = new Schema<TRide>(
       ref: 'Vehicle',
       required: false,
     },
+    rideCreatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    notifiedDriverIds: {
+      type: [Schema.Types.ObjectId],
+      ref: 'User',
+    },
+
     type: {
       type: String,
       enum: Object.values(RIDE_TYPE),
@@ -38,8 +54,6 @@ const rideSchema = new Schema<TRide>(
 
     departureDate: { type: String, required: true },
     departureTime: { type: String, required: true },
-    startOdometer: { type: Number },
-    endOdometer: { type: Number },
 
     // Route geometry (GeoJSON LineString)
     routeGeometry: {
@@ -54,8 +68,13 @@ const rideSchema = new Schema<TRide>(
       },
     },
 
-    totalSeats: { type: Number, required: true, min: 1 },
+    totalSeats: { type: Number, required: true, min: 0 },
     bookedSeats: { type: Number, default: 0 },
+    malePassengers: { type: Number, default: 0, required: true },
+    femalePassengers: { type: Number, default: 0, required: true },
+
+    // ── Split fare surcharge (new) ────────────────────────────────────────────
+    currentSurchargePercent: { type: Number, default: 0 }, // tracks current tier
 
     status: {
       type: String,
@@ -69,6 +88,7 @@ const rideSchema = new Schema<TRide>(
       type: String,
       enum: Object.values(CANCELLED_BY),
     },
+    reNotifiedAt: { type: Date },
   },
   {
     timestamps: true,
@@ -81,6 +101,5 @@ rideSchema.index({ driverId: 1, status: 1 });
 rideSchema.index({ departureDate: 1, departureTime: 1, status: 1 });
 rideSchema.index({ status: 1, createdAt: 1 });
 rideSchema.index({ status: 1, arrivedAt: 1 });
-rideSchema.index({ 'pickup.coordinates': '2dsphere' });
 
 export const Ride = mongoose.model<TRide, TRideModel>('Ride', rideSchema);

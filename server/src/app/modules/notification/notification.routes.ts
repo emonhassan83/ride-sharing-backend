@@ -5,32 +5,36 @@ import { USER_ROLE } from '../user/user.constant';
 
 const router = Router();
 
-router.post(
-  '/general-notification',
-  auth(USER_ROLE.admin),
-  NotificationControllers.sentGeneralNotification,
-);
+router.post('/', NotificationControllers.createNotification);
 
 router.delete(
   '/my-notifications',
-  auth('common'),
-  NotificationControllers.deleteAllNotifications,
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  NotificationControllers.deleteAllNotifications
 );
 
 router.delete(
   '/:id',
-  auth('common'),
-  NotificationControllers.deleteANotification,
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  NotificationControllers.deleteANotification
 );
 
 router.patch(
   '/',
-  auth('common'),
-  NotificationControllers.markAsDoneNotification,
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  NotificationControllers.markAsDoneNotification
 );
 
-router.get('/', auth('common'), NotificationControllers.getAllNotifications);
+router.get(
+  '/',
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  NotificationControllers.getAllNotifications
+);
 
-router.get('/:id', auth('common'), NotificationControllers.getANotification);
+router.get(
+  '/:id',
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  NotificationControllers.getANotification
+);
 
 export const NotificationRoutes = router;

@@ -26,7 +26,7 @@ import { getEmailQueueInstance } from '../../utils/queueHelper';
 const OTP_EXPIRE = 60 * 5; // 5 minutes in seconds
 
 const createUser = async (payload: any) => {
-  const { email, phone, ...rest } = payload;
+  const { email, phone, fcmToken, ...rest } = payload;
 
   // Prevent users from assigning themselves admin role during registration
   if (payload.role === USER_ROLE.admin) {
@@ -45,10 +45,10 @@ const createUser = async (payload: any) => {
     // Check if user existing
     if (!existingUser.isDeleted && existingUser.isSignUpOtpVerified) {
       // Sent exact error message in user
-      const message = existingUser.email === email 
-        ? 'User already exists with this email' 
+      const message = existingUser.email === email
+        ? 'User already exists with this email'
         : 'User already exists with this phone number';
-        
+
       throw new ApiError(StatusCodes.FORBIDDEN, message);
     }
 
@@ -71,6 +71,7 @@ const createUser = async (payload: any) => {
     ...rest,
     email,
     phone,
+    fcmToken,
     status:
       payload.role === USER_ROLE.provider
         ? USER_STATUS.pending
@@ -119,7 +120,7 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
           verification: { otp: 0, expiresAt: new Date(), status: true },
           expireAt: null,
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!updatedUser) {
@@ -132,7 +133,7 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
       return generateTokens(updatedUser as any);
     }
 
-    await User.findByIdAndUpdate(user._id, updateData, { new: true });
+    await User.findByIdAndUpdate(user._id, updateData, { returnDocument: 'after' });
     return generateTokens(user as any);
   }
 
@@ -192,7 +193,7 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
           verification: { otp: 0, expiresAt: new Date(), status: true },
           expireAt: null,
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!updatedUser) {
@@ -205,7 +206,7 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
       return generateTokens(updatedUser);
     }
 
-    await User.findByIdAndUpdate(user._id, updateData, { new: true });
+    await User.findByIdAndUpdate(user._id, updateData, { returnDocument: 'after' });
     return generateTokens(user as any);
   }
 
@@ -285,7 +286,7 @@ const loginWithEmail = async (payload: TLoginWithEmail) => {
 
   //* 6. Update user document if needed
   if (Object.keys(updateData).length > 0) {
-    await User.findByIdAndUpdate(user._id, updateData, { new: true });
+    await User.findByIdAndUpdate(user._id, updateData, { returnDocument: 'after' });
   }
 
   return {
@@ -308,7 +309,7 @@ const loginWithPhone = async (payload: TLoginWithPhone) => {
   //* checking if the user is exist
   const user = await User.findOne({ phone });
   if (!user || user?.isDeleted) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'This user is not found !');
+    throw new ApiError(StatusCodes.NOT_FOUND, 'This user is not found ! Please check your phone and country code');
   }
 
   // if user is not verify yet throw error
@@ -336,7 +337,7 @@ const loginWithPhone = async (payload: TLoginWithPhone) => {
     await User.findByIdAndUpdate(
       user._id,
       { isLoginOTPVerified: false, ...updateData },
-      { new: true }
+      { returnDocument: 'after' }
     );
   }
 
@@ -450,7 +451,7 @@ const forgotPassword = async (payload: { email: string }) => {
   await User.findByIdAndUpdate(
     user._id,
     { isResetPasswordVerified: false },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   return { resetPasswordToken: resetToken };
@@ -501,7 +502,7 @@ const resetPassword = async (
         passwordChangedAt: new Date(),
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   //if password is not updated throw error
@@ -545,7 +546,7 @@ const changePassword = async (
         passwordChangedAt: new Date(),
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   //if password is not updated throw error
@@ -570,7 +571,7 @@ const logoutUser = async (userId: string) => {
   await User.findByIdAndUpdate(
     userId,
     { isLoginOTPVerified: false },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   return null;

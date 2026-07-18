@@ -5,8 +5,7 @@ import { getRedisClient } from '../config/redis.config';
 
 export interface NotificationJobData {
   userId: string;
-  userEmail?: string; // Optional, for email fallback
-  type: 'PUSH' | 'SOCKET' | 'BOTH';
+  fcmToken: string;
   title: string;
   message: string;
   data?: any;
@@ -23,7 +22,7 @@ let notificationQueueInstance: Queue | null = null;
 export const getNotificationQueue = async (): Promise<Queue> => {
   if (!notificationQueueInstance) {
     notificationQueueInstance = new Queue('notification-queue', {
-      connection: getRedisClient(),
+      connection: getRedisClient() as any,
       defaultJobOptions: {
         attempts: 3,
         backoff: {
@@ -45,6 +44,7 @@ export const addNotificationJob = async (
   traceId?: string
 ): Promise<string | undefined> => {
   const queue = await getNotificationQueue();
+
   const job = await queue.add(
     'send-notification',
     {
@@ -57,11 +57,11 @@ export const addNotificationJob = async (
     },
     {
       priority: data.priority || 3,
-      jobId: `${data.type}_${data.userId}_${Date.now()}`,
+      jobId: `notif_${data.userId}_${Date.now()}`, // Fixed jobId
     }
   );
   
-  logger.info(`📨 Notification job added | JobId: ${job.id} | Type: ${data.type}`);
+  logger.info(`📨 Notification job added | JobId: ${job.id} | User: ${data.userId}`);
 
   return job.id;
 };

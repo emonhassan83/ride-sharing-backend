@@ -1,6 +1,6 @@
 import { Schema, model } from 'mongoose';
 import { TRefund, TRefundModel } from './refund.interface';
-import { REFUND_STATUS } from './refund.constant';
+import { REFUND_STATUS, REFUND_TYPE } from './refund.constant';
 import { generateCryptoString } from '../../utils/generateCryptoString';
 
 const refundSchema = new Schema<TRefund>(
@@ -15,10 +15,14 @@ const refundSchema = new Schema<TRefund>(
       ref: 'User',
       required: true,
     },
-    order: {
+    ride: {
       type: Schema.Types.ObjectId,
-      ref: 'Booking',
+      ref: 'Ride',
       required: true,
+    },
+    type: {
+      type: String,
+      enum: Object.values(REFUND_TYPE)
     },
     paymentIntentId: { type: String },
     amount: { type: Number, required: true, min: 0 },

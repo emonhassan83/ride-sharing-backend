@@ -1,14 +1,20 @@
 export const PASSENGER_STATUS = {
-    searching: 'searching',
+    pending: 'pending',
+    rejected: 'rejected',
     confirmed: 'confirmed',
-    matched: 'matched',
     driver_arrived: 'driver_arrived',
     in_progress: 'in_progress',
-    picked_up: 'picked_up',
-    rejected: 'rejected',
-    completed: 'completed',
     cancelled: 'cancelled',
+    picked_up: 'picked_up',
     dropped_off: 'dropped_off',
+    completed: 'completed',
+} as const;
+
+export const PAYMENT_STATUS = {
+    pending: 'pending',
+    paid: 'paid',
+    failed: 'failed',
+    pending_recovery: 'pending_recovery'
 } as const;
 
 export const FARE_TYPE = {
@@ -22,6 +28,7 @@ export const CANCELLED_BY = {
   system: 'system'
 } as const;
 
+export type TPaymentStatus = keyof typeof PAYMENT_STATUS;
 export type TPassengerStatus = keyof typeof PASSENGER_STATUS;
 export type TFareType = keyof typeof FARE_TYPE;
 export type TCancelledBy = keyof typeof CANCELLED_BY;

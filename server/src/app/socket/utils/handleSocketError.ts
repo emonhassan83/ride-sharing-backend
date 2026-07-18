@@ -1,6 +1,6 @@
 // src/app/socket/utils/handleSocketError.ts
 import { Socket } from "socket.io";
-import { TAckFn } from "../interface/socket.interface";
+import { TAckFn } from "../interface/index.interface";
 import ackHandler from "./ackHandler";
 import ApiError from "../../errors/ApiError";
 

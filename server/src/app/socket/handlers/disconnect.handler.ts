@@ -1,112 +1,80 @@
 // handlers/disconnect.handler.ts
 import { getRedisClient } from '../../config/redis.config';
 import { getIO } from '../socket.init';
-import eventHandler from '../utils/eventHandler';
-import { TSocket } from '../interface/socket.interface';
+import { TSocket } from '../interface/index.interface';
 import { USER_ROLE } from '../../modules/user/user.constant';
-import { Ride } from '../../modules/ride/ride.model';
-import { RIDE_STATUS } from '../../modules/ride/ride.constant';
 import { User } from '../../modules/user/user.model';
 import { driverGoOfflineHandler } from './ride/driverGoOffline.handler';
+import onlineUsers from '../utils/onlineUsers';
 
-const disconnectHandler = eventHandler<any>(
-  async (socket: TSocket, _data?: any, _ack?: any) => {
-    try {
-      const userId = socket.auth?._id?.toString();
-      const role = socket.auth?.role;
-      const driverId = userId;
+const disconnectHandler = async (socket: TSocket) => {
+  try {
+    const userId   = socket.auth?._id?.toString();
+    const role     = socket.auth?.role;
+    const driverId = userId;
 
-      if (!userId) return;
+    if (!userId) return;
 
-      // ✅ ১. ডাটাবেসে ইউজারের অনলাইন স্ট্যাটাস আপডেট
-      await User.findByIdAndUpdate(userId, {
-        isOnline: false,
-        lastOnlineAt: new Date(),
-      });
+    const redis = getRedisClient();
+    const io    = getIO();
 
-      // ২. গ্লোবাল অনলাইন ইউজার অবজেক্ট (ঐচ্ছিক, পুরানো কোডের জন্য)
-      const onlineUsers = (global as any).onlineUsers || {};
-      delete onlineUsers[userId];
+    // ── 1. Remove from onlineUsers ────────────────────────────────────────────
+    delete onlineUsers[userId];
 
-      // ৩. রেডিস ক্লিনআপ
-      const redis = getRedisClient();
-      const io = getIO();
+    // ── 2. Remove from users:online set ──────────────────────────────────────
+    await redis.srem('users:online', userId);
 
-      // জেনেরিক: ইউজার অনলাইন সেট থেকে রিমুভ
-      await redis.srem('users:online', userId);
+    // ── 3. Update DB online status ────────────────────────────────────────────
+    await User.findByIdAndUpdate(userId, {
+      isOnline:     false,
+      lastOnlineAt: new Date(),
+    });
 
-      // ========== ড্রাইভার স্পেসিফিক ==========
-      if (role === USER_ROLE.provider) {
-        const activeRideId = await redis.get(`driver:${driverId}:activeRide`);
+    // ── 4. Driver specific handling ───────────────────────────────────────────
+    if (role === USER_ROLE.provider) {
+      const activeRideId = await redis.get(`driver:${driverId}:activeRide`);
 
-        if (activeRideId) {
-          // 🔄 ড্রাইভার অ্যাকটিভ রাইডে ছিল → রিকানেক্টের সুযোগ
-          console.log(`⚠️ Driver ${driverId} disconnected during active ride ${activeRideId}`);
+      if (activeRideId) {
+        // Active ride — give 30s to reconnect
+        console.log(`⚠️ Driver ${driverId} disconnected during active ride ${activeRideId}`);
 
-          // প্যাসেঞ্জারদের নোটিফিকেশন
-          io.to(`ride:${activeRideId}`).emit('ride:driver-disconnected', {
-            rideId: activeRideId,
-            message: 'Driver lost connection. Searching for another driver...',
-            reassigning: true,
-            timestamp: Date.now(),
-          });
+        io.to(`ride:${activeRideId}`).emit('ride:driver-disconnected', {
+          rideId:      activeRideId,
+          message:     'Driver lost connection. Please wait...',
+          reassigning: false,
+          timestamp:   Date.now(),
+        });
 
-          // রাইড স্ট্যাটাস পেন্ডিং ও ড্রাইভার রিমুভ
-          await Ride.findByIdAndUpdate(activeRideId, {
-            status: RIDE_STATUS.pending,
-            driverId: null,
-            reassignmentNeeded: true,
-            driverDisconnectedAt: new Date(),
-          });
+        // Set reconnect flag for 30s
+        await redis.setex(`driver:${driverId}:reconnecting`, 30, 'true');
 
-          // রাইড আবার ম্যাচিং কিউতে
-          await redis.zadd('ride:matching:queue', Date.now(), activeRideId);
-
-          // ✅ ক্লিনআপ: ড্রাইভারের অ্যাকটিভ রাইড কী মুছুন, কিন্তু ড্রাইভারকে অনলাইন সেট থেকে রিমুভ করবেন না এখনই
-          await redis.del(`driver:${driverId}:activeRide`);
-          await redis.del(`ride:active:${activeRideId}`);
-
-          // 🕒 রিকানেক্ট ফ্ল্যাগ সেট করুন (৩০ সেকেন্ড)
-          await redis.setex(`driver:${driverId}:reconnecting`, 30, 'true');
-
-          // ⏰ টাইমআউট – ৩০ সেকেন্ড পর ড্রাইভার না এলে সম্পূর্ণ অফলাইন
-          setTimeout(async () => {
-            const isReconnecting = await redis.get(`driver:${driverId}:reconnecting`);
-            if (!isReconnecting) {
-              // আর রিকানেক্ট করেনি – পুরোপুরি অফলাইন
-              await driverGoOfflineHandler(driverId, {
-                force: true,
-                reason: 'disconnect_no_reconnect',
-              });
-              console.log(`🚗 Driver ${driverId} permanently offlined after disconnect`);
-            }
-          }, 30000);
-        } else {
-          // 🟢 কোন অ্যাকটিভ রাইড নেই – সাথে সাথে অফলাইন
-          await driverGoOfflineHandler(driverId, {
-            force: true,
-            reason: 'disconnect',
-          });
-        }
-        // ❗ গুরুত্বপূর্ণ: এখানে আর `drivers:online` ইত্যাদি ম্যানুয়ালি ডিলিট করছি না।
-        // `driverGoOfflineHandler` ইতিমধ্যেই সব করবে (অথবা টাইমআউটের পরে করবে)।
+        // After 30s — if not reconnected, go offline
+        setTimeout(async () => {
+          const isReconnecting = await redis.get(`driver:${driverId}:reconnecting`);
+          if (!isReconnecting) {
+            await driverGoOfflineHandler(driverId); // lat/lng from Redis/DB auto
+            console.log(`🚗 Driver ${driverId} permanently offlined after disconnect`);
+          }
+        }, 30000);
+      } else {
+        // No active ride — go offline immediately with last known location
+        await driverGoOfflineHandler(driverId); // lat/lng from Redis/DB auto
       }
-
-      // ৪. সব রুম থেকে বেরিয়ে যাওয়া
-      const rooms = Array.from(socket.rooms);
-      rooms.forEach((room) => {
-        if (room !== socket.id) socket.leave(room);
-      });
-
-      // ৫. অনলাইন ইউজার কাউন্ট ব্রডকাস্ট
-      const onlineCount = await redis.scard('users:online');
-      io.emit('onlineUser', onlineCount);
-
-      console.log(`👤 User disconnected: ${userId} (${role || 'user'})`);
-    } catch (err: any) {
-      console.error('❌ Disconnect handler error:', err.message);
     }
+
+    // ── 5. Leave all rooms ────────────────────────────────────────────────────
+    Array.from(socket.rooms).forEach((room) => {
+      if (room !== socket.id) socket.leave(room);
+    });
+
+    // ── 6. Broadcast online count ─────────────────────────────────────────────
+    const onlineCount = await redis.scard('users:online');
+    io.emit('onlineUser', onlineCount);
+
+    console.log(`👤 User disconnected: ${userId} (${role || 'user'})`);
+  } catch (err: any) {
+    console.error('❌ Disconnect handler error:', err.message);
   }
-);
+};
 
 export default disconnectHandler;

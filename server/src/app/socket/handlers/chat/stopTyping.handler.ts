@@ -1,5 +1,5 @@
 // src/app/socket/handlers/chat/stopTyping.handler.ts
-import { TSocket } from '../../interface/socket.interface';
+import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { Chat } from '../../../modules/chat/chat.models';
 import { User } from '../../../modules/user/user.model';
@@ -46,7 +46,7 @@ export const stopTypingHandler = eventHandler<any>(
 
       if (otherUserId) {
         // other user sent stop typing event
-        socket.to(otherUserId).emit('typing', {
+        socket.to(otherUserId).emit('stopTyping', {
           success: true,
           message: `${userName} stopped typing`,
           data: {

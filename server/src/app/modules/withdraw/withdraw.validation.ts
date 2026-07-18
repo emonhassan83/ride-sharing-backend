@@ -1,28 +1,22 @@
-import { z } from 'zod'
-import { WITHDRAW_STATUS } from './withdraw.constant'
-import { Types } from 'mongoose'
-
-// reusable ObjectId validator
-const objectIdSchema = z.string().refine((val) => Types.ObjectId.isValid(val), {
-  message: 'Invalid ObjectId format',
-})
+import { z } from 'zod';
+import { WITHDRAW_STATUS } from './withdraw.constant';
 
 const createValidationSchema = z.object({
   body: z.object({
-    booking: objectIdSchema,
+    amount: z.number({ message: 'Amount must be a number' }).positive(),
   }),
-})
+});
 
 const updateValidationSchema = z.object({
   body: z.object({
     status: z.enum(Object.values(WITHDRAW_STATUS) as [string, ...string[]], {
-      required_error: 'Withdraw status is required!',
+      message: 'Withdraw status is required!',
     }),
     note: z.string().optional(),
   }),
-})
+});
 
 export const WithdrawValidation = {
   updateValidationSchema,
   createValidationSchema,
-}
+};

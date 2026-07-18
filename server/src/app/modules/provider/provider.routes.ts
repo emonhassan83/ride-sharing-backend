@@ -15,10 +15,16 @@ router.post(
 );
 
 router.patch(
-  '/:userId',
+  '/:id',
   auth(USER_ROLE.admin),
   validateRequest(ProviderValidation.updateStatusZodSchema),
   ProviderController.updateAIntoDB,
+);
+
+router.get(
+  '/user/:userId',
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  ProviderController.getProviderByUserId,
 );
 
 router.get('/:id', auth(USER_ROLE.admin), ProviderController.getAIntoDB);

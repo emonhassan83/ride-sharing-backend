@@ -1,124 +1,137 @@
-// jobs/noShowHandler.job.ts (Background job)
-import { getRedisClient } from "../config/redis.config";
-import { BOOKING_STATUS } from "../modules/booking/booking.constant";
-import { Booking } from "../modules/booking/booking.model";
-import { PASSENGER_STATUS } from "../modules/passenger/passenger.constant";
-import { Passenger } from "../modules/passenger/passenger.model";
-import { RIDE_STATUS } from "../modules/ride/ride.constant";
-import { Ride } from "../modules/ride/ride.model";
-import { getIO } from "../socket/socket.init";
+// jobs/noShowPassengers.job.ts
+import { getRedisClient } from '../config/redis.config';
+import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
+import { Passenger } from '../modules/passenger/passenger.model';
+import { Ride } from '../modules/ride/ride.model';
+import { RIDE_STATUS } from '../modules/ride/ride.constant';
+import { Setting } from '../modules/settings/settings.model';
+import { getIO } from '../socket/socket.init';
+import { recalculateSplitFares } from '../utils/splitFare.utils';
+import { sendNotification } from '../utils/sentPushNotification'; // ← Import করো
+import { modeType } from '../modules/notification/notification.interface';
+import { User } from '../modules/user/user.model';
 
-
-const NO_SHOW_WAIT_TIME = 60 * 60 * 1000; // 1 hour in milliseconds
 const BATCH_SIZE = 50;
 
-/**
- * Check for no-show passengers (driver arrived but passenger didn't)
- * Run this job every 30 seconds
- */
-export const checkNoShowPassengers = async () => {
+export const checkNoShowPassengers = async (): Promise<void> => {
   try {
-    const redis = getRedisClient();
     const io = getIO();
-    const cutoff = new Date(Date.now() - NO_SHOW_WAIT_TIME);
+    const setting = await Setting.findOne({ key: 'waitingTimeMinutes' }).lean();
+    const waitMin = Number(setting?.value ?? 60);
+    const cutoff = new Date(Date.now() - waitMin * 60 * 1000);
 
-    // ✅ সীমিত সংখ্যক রাইড একবারে প্রসেস
-    const rides = await Ride.find({
-      status: RIDE_STATUS.driver_arrived,
-      arrivedAt: { $lt: cutoff },
+    const noShows = await Passenger.find({
+      status: PASSENGER_STATUS.driver_arrived,
+      arriveAt: { $lte: cutoff },
+      isNoShow: { $ne: true },
+      pickedUpAt: null,
     })
-      .select('_id driverId')
       .limit(BATCH_SIZE)
       .lean();
 
-    if (rides.length === 0) return;
+    if (!noShows.length) return;
 
-    const rideIds = rides.map(r => r._id);
-
-    // ✅ প্যাসেঞ্জার বাল্ক আপডেট
-    const updateResult = await Passenger.updateMany(
-      {
-        rideId: { $in: rideIds },
-        status: { $in: [PASSENGER_STATUS.matched, PASSENGER_STATUS.confirmed] },
-        arrivedNotified: true,
-        pickedUpAt: null,
-      },
-      {
+    for (const passenger of noShows) {
+      // ── Mark as No-Show ─────────────────────────────────────────────
+      await Passenger.findByIdAndUpdate(passenger._id, {
         status: PASSENGER_STATUS.cancelled,
+        isNoShow: true,
         cancellationReason: 'no_show',
         cancelledBy: 'system',
-      }
-    );
-
-    if (updateResult.modifiedCount === 0) return;
-
-    // ✅ আপডেট হওয়া প্যাসেঞ্জারদের তথ্য নিয়ে বুকিং ও নোটিফিকেশন
-    const passengers = await Passenger.find({
-      rideId: { $in: rideIds },
-      status: PASSENGER_STATUS.cancelled,
-      cancellationReason: 'no_show',
-    }).select('_id userId rideId requestedSeats').lean();
-
-    const passengerIds = passengers.map(p => p._id);
-    const bookingUpdate = await Booking.updateMany(
-      { passengerId: { $in: passengerIds } },
-      {
-        bookingStatus: BOOKING_STATUS.cancelled,
-        cancellationReason: 'no_show',
-        refundAmount: 50,
-      }
-    );
-
-    // ✅ রাইডের বুকড সিট কমানো (প্রতি রাইডের জন্য আলাদাভাবে)
-    const seatUpdates: Record<string, number> = {};
-    for (const p of passengers) {
-      const rid = p.rideId.toString();
-      seatUpdates[rid] = (seatUpdates[rid] || 0) + (p.requestedSeats || 1);
-    }
-    for (const [rideId, seats] of Object.entries(seatUpdates)) {
-      await Ride.updateOne({ _id: rideId }, { $inc: { bookedSeats: -seats } });
-    }
-
-    // ✅ নোটিফিকেশন পাঠানো (প্রতি প্যাসেঞ্জার ও ড্রাইভার)
-    const rideMap = new Map(rides.map(r => [r._id.toString(), r.driverId.toString()]));
-    for (const p of passengers) {
-      const driverId = rideMap.get(p.rideId.toString());
-      io.to(`user:${p.userId}`).emit('ride:no-show-charge', {
-        rideId: p.rideId,
-        passengerId: p._id,
-        charge: 50,
-        message: "You didn't show up at pickup location. A no-show fee has been charged.",
       });
-      if (driverId) {
-        io.to(`driver:${driverId}`).emit('ride:passenger-no-show', {
-          rideId: p.rideId,
-          passengerId: p._id,
-          compensation: 50,
-          message: "Passenger didn't show up. You will receive compensation.",
+
+      // ── Get Ride & Driver Info ──────────────────────────────────────
+      const ride = await Ride.findById(passenger.rideId)
+        .select('driverId rideCreatedBy type')
+        .lean();
+
+      if (!ride) continue;
+
+      // ── 1. Send Notification to Passenger (Rider) ───────────────────
+      const rider = await User.findById(passenger.userId)
+      if (rider && rider?.fcmToken) {
+        await sendNotification([rider.fcmToken || ''], {
+          receiver: passenger.userId,
+          message: 'You were marked as No-Show',
+          description: 'You did not show up at the pickup location. No refund will be issued for this ride.',
+          reference: passenger.rideId.toString(),
+          modelType: modeType.Ride,
+        }).catch(() => {});
+      }
+
+      // ── 2. Send Notification to Driver ──────────────────────────────
+      const driver = await User.findById(ride.driverId)
+      if (driver && driver?.fcmToken) {
+        await sendNotification([driver.fcmToken], {
+          receiver: ride.driverId,
+          message: 'Passenger No-Show',
+          description: 'One passenger did not show up. You may proceed with the ride.',
+          reference: passenger.rideId.toString(),
+          modelType: modeType.Ride,
+        }).catch(() => {});
+      }
+
+      // ── Real-time Socket Events ─────────────────────────────────────
+      io.to(`user:${passenger.userId}`).emit('ride:no-show', {
+        rideId: passenger.rideId,
+        passengerId: passenger._id,
+        message: 'You were marked as no-show. No refund will be issued.',
+      });
+
+      if (ride.driverId) {
+        io.to(`driver:${ride.driverId}`).emit('ride:passenger-no-show', {
+          rideId: passenger.rideId,
+          passengerId: passenger._id,
+          message: 'Passenger no-show. You may proceed.',
         });
       }
-    }
 
-    // ✅ রাইডে কোনো প্যাসেঞ্জার অবশিষ্ট না থাকলে পুরো রাইড ক্যানসেল
-    const remainingPassengers = await Passenger.aggregate([
-      { $match: { rideId: { $in: rideIds }, status: { $ne: PASSENGER_STATUS.cancelled } } },
-      { $group: { _id: '$rideId', count: { $sum: 1 } } },
-    ]);
-    const noPassengerRideIds = rideIds.filter(rid => !remainingPassengers.find(r => r._id.toString() === rid.toString()));
-    if (noPassengerRideIds.length) {
-      await Ride.updateMany(
-        { _id: { $in: noPassengerRideIds }, status: RIDE_STATUS.driver_arrived },
-        { status: RIDE_STATUS.cancelled, cancellationReason: 'all_passengers_no_show' }
-      );
-      const multi = redis.multi();
-      for (const rid of noPassengerRideIds) {
-        multi.del(`ride:active:${rid}`);
+      // ── Update Ride Seats ───────────────────────────────────────────
+      await Ride.findByIdAndUpdate(passenger.rideId, {
+        $inc: { bookedSeats: -(passenger.requestedSeats || 1) },
+      });
+
+      // ── Recalculate fares for Split Ride ────────────────────────────
+      if (ride.type === 'split') {
+        await recalculateSplitFares(
+          passenger.rideId.toString(),
+          'passenger_cancelled',
+          io
+        );
       }
-      await multi.exec();
-    }
 
-    console.log(`✅ No-show processed: ${updateResult.modifiedCount} passengers`);
+      // ── Cancel ride if no passengers left ───────────────────────────
+      const remaining = await Passenger.countDocuments({
+        rideId: passenger.rideId,
+        status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
+      });
+
+      if (remaining <= 1) {
+        const isLast = remaining === 0;
+        await Ride.findByIdAndUpdate(passenger.rideId, {
+          status: RIDE_STATUS.cancelled,
+          cancellationReason: isLast ? 'all_passengers_no_show' : 'Only one passenger remaining. Ride cancelled.',
+        });
+
+        const redis = getRedisClient();
+        await Promise.all([
+          redis.del(`ride:active:${passenger.rideId}`),
+          redis.zrem('ride:matching:queue', passenger.rideId.toString()),
+          redis.del(`ride:request:${passenger.rideId}`),
+        ]);
+
+        // Notify driver if ride was cancelled
+        if (ride.driverId) {
+          io.to(`driver:${ride.driverId}`).emit('ride:cancelled', {
+            rideId: passenger.rideId,
+            message: isLast ? 'All passengers no-show. Ride cancelled.' : 'Only one passenger remaining. Ride cancelled.',
+          });
+        }
+      }
+
+      console.log(`🚫 No-show processed: passenger ${passenger._id}`);
+    }
   } catch (error) {
-    console.error('Error in checkNoShowPassengers:', error);
+    console.error('❌ checkNoShowPassengers error:', error);
   }
 };

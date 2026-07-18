@@ -23,18 +23,31 @@ const verifyOTP = async (
 ) => {
   const { type } = query;
 
-  const token = tokenWithBearer.split(' ')[1];
-  if (!token) {
-    throw new ApiError(StatusCodes.UNAUTHORIZED, 'You are not authorized');
+  let token = '';
+  if (tokenWithBearer && typeof tokenWithBearer === 'string') {
+    const trimmed = tokenWithBearer.trim();
+    token = trimmed.startsWith('Bearer ')
+      ? trimmed.slice(7).trim()
+      : trimmed.split(' ').pop()?.trim() || '';
+  }
+
+  if (!token || token === 'null' || token === 'undefined') {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Verification token is missing or invalid.');
   }
 
   let decode: JwtPayload;
   try {
     decode = jwt.verify(token, config.jwt.accessSecret as Secret) as JwtPayload;
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.name === 'TokenExpiredError') {
+      throw new ApiError(
+        StatusCodes.FORBIDDEN,
+        'OTP session has expired. Please request a new OTP.'
+      );
+    }
     throw new ApiError(
       StatusCodes.FORBIDDEN,
-      'Session has expired. Please request a new OTP.'
+      'Invalid verification token. Please request a new OTP.'
     );
   }
 
@@ -87,17 +100,29 @@ const verifyOTP = async (
       break;
 
     default:
-      throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid OTP type');
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid OTP verification type');
   }
 
   const user = await User.findOneAndUpdate(
     { email },
     { $set: updateData },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (!user) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+    let errorMessage = 'User not found';
+    if (type === 'signup') {
+      errorMessage = 'No signed up account found with this email.';
+    } else if (type === 'forgot') {
+      errorMessage = 'No user account found with this email to reset password.';
+    } else if (type === 'login') {
+      errorMessage = 'No user account found with this email to verify login.';
+    } else if (type === 'changeEmail') {
+      errorMessage = 'User not found to update email address.';
+    } else if (type === 'changePhone') {
+      errorMessage = 'User not found to update phone number.';
+    }
+    throw new ApiError(StatusCodes.NOT_FOUND, errorMessage);
   }
 
   // ==================== LOGIN, SIGNUP, FORGOT → Return Tokens ====================
@@ -125,7 +150,7 @@ const verifyOTP = async (
 
     if (user.role === USER_ROLE.provider) {
       const provider = await Provider.findOne({ userId: user._id });
-      
+
       isKycSubmitted = !!provider;
 
       const vehicle = await Vehicle.findOne({ userId: user._id });
@@ -138,6 +163,7 @@ const verifyOTP = async (
         accessToken,
         refreshToken,
         user: {
+          _id: user._id,
           name: user.name,
           email: user.email,
           role: user.role,
@@ -200,9 +226,9 @@ const sendOtpInEmail = async (userId: string, email: string) => {
 
 const sendOtpViaTokenInPhone = async (
   userId: string,
-  payload: { phoneNumber: string }
+  payload: { phone: string }
 ) => {
-  const { phoneNumber } = payload;
+  const { phone } = payload;
 
   const user = await User.findById(userId);
   if (!user || user?.isDeleted) {
@@ -229,7 +255,7 @@ const sendOtpViaTokenInPhone = async (
   const isDevelopment = config.environment !== 'production';
 
   if (isDevelopment) {
-    console.log('🔑 [MOCK OTP] Phone:', phoneNumber);
+    console.log('🔑 [MOCK OTP] Phone:', phone);
     console.log('🔑 [MOCK OTP] Code:', otp);
     console.log(
       '🔑 [MOCK OTP] Expires at:',
@@ -252,11 +278,12 @@ const sendOtpViaTokenInPhone = async (
     const res = await client.messages.create({
       body: `Welcome to Split Ride, your verification code is ${otp}. It expires in 5 minutes. Please do not sharing.`,
       from: config.twilio.phoneNumber,
-      to: phoneNumber,
+      to: phone,
     });
     console.log(res);
 
     return {
+      token,
       verificationToken: token,
     };
   } catch (error: any) {
@@ -265,10 +292,10 @@ const sendOtpViaTokenInPhone = async (
   }
 };
 
-const sendOtpViaDirectPhone = async (payload: { phoneNumber: string }) => {
-  const { phoneNumber } = payload;
+const sendOtpViaDirectPhone = async (payload: { phone: string }) => {
+  const { phone } = payload;
 
-  const user = await User.findOne({ phoneNumber });
+  const user = await User.findOne({ phone });
   if (!user || user?.isDeleted) {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'User not found');
   }
@@ -277,12 +304,13 @@ const sendOtpViaDirectPhone = async (payload: { phoneNumber: string }) => {
   const hashedOtp = await bcrypt.hash(otp.toString(), 10);
 
   // === Save OTP redis ===
-  await OtpRedisService.saveOtp(phoneNumber, hashedOtp, OTP_EXPIRE);
+  await OtpRedisService.saveOtp(user.email, hashedOtp, OTP_EXPIRE);
   const expiresAt = moment().add(5, 'minute');
 
   const jwtPayload = {
-    phoneNumber: user?.phone,
     userId: user?._id,
+    email: user?.email,
+    role: user?.role,
   };
   const token = jwt.sign(jwtPayload, config.jwt.accessSecret as Secret, {
     expiresIn: '5m',
@@ -292,7 +320,7 @@ const sendOtpViaDirectPhone = async (payload: { phoneNumber: string }) => {
   const isDevelopment = config.environment !== 'production';
 
   if (isDevelopment) {
-    console.log('🔑 [MOCK OTP] Phone:', phoneNumber);
+    console.log('🔑 [MOCK OTP] Phone:', phone);
     console.log('🔑 [MOCK OTP] Code:', otp);
     console.log(
       '🔑 [MOCK OTP] Expires at:',
@@ -303,6 +331,7 @@ const sendOtpViaDirectPhone = async (payload: { phoneNumber: string }) => {
     // For testing mock data generate
     return {
       token,
+      verificationToken: token,
       otp,
       mock: true,
     };
@@ -315,12 +344,13 @@ const sendOtpViaDirectPhone = async (payload: { phoneNumber: string }) => {
     const res = await client.messages.create({
       body: `Your verification code is ${otp}. It expires in 5 minutes. Please do not sharing.`,
       from: config.twilio.phoneNumber,
-      to: phoneNumber,
+      to: phone,
     });
     console.log(res);
 
     return {
       token,
+      verificationToken: token,
     };
   } catch (error: any) {
     console.error('Twilio SMS Error:', error);

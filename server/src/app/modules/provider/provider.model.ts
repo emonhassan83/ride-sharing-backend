@@ -83,7 +83,6 @@ const providerSchema = new Schema<TProvider>(
 );
 
 // Indexes
-providerSchema.index({ userId: 1 }, { unique: true });
 providerSchema.index({ approvalStatus: 1 });
 
 // Virtual populate user

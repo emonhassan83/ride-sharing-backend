@@ -50,9 +50,20 @@ const updateAIntoDB = catchAsync(async (req, res) => {
   });
 });
 
+const getProviderByUserId = catchAsync(async (req, res) => {
+  const result = await ProviderService.getProviderByUserId(req.params.userId as string);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Provider retrieved successfully',
+    data: result,
+  });
+});
+
 export const ProviderController = {
   insertIntoDB,
   getAllIntoDB,
   getAIntoDB,
   updateAIntoDB,
+  getProviderByUserId,
 };

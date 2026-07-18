@@ -23,12 +23,25 @@ const confirmPayment = catchAsync(async (req, res) => {
   })
 })
 
+const payWithWallet = catchAsync(async (req, res) => {
+  const result = await PaymentService.payWithWallet({
+    booking: req.body.booking,
+    user: req.user.userId,
+  });
+
+  sendResponse(res, {
+    code: httpStatus.OK,
+    message: 'payment successful',
+    data: result,
+  })
+});
+
 const getAllPayments = catchAsync(async (req, res) => {
   const result = await PaymentService.getAllPaymentsFromDB(req.query)
 
   sendResponse(res, {
     code: 200,
-    message: 'Payments retrieved successfully!',
+    message: 'All payments retrieved successfully!',
     pagination: result.meta,
     data: result.data,
   })
@@ -47,8 +60,11 @@ const getAPayment = catchAsync(async (req, res) => {
 })
 
 const getAPaymentByBookingId = catchAsync(async (req, res) => {
-  req.query.booking = req.params.bookingId
-  const result = await PaymentService.getAllPaymentsFromDB(req.query)
+  const query = {
+    ...req.query,
+    booking: req.params.bookingId,
+  }
+  const result = await PaymentService.getAllPaymentsFromDB(query)
 
   sendResponse(res, {
     code: 200,
@@ -70,6 +86,7 @@ const refundPayment = catchAsync(async (req, res) => {
 export const PaymentControllers = {
   checkout,
   confirmPayment,
+  payWithWallet,
   getAllPayments,
   getDashboardData,
   getAPayment,

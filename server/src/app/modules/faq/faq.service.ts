@@ -49,7 +49,7 @@ const updateFaqFromDB = async (id: string, payload: Partial<TFaq>) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Faq not found');
   }
 
-  const updatedFaq = await Faq.findByIdAndUpdate(id, payload, { new: true });
+  const updatedFaq = await Faq.findByIdAndUpdate(id, payload, { returnDocument: 'after' });
   if (!updatedFaq) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Faq not updated');
   }

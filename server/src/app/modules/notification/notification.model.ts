@@ -9,9 +9,9 @@ const notificationSchema = new Schema<TNotification>(
     },
     reference: {
       type: Schema.Types.ObjectId,
-      refPath: 'model_type',
+      refPath: 'modelType',
     },
-    model_type: {
+    modelType: {
       type: String,
       enum: Object.values(modeType),
     },

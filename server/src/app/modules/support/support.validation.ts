@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { SUPPORT_STATUS } from './support.constant';
+import { CONTRACT_BY, SUPPORT_STATUS } from './support.constant';
 
 // Create Support / Report
 const createSupportZodSchema = z.object({
   body: z.object({
     name: z
       .string()
-      .min(2, 'Name must be at least 2 characters')
-      .max(100, 'Name is too long'),
+      .min(2, { message: 'Name must be at least 2 characters' })
+      .max(100, { message: 'Name is too long' }),
 
     phone: z
       .string()
@@ -16,25 +16,42 @@ const createSupportZodSchema = z.object({
 
     booking: z
       .string()
-      .regex(/^[0-9a-fA-F]{24}$/, 'Invalid Job ID')
+      .regex(/^[0-9a-fA-F]{24}$/, { message: 'Invalid Booking ID' })
       .optional()
       .nullable(),
 
     reason: z
       .string()
-      .min(10, 'Reason must be at least 10 characters long')
-      .max(1000, 'Reason is too long'),
+      .min(10, { message: 'Reason must be at least 10 characters long' })
+      .max(1000, { message: 'Reason is too long' }),
   }),
 });
 
 const sentMessageValidationSchema = z.object({
   body: z.object({
-    subject: z.string().min(3, 'subject must be at least 3 characters'),
-    messages: z.string({ required_error: 'Support messages is required' }),
+    subject: z
+      .string()
+      .min(3, { message: 'subject must be at least 3 characters' }),
+    messages: z.string({ message: 'Support messages is required' }),
+    status: z.enum(Object.values(SUPPORT_STATUS) as [string, ...string[]], {
+      message: 'Support status is required!',
+    }),
+    contractBy: z.enum(Object.values(CONTRACT_BY) as [string, ...string[]], {
+      message: 'Contract By is required!',
+    }),
+  }),
+});
+
+const changedStatusValidationSchema = z.object({
+  body: z.object({
+    status: z.enum(Object.values(SUPPORT_STATUS) as [string, ...string[]], {
+      message: 'Support status is required!',
+    }),
   }),
 });
 
 export const SupportValidation = {
   createSupportZodSchema,
   sentMessageValidationSchema,
+  changedStatusValidationSchema,
 };

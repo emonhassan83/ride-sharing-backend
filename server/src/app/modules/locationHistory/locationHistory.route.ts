@@ -7,15 +7,15 @@ const router = express.Router();
 
 // Get location history by ride ID (for dispute)
 router.get(
-  '/location-history/ride/:rideId',
+  '/ride/:rideId',
   auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
   LocationHistoryController.getLocationHistoryByRide
 );
 
 // Get driver's location history for analytics
 router.get(
-  '/location-history/driver/:driverId',
-  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  '/driver/:driverId',
+  auth(USER_ROLE.provider),
   LocationHistoryController.getDriverLocationHistory
 );
 

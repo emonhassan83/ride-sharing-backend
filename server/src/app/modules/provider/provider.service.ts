@@ -121,7 +121,7 @@ const updateStatusIntoDB = async (
       // First, update User KYC status
       await User.findByIdAndUpdate(
         provider.userId,
-        { status: USER_STATUS.active },
+        { status: USER_STATUS.active, isKycVerified: true },
         { session }
       );
 
@@ -131,13 +131,13 @@ const updateStatusIntoDB = async (
           status: PROVIDER_STATUS.verified,
           approvedAt: new Date(),
         },
-        { new: true, session }
+        { returnDocument: 'after', session }
       );
     } else {
       updatedVerification = await Provider.findByIdAndUpdate(
         id,
         { status: PROVIDER_STATUS.rejected, rejectionReason },
-        { new: true, session }
+        { returnDocument: 'after', session }
       );
     }
 
@@ -209,9 +209,20 @@ const updateStatusIntoDB = async (
   }
 };
 
+const getProviderByUserId = async (userId: string) => {
+  const result = await Provider.findOne({ userId }).populate([
+    { path: 'userId', select: 'name email phone profileImage isKycVerified' },
+  ]);
+  if (!result) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Oops! Provider not found');
+  }
+  return result;
+};
+
 export const ProviderService = {
   insertIntoDB,
   getAllIntoDB,
   getAIntoDB,
   updateStatusIntoDB,
+  getProviderByUserId,
 };

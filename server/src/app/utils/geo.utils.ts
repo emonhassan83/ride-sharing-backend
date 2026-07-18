@@ -2,31 +2,51 @@
 import { getRedisClient } from '../config/redis.config';
 import { RIDE_STATUS, RIDE_TYPE } from '../modules/ride/ride.constant';
 import { Ride } from '../modules/ride/ride.model';
+import { USER_ROLE, USER_STATUS } from '../modules/user/user.constant';
 import { User } from '../modules/user/user.model';
 import { Vehicle } from '../modules/vehicle/vehicle.model';
-import { calculateDistance, calculateFareFromDistance } from './location.utils';
+import { IDriverAvailability } from '../socket/interface/ride';
+import { calculateDistance } from './location.utils';
 import { getRealDistanceAndETA } from './maps.utils';
 
-const DESTINATION_MATCH_RADIUS_KM = 5; 
-
-export interface LatLng {
-  lat: number;
-  lng: number;
-}
+const DESTINATION_MATCH_RADIUS_KM = 5;
 
 /**
- * Driver location set in Redis (GEOSET)
+ * Driver location set in Redis (GEOSET) and DB
  */
-export async function saveDriverLocation(driverId: string, lat: number, lng: number): Promise<void> {
+export async function saveDriverLocation(
+  driverId: string,
+  lat: number,
+  lng: number
+): Promise<void> {
   const redis = getRedisClient();
+
+  // ── Redis GEOSET ──────────────────────────────────────────────────────────
   await redis.geoadd('drivers:location', lng, lat, driverId);
 
-  // TTL সেট করা ঐচ্ছিক – পুরো কীতে expire দিতে চাইলে সতর্ক থাকুন, কারণ অন্য ড্রাইভার থাকলে কী মুছে যাবে
-  // await redis.expire('drivers:location', 7200);
+  // ── Redis current location (short TTL for live tracking) ─────────────────
+  await redis.set(
+    `driver:${driverId}:current`,
+    JSON.stringify({ lat, lng, timestamp: Date.now() }),
+    'EX',
+    300
+  );
+
+  // ── DB — persist last location (fire-and-forget) ──────────────────────────
+  User.findByIdAndUpdate(
+    driverId,
+    {
+      location: {
+        type: 'Point',
+        coordinates: [lng, lat], // [lng, lat] — GeoJSON order
+      },
+    },
+    { returnDocument: 'after' }
+  ).catch((err) => console.error('Failed to save driver location to DB:', err));
 }
 
 /**
- * Driver location removed from Redis 
+ * Driver location removed from Redis
  */
 export async function removeDriverLocation(driverId: string): Promise<void> {
   const redis = getRedisClient();
@@ -43,34 +63,44 @@ export async function isDriverNearPickup(
   thresholdMeters: number = 100
 ): Promise<{ isNear: boolean; distanceMeters: number } | null> {
   const redis = getRedisClient();
-  
+
   const driverLocation = await redis.get(`driver:${driverId}:current`);
   if (!driverLocation) return null;
-  
+
   const { lat, lng } = JSON.parse(driverLocation);
-  const distanceMeters = calculateDistanceInMeters(lat, lng, pickupLat, pickupLng);
-  
+  const distanceMeters = calculateDistanceInMeters(
+    lat,
+    lng,
+    pickupLat,
+    pickupLng
+  );
+
   return {
     isNear: distanceMeters <= thresholdMeters,
-    distanceMeters: Math.round(distanceMeters)
+    distanceMeters: Math.round(distanceMeters),
   };
 }
 
 /**
  * Haversine formula: use for use calculation distance meters
  */
-export function calculateDistanceInMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+export function calculateDistanceInMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
   const R = 6371e3;
-  const φ1 = lat1 * Math.PI / 180;
-  const φ2 = lat2 * Math.PI / 180;
-  const Δφ = (lat2 - lat1) * Math.PI / 180;
-  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lng2 - lng1) * Math.PI) / 180;
 
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
   return R * c;
 }
 
@@ -83,34 +113,25 @@ export async function findNearbyDrivers(
   radiusMeters: number = 5000
 ): Promise<Array<{ driverId: string; distanceMeters: number }>> {
   const redis = getRedisClient();
-  
-  const nearbyDrivers = await redis.georadius(
+
+  const nearbyDrivers = (await redis.georadius(
     'drivers:location',
     pickupLng,
     pickupLat,
     radiusMeters,
     'm',
     'WITHDIST'
-  ) as Array<[driverId: string, distance: string]>;
-  
+  )) as Array<[driverId: string, distance: string]>;
+
   return nearbyDrivers.map(([driverId, distance]) => ({
     driverId,
-    distanceMeters: Math.round(parseFloat(distance))
+    distanceMeters: Math.round(parseFloat(distance)),
   }));
 }
 
 /**
- * Result of driver availability check
- */
-interface DriverAvailability {
-  available: boolean;      // true if driver can be shown to passenger
-  rideId?: string;         // if joining an existing split ride, the ride ID
-  reason?: string;         // optional debug info
-}
-
-/**
  * Check driver availability for a ride request (new ride or join existing ride)
- * 
+ *
  * @param driverId - Driver's user ID
  * @param requestedDate - Date string 'YYYY-MM-DD'
  * @param requestedTime - Time string 'HH:MM'
@@ -124,63 +145,114 @@ export async function hasDriverRideAtDateTime(
   requestedDate: string,
   requestedTime: string,
   rideType: string,
-  requestedSeats: number,
-  existingRideId?: string
-): Promise<DriverAvailability> {
-  const BUFFER_MINUTES = 120; // 2 hours buffer
-
-  // Helper: Convert "HH:MM" to minutes since midnight
-  const toMinutes = (timeStr: string) => {
-    const [h, m] = timeStr.split(':').map(Number);
+  requestedSeats: number
+): Promise<IDriverAvailability> {
+  // Convert "HH:MM" to minutes since midnight
+  const toMinutes = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
     return h * 60 + m;
   };
 
   const reqMinutes = toMinutes(requestedTime);
-  const startMinutes = reqMinutes - BUFFER_MINUTES;
-  const endMinutes = reqMinutes + BUFFER_MINUTES;
 
-  // Find all active rides of this driver on the same date
+  // ── Find all active rides on same date ────────────────────────────────────
   const driverRides = await Ride.find({
     driverId,
     departureDate: requestedDate,
-    status: { $nin: [RIDE_STATUS.rejected, RIDE_STATUS.cancelled, RIDE_STATUS.completed] }
+    status: {
+      $nin: [
+        RIDE_STATUS.rejected,
+        RIDE_STATUS.cancelled,
+        RIDE_STATUS.completed,
+      ],
+    },
   }).lean();
 
-  // --- Case: Joining an existing ride (split only) ---
-  if (existingRideId) {
-    const targetRide = await Ride.findById(existingRideId).lean();
-    if (!targetRide || targetRide.driverId?.toString() !== driverId) {
-      return { available: false, reason: 'Ride not found or not owned by driver' };
-    }
-    if (targetRide.type !== RIDE_TYPE.split) {
-      return { available: false, reason: 'Cannot join non-split ride' };
-    }
-    const availableSeats = targetRide.totalSeats - (targetRide.bookedSeats || 0);
-    if (availableSeats >= requestedSeats) {
-      return { available: true, rideId: targetRide._id.toString(), reason: 'Join existing ride' };
-    } else {
-      return { available: false, reason: 'Not enough seats' };
-    }
+  if (!driverRides.length) {
+    return { available: true, reason: 'Driver free' };
   }
 
-  // --- Case: New ride request (private or split first passenger) ---
-  // Check for any conflicting ride within buffer window
   for (const ride of driverRides) {
     const rideMinutes = toMinutes(ride.departureTime);
-    const isWithinBuffer = rideMinutes >= startMinutes && rideMinutes <= endMinutes;
-    if (!isWithinBuffer) continue;
 
-    // Conflict detected
-    if (ride.type === RIDE_TYPE.private) {
-      // Private ride blocks everything
-      return { available: false, reason: 'Driver has private ride within buffer' };
-    } else if (ride.type === RIDE_TYPE.split) {
-      // Split ride conflict: cannot start another new ride at overlapping time
-      return { available: false, reason: 'Driver has split ride within buffer' };
+    // ── Case 1: Exact same departure time ─────────────────────────────────
+    if (rideMinutes === reqMinutes) {
+      // Same split ride — check seats
+      if (ride.type === RIDE_TYPE.split && rideType === 'split') {
+        const availableSeats = (ride.totalSeats || 0) - (ride.bookedSeats || 0);
+        if (availableSeats >= requestedSeats) {
+          return {
+            available: true,
+            rideId: ride._id.toString(),
+            reason: 'Join existing split ride',
+          };
+        }
+        return { available: false, reason: 'Not enough seats in split ride' };
+      }
+
+      // Private ride at same time → always block
+      return {
+        available: false,
+        reason: 'Driver has another ride at this time',
+      };
+    }
+
+    // ── Case 2: Estimate trip duration (avg 30km/h, estimated distance) ───
+    // We don't know exact duration, use estimatedDurationMinutes if available
+    // Conservative estimate: assume 60 min minimum trip duration
+    const estimatedTripDurationMinutes = 60;
+    const rideEndMinutes = rideMinutes + estimatedTripDurationMinutes;
+
+    // Does requested time overlap with this ride's window?
+    const overlaps = reqMinutes >= rideMinutes && reqMinutes < rideEndMinutes;
+
+    if (overlaps) {
+      // ── Case 3: Requested during another ride's trip window ─────────────
+      if (ride.type === RIDE_TYPE.split && rideType === 'split') {
+        // Same route split ride (passenger pickup within trip) — allowed
+        // Different time means different passenger pickup point
+        const availableSeats = (ride.totalSeats || 0) - (ride.bookedSeats || 0);
+        if (availableSeats >= requestedSeats) {
+          return {
+            available: true,
+            rideId: ride._id.toString(),
+            reason: 'Join existing split ride (en route pickup)',
+          };
+        }
+        return { available: false, reason: 'Split ride in progress, no seats' };
+      }
+
+      // Private ride overlapping → block
+      return {
+        available: false,
+        reason: 'Driver is on another trip at this time',
+      };
+    }
+
+    // ── Case 4: New ride starts before current ride ends ──────────────────
+    const newRideEndMinutes = reqMinutes + estimatedTripDurationMinutes;
+    const reverseOverlap =
+      rideMinutes >= reqMinutes && rideMinutes < newRideEndMinutes;
+
+    if (reverseOverlap) {
+      if (ride.type === RIDE_TYPE.split && rideType === 'split') {
+        const availableSeats = (ride.totalSeats || 0) - (ride.bookedSeats || 0);
+        if (availableSeats >= requestedSeats) {
+          return {
+            available: true,
+            rideId: ride._id.toString(),
+            reason: 'Join existing split ride',
+          };
+        }
+        return { available: false, reason: 'Not enough seats' };
+      }
+      return {
+        available: false,
+        reason: 'New ride would conflict with upcoming trip',
+      };
     }
   }
 
-  // No conflict found – driver is free for new ride
   return { available: true, reason: 'Driver free' };
 }
 
@@ -198,125 +270,270 @@ export async function fetchDriversWithinRadius(
   departureDate: string,
   departureTime: string
 ): Promise<any[]> {
+  // ── Step 1: Online drivers from Redis GEOSET ──────────────────────────────
   type GeoRadiusResult = Array<[driverId: string, distance: string]>;
-  const nearbyDrivers = await redis.georadius(
+  const onlineDrivers = (await redis.georadius(
     'drivers:location',
     lng,
     lat,
     radiusKm,
     'km',
     'WITHDIST'
-  ) as GeoRadiusResult;
+  )) as GeoRadiusResult;
 
-  if (!nearbyDrivers || nearbyDrivers.length === 0) return [];
+  // ── Step 2: Nearby drivers from DB (includes offline) ────────────────────
+  const dbDrivers = await User.find({
+    role: USER_ROLE.provider,
+    isDeleted: false,
+    status: USER_STATUS.active,
+    isKycVerified: true,
+    location: {
+      $nearSphere: {
+        $geometry: {
+          type: 'Point',
+          coordinates: [lng, lat],
+        },
+        $maxDistance: radiusKm * 1000, // meters
+      },
+    },
+  })
+    .select('_id name email phone avgRating profileImage location')
+    .lean();
 
-  const driversData = [];
+  // ── Step 3: Merge — DB drivers as base, Redis distance overrides ──────────
+  const onlineMap = new Map(
+    onlineDrivers.map(([driverId, dist]) => [driverId, parseFloat(dist)])
+  );
 
-  for (const [driverId, distanceStr] of nearbyDrivers) {
-    const geoDistanceKm = parseFloat(distanceStr);
+  // Build merged driver list (DB as source of truth for all nearby)
+  const mergedDriverIds = new Map<
+    string,
+    { driverId: string; geoDistanceKm: number }
+  >();
 
-    // ✅ Check driver availability (new ride, no existing ride ID)
+  // Add DB drivers
+  for (const dbDriver of dbDrivers) {
+    const id = dbDriver._id.toString();
+    const coords = dbDriver.location?.coordinates;
+    if (!coords || (coords[0] === 0 && coords[1] === 0)) continue;
+
+    const distKm = calculateDistance(
+      { lat, lng },
+      { lat: coords[1], lng: coords[0] }
+    );
+    mergedDriverIds.set(id, { driverId: id, geoDistanceKm: distKm });
+  }
+
+  // Override distance with Redis geo distance if online (more accurate)
+  for (const [driverId, dist] of onlineMap) {
+    if (mergedDriverIds.has(driverId)) {
+      mergedDriverIds.get(driverId)!.geoDistanceKm = dist;
+    }
+  }
+
+  if (!mergedDriverIds.size) return [];
+
+  const driversData: any[] = [];
+
+  for (const { driverId, geoDistanceKm } of mergedDriverIds.values()) {
+    // ── Availability check ──────────────────────────────────────────────────
     const availability = await hasDriverRideAtDateTime(
       driverId,
       departureDate,
       departureTime,
       rideType,
-      requestedSeats,
-      undefined  // new ride
+      requestedSeats
     );
+    if (!availability.available) continue;
 
-    if (!availability.available) continue; // driver busy
-
-    // Driver details from Redis/DB (same as before)
-    let driverDetails = await redis.hgetall(`driver:${driverId}:details`);
+    // ── Driver details: Redis first, DB fallback ────────────────────────────
     let driverName = 'Unknown';
+    let driverEmail = '';
+    let driverPhone = '';
     let driverRating = 5;
-    let driverPhoto = null;
+    let driverPhoto: string | null = null;
     let vehicleModel = 'Standard';
     let vehicleNumber = '';
     let totalSeats = 4;
     let bookedSeats = 0;
-    let driverDestination = null;
+    let driverDestination: any = null;
     let driverLastLat = lat;
     let driverLastLng = lng;
+    const isOnline = onlineMap.has(driverId);
+
+    const driverDetails = await redis.hgetall(`driver:${driverId}:details`);
 
     if (driverDetails && Object.keys(driverDetails).length > 0) {
       driverName = driverDetails.name || 'Unknown';
+      driverEmail = driverDetails.email || '';
+      driverPhone = driverDetails.phone || '';
       driverRating = parseFloat(driverDetails.rating) || 5;
-      driverPhoto = driverDetails.photo;
+      driverPhoto = driverDetails.photo || null;
       vehicleModel = driverDetails.vehicleModel || 'Standard';
       vehicleNumber = driverDetails.vehicleNumber || '';
       totalSeats = parseInt(driverDetails.seats) || 4;
       bookedSeats = parseInt(driverDetails.bookedSeats) || 0;
-      if (driverDetails.destination) driverDestination = JSON.parse(driverDetails.destination);
       driverLastLat = parseFloat(driverDetails.lastLat) || lat;
       driverLastLng = parseFloat(driverDetails.lastLng) || lng;
+      if (driverDetails.destination) {
+        try {
+          driverDestination = JSON.parse(driverDetails.destination);
+        } catch {
+          /* ignore */
+        }
+      }
     } else {
-      const driver = await User.findById(driverId).select('name avgRating profileImage location').lean();
-      const vehicle = await Vehicle.findOne({ userId: driverId, isDefault: true }).lean();
-      driverName = driver?.name || 'Unknown';
-      driverRating = driver?.avgRating || 5;
-      driverPhoto = driver?.profileImage;
+      // DB fallback
+      const dbDriver = dbDrivers.find((d) => d._id.toString() === driverId);
+      const vehicle = await Vehicle.findOne({
+        userId: driverId,
+        isDefault: true,
+        isDeleted: false,
+      }).lean();
+
+      driverName = dbDriver?.name || 'Unknown';
+      driverEmail = dbDriver?.email || '';
+      driverPhone = dbDriver?.phone || '';
+      driverRating = dbDriver?.avgRating || 5;
+      driverPhoto = dbDriver?.profileImage || null;
       vehicleModel = vehicle?.name || 'Standard';
       vehicleNumber = vehicle?.number || '';
       totalSeats = vehicle?.seats || 4;
       bookedSeats = 0;
-      if (driver?.location?.coordinates) {
-        driverLastLng = driver.location.coordinates[0];
-        driverLastLat = driver.location.coordinates[1];
+
+      if (dbDriver?.location?.coordinates) {
+        driverLastLng = dbDriver.location.coordinates[0];
+        driverLastLat = dbDriver.location.coordinates[1];
       }
+    }
+
+    // ── Current location: Redis current > Redis hash > DB ───────────────────
+    try {
+      const currentRaw = await redis.get(`driver:${driverId}:current`);
+      if (currentRaw) {
+        const current = JSON.parse(currentRaw);
+        driverLastLat = current.lat;
+        driverLastLng = current.lng;
+      }
+    } catch {
+      /* ignore */
     }
 
     const availableSeats = totalSeats - bookedSeats;
 
-    // Additional seat check for new ride (though already done inside hasDriverRideAtDateTime for split)
+    // ── Seat check ──────────────────────────────────────────────────────────
     if (rideType === 'private' && totalSeats < requestedSeats) continue;
     if (rideType === 'split' && availableSeats < requestedSeats) continue;
 
-    // Destination validation for split (optional)
-    let destinationValid = true;
+    // ── Destination match for split ─────────────────────────────────────────
     if (rideType === 'split' && driverDestination) {
-      const distanceToPassengerDest = calculateDistance(
+      const distToDest = calculateDistance(
         { lat: driverDestination.lat, lng: driverDestination.lng },
         { lat: passengerDestination.lat, lng: passengerDestination.lng }
       );
-      if (distanceToPassengerDest > DESTINATION_MATCH_RADIUS_KM) destinationValid = false;
+      if (distToDest > DESTINATION_MATCH_RADIUS_KM) continue;
     }
-    if (!destinationValid) continue;
 
-    // Distance, ETA, fare (same as before)
+    // ── Google Maps distance & ETA ──────────────────────────────────────────
     let realDistance = geoDistanceKm;
-    let etaMinutes = Math.round(geoDistanceKm / 30 * 60);
-    let estimatedFare = calculateFareFromDistance(geoDistanceKm);
+    let etaMinutes = Math.round((geoDistanceKm / 30) * 60);
+
     try {
-      const driverLocation = { lat: driverLastLat, lng: driverLastLng };
-      const pickupPoint = { lat, lng };
-      const { distanceKm, durationMinutes } = await getRealDistanceAndETA(driverLocation, pickupPoint);
+      const { distanceKm, durationMinutes } = await getRealDistanceAndETA(
+        { lat: driverLastLat, lng: driverLastLng },
+        { lat, lng }
+      );
       realDistance = distanceKm;
       etaMinutes = durationMinutes;
-      estimatedFare = calculateFareFromDistance(realDistance);
-    } catch (err) {
-      console.error(`Google Maps error for driver ${driverId}:`, err);
+    } catch {
+      console.warn(`⚠️ Google Maps fallback for driver ${driverId}`);
     }
 
     driversData.push({
       driverId,
       driverName,
+      driverEmail,
+      driverPhone,
       driverRating,
       driverPhoto,
+      isOnline, // ✅ online/offline indicator
       vehicle: {
         model: vehicleModel,
         number: vehicleNumber,
         seats: totalSeats,
         availableSeats,
       },
+      location: { lat: driverLastLat, lng: driverLastLng },
       distance: parseFloat(realDistance.toFixed(2)),
       eta: Math.round(etaMinutes),
-      estimatedFare: Math.round(estimatedFare),
-      // If needed, you can also include existing ride ID for split ride joining
-      // existingRideId: availability.rideId || null
     });
   }
 
   return driversData;
+}
+
+export const haversineMeters = (
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number => {
+  const R = 6378100;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const CORRIDOR_RADIUS_METERS = 10000; // 10 km corridor
+export function isPointNearRoute(
+  lat: number,
+  lng: number,
+  routeCoordinates: number[][]
+): boolean {
+  if (!routeCoordinates?.length) return false;
+  for (let i = 0; i < routeCoordinates.length - 1; i++) {
+    const [lng1, lat1] = routeCoordinates[i];
+    const [lng2, lat2] = routeCoordinates[i + 1];
+    const dist = pointToSegmentDistance(lat, lng, lat1, lng1, lat2, lng2);
+    if (dist <= CORRIDOR_RADIUS_METERS) return true;
+  }
+  return false;
+}
+
+// Point to line segment distance (meters)
+function pointToSegmentDistance(
+  pLat: number,
+  pLng: number,
+  aLat: number,
+  aLng: number,
+  bLat: number,
+  bLng: number
+): number {
+  const R = 6371000;
+
+  // Convert to radians
+  const toRad = (d: number) => (d * Math.PI) / 180;
+
+  // Use simple planar approximation for short distances
+  const dx = (bLng - aLng) * Math.cos(toRad((aLat + bLat) / 2));
+  const dy = bLat - aLat;
+  const t = Math.max(
+    0,
+    Math.min(
+      1,
+      ((pLng - aLng) * Math.cos(toRad((aLat + bLat) / 2)) * dx +
+        (pLat - aLat) * dy) /
+        (dx * dx + dy * dy || 1)
+    )
+  );
+
+  const closestLng = aLng + t * (bLng - aLng);
+  const closestLat = aLat + t * (bLat - aLat);
+
+  return haversineMeters(pLat, pLng, closestLat, closestLng);
 }

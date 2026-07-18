@@ -116,6 +116,7 @@ const userSchema = new Schema<TUser, UserModal>(
     },
     lastPasswordChange: { type: Date },
     stripeAccountId: { type: String, default: null },
+    customerId: { type: String, default: null },
     isOnline: { type: Boolean, default: false },
     lastOnlineAt: { type: Date, default: null },
 
@@ -157,17 +158,15 @@ userSchema.statics.isMatchPassword = async function (
 };
 
 // Middleware to hash password before saving
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return; // only hash if password is modified or new
 
-  if (!this.password) return next(); // prevents Google crash
+  if (!this.password) return; // prevents Google crash
 
   this.password = await bcrypt.hash(
     this.password,
     Number(config.bcrypt.saltRounds)
   );
-
-  next();
 });
 
 // for location and auto expire inactive users

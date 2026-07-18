@@ -2,19 +2,35 @@ import { Setting } from './settings.model';
 
 const settingSeeder = async () => {
   const settingsData = [
-    { key: 'dayFareInitialCharge', value: 50 },
-    { key: 'dayFarePerKMRate', value: 12 },
-    { key: 'dayFareWaitingCharge', value: 3 },
-    { key: 'nightFareInitialCharge', value: 70 },
-    { key: 'nightFarePerKMRate', value: 15 },
-    { key: 'nightFareWaitingCharge', value: 4 },
-    { key: 'publicHolidayIncrease', value: 25 },
-    { key: 'perLuggageCharge', value: 10 },
-    { key: 'fourPassengerTaxiTax', value: 100 },
-    { key: 'sixPassengerTaxiTaxPercentage', value: 15 },
-    { key: 'platformVat', value: 5 },
-    { key: 'supportContract', value: 'Standard support contract terms' },
+      // Access & validation ride
+    { key: 'bookingMaxDaysAhead', value: 30 },
+    { key: 'bookingMinDaysAhead', value: 2 },
+    { key: 'matchingNoDriverNotifyHours', value: 48 },
+    { key: 'matchingLastNotifyHours', value: 24 },
+    { key: 'cancellationFreeWindowHours', value: 24 },
+    { key: 'cancellationPercentage50Hours', value: 3 },
+    { key: 'waitingReminderIntervals', value: 5 },
+    { key: 'waitingTimeMinutes', value: 60 },
+
+    // ride & charge
+    { key: 'dayFareInitialCharge', value: 3.8 },
+    { key: 'dayFarePerKMRate', value: 0.95 },
+    { key: 'dayFareWaitingCharge', value: 17 },
+    { key: 'nightFareInitialCharge', value: 4.80 },
+    { key: 'nightFarePerKMRate', value: 1.1 },
+    { key: 'nightFareWaitingCharge', value: 19 },
+    { key: 'holidayIncreasePercentage', value: 20 },
+    { key: 'perLuggageCharge', value: 2 },
+    { key: 'fivePassengerExtraCharge', value: 1.4 },
+    { key: 'sixPassengerExtraChargePercentage', value: 40 },
+    { key: 'platformVat', value: 9 },
+    { key: 'platformCommissionPercent', value: 10 },
+
+    // platform info
+    { key: 'supportContract', value: '+357XXXXXXXX' },
     { key: 'supportEmail', value: 'support@yourapp.com' },
+
+    // Trams & Condition
     {
       key: 'userTramsAndCondition',
       value: 'Full trams and condition content goes here...',

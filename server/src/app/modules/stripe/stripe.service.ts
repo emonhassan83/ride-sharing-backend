@@ -77,7 +77,7 @@ const connectExistingStripeAccount = async (
   const updatedUser = await User.findByIdAndUpdate(
     userId,
     { stripeAccountId },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (!updatedUser) {
@@ -185,43 +185,6 @@ const returnUrl = async (query: Record<string, any>) => {
   };
 };
 
-// Step 5: Get Stripe account status (for dashboard)
-const getStripeAccountStatus = async (userId: string) => {
-  const user = await User.findById(userId);
-  if (!user || user.isDeleted) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
-  }
-
-  if (!user.stripeAccountId) {
-    return {
-      connected: false,
-      message: 'Stripe account not connected',
-    };
-  }
-
-  try {
-    const account = await StripeService.getStripe().accounts.retrieve(
-      user.stripeAccountId
-    );
-
-    return {
-      connected: true,
-      accountId: user.stripeAccountId,
-      chargesEnabled: account.charges_enabled,
-      payoutsEnabled: account.payouts_enabled,
-      detailsSubmitted: account.details_submitted,
-      country: account.country,
-      email: account.email,
-      requirements: account.requirements?.currently_due || [],
-    };
-  } catch (error: any) {
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      error.message || 'Failed to fetch Stripe account status'
-    );
-  }
-};
-
 // Step 6: Disconnect Stripe account (optional)
 const disconnectStripe = async (userId: string) => {
   const user = await User.findById(userId);
@@ -251,6 +214,5 @@ export const stripeService = {
   handleStripeOAuth,
   refresh,
   returnUrl,
-  getStripeAccountStatus,
   disconnectStripe,
 };

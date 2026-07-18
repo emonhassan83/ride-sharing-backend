@@ -5,6 +5,7 @@ export enum modeType {
   User = 'User',
   Provider = 'Provider',
   Ride = 'Ride',
+  Passenger = 'Passenger',
   Payment = 'Payment',
   Withdraw = 'Withdraw',
   Refund = 'Refund',
@@ -15,7 +16,7 @@ export type TNotification = {
   message: string
   description?: string
   reference?: Types.ObjectId | string
-  model_type?: modeType
+  modelType?: modeType
   date?: Date
   read?: boolean
   isDeleted?: boolean

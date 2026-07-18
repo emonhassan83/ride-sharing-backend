@@ -13,7 +13,7 @@ const locationPointSchema = new Schema<ILocationPoint>({
   timestamp: { type: Date, default: Date.now },
   event: {
     type: String,
-    enum: ['TRIP_STARTED', 'ARRIVED_AT_PICKUP', 'WAYPOINT'],
+    enum: ['TRIP_STARTED', 'ARRIVED_AT_PICKUP', 'WAYPOINT', 'PASSENGER_DROPPED_OFF'],
   },
 });
 
@@ -23,7 +23,6 @@ const locationHistorySchema = new Schema<ILocationHistory>(
       type: Schema.Types.ObjectId,
       ref: 'Ride',
       required: true,
-      unique: true,
       index: true,
     },
     driverId: {
@@ -51,10 +50,21 @@ const locationHistorySchema = new Schema<ILocationHistory>(
   }
 );
 
-// Compound indexes for better query performance
+// ==================== INDEXES ====================
+
+// Performance indexes
 locationHistorySchema.index({ driverId: 1, startTime: -1 });
-locationHistorySchema.index({ userId: 1, startTime: -1 });
-locationHistorySchema.index({ startTime: -1 }, { expireAfterSeconds: 7776000 }); // 90 days TTL
+locationHistorySchema.index({ rideId: 1, startTime: -1 });
+locationHistorySchema.index({ passengerIds: 1 });
+
+// ==================== TTL INDEX (30 Days) ====================
+locationHistorySchema.index(
+  { startTime: 1 }, 
+  { 
+    expireAfterSeconds: 30 * 24 * 60 * 60, // 30 days in seconds
+    name: 'location_history_ttl_30days' 
+  }
+);
 
 export const LocationHistory = mongoose.model<
   ILocationHistory,

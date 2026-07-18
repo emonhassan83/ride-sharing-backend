@@ -26,13 +26,23 @@ const getAll = catchAsync(async (req, res) => {
 const sentSupportMessage = catchAsync(async (req, res) => {
   const result = await SupportService.sentSupportMessage(
     req.params.id as string,
-    req.body,
+    req.body
   );
 
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Support updated successfully',
     data: result,
+  });
+});
+
+const changeStatus = catchAsync(async (req, res) => {
+  const result = await SupportService.changeStatus(req.params.id as string, req.body);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Support status changed successfully',
+    data: result
   });
 });
 
@@ -45,4 +55,10 @@ const remove = catchAsync(async (req, res) => {
   });
 });
 
-export const SupportController = { create, getAll, sentSupportMessage, remove };
+export const SupportController = {
+  create,
+  getAll,
+  sentSupportMessage,
+  changeStatus,
+  remove,
+};

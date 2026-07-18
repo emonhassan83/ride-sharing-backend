@@ -1,4 +1,4 @@
-import { FilterQuery, Query } from 'mongoose'
+import { Types, Query } from 'mongoose'
 
 class QueryBuilder<T> {
   public modelQuery: Query<T[], T>
@@ -10,36 +10,29 @@ class QueryBuilder<T> {
   }
 
   search(searchableFields: string[]) {
-    const searchTerm = this?.query?.searchTerm
+    const searchTerm = this?.query?.searchTerm as string
     if (searchTerm) {
       this.modelQuery = this.modelQuery.find({
-        $or: searchableFields.map(
-          (field) =>
-            ({
-              [field]: { $regex: searchTerm, $options: 'i' },
-            }) as FilterQuery<T>,
-        ),
+        $or: searchableFields.map((field) => ({
+          [field]: { $regex: searchTerm, $options: 'i' },
+        })),
       })
     }
-
     return this
   }
 
   filter() {
-    const queryObj = { ...this.query };
+    const queryObj = { ...this.query }
 
-    // Remove special query params
-    const excludeFields = ['searchTerm', 'sort', 'limit', 'page', 'fields'];
-    excludeFields.forEach((el) => delete queryObj[el]);
+    // Remove special fields
+    const excludeFields = ['searchTerm', 'sort', 'limit', 'page', 'fields']
+    excludeFields.forEach((el) => delete queryObj[el])
 
-    // IMPORTANT: MERGE instead of REPLACE
-    // Only apply filter if there are actual filter fields left
     if (Object.keys(queryObj).length > 0) {
-      // Use .find() with existing conditions preserved
-      this.modelQuery = this.modelQuery.find(queryObj as FilterQuery<T>);
+      this.modelQuery = this.modelQuery.find(queryObj as any)  // ← any
     }
 
-    return this;
+    return this
   }
 
   sort() {
