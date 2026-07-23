@@ -294,8 +294,16 @@ const sendOtpViaTokenInPhone = async (
       verificationToken: token,
     };
   } catch (error: any) {
-    console.error('Twilio SMS Error:', error);
-    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Failed to send OTP');
+    console.error('Twilio SMS Error:', error)
+
+    if (error.code === 21612) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        'This country code is currently not supported for OTP. Please try another number or contact support.',
+      )
+    }
+
+    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Failed to send OTP')
   }
 };
 
@@ -361,8 +369,16 @@ const sendOtpViaDirectPhone = async (payload: { phone: string }) => {
       verificationToken: token,
     };
   } catch (error: any) {
-    console.error('Twilio SMS Error:', error);
-    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Failed to send OTP');
+    console.error('Twilio SMS Error:', error)
+
+    if (error.code === 21612) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        'This country code is currently not supported for OTP. Please try another number or contact support.',
+      )
+    }
+
+    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Failed to send OTP')
   }
 };
 
