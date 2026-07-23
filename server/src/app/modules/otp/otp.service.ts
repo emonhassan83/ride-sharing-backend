@@ -32,7 +32,10 @@ const verifyOTP = async (
   }
 
   if (!token || token === 'null' || token === 'undefined') {
-    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Verification token is missing or invalid.');
+    throw new ApiError(
+      StatusCodes.UNAUTHORIZED,
+      'Verification token is missing or invalid.'
+    );
   }
 
   let decode: JwtPayload;
@@ -100,7 +103,10 @@ const verifyOTP = async (
       break;
 
     default:
-      throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid OTP verification type');
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        'Invalid OTP verification type'
+      );
   }
 
   const user = await User.findOneAndUpdate(
@@ -283,7 +289,8 @@ const sendOtpViaTokenInPhone = async (
     console.log(res);
 
     return {
-      token,
+      mock: false,
+      otp: '',
       verificationToken: token,
     };
   } catch (error: any) {
@@ -349,7 +356,8 @@ const sendOtpViaDirectPhone = async (payload: { phone: string }) => {
     console.log(res);
 
     return {
-      token,
+      mock: false,
+      otp: '',
       verificationToken: token,
     };
   } catch (error: any) {
