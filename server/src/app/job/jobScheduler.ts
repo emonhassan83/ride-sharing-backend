@@ -1,19 +1,17 @@
-// jobs/jobScheduler.ts
+﻿// jobs/jobScheduler.ts
 import cron from 'node-cron';
 import { batchInsertLocationHistory } from './locationHistory.job';
 import { checkNoDriverFound } from './noDriverFound.job';
 import { checkNoShowPassengers } from './noShowPassengers.job';
 import { syncDriverLocationsToDb } from './driverLocationSync.job';
-import { startRideMatchingJob } from './rideMatching.job';
 
 let locationJobRunning = false;
 let noDriverJobRunning = false;
 let noShowJobRunning = false;
 let locationSyncJobRunning = false;
-let rideMatchingJobRunning = false;
 
 export function startBackgroundJobs() {
-  console.log('🕒 Starting background jobs...');
+  console.log('ðŸ•’ Starting background jobs...');
 
   // 1. Location history (every 2 min)
   cron.schedule('*/2 * * * *', async () => {
@@ -22,7 +20,7 @@ export function startBackgroundJobs() {
     try {
       await batchInsertLocationHistory();
     } catch (err) {
-      console.error('❌ Location job error:', err);
+      console.error('âŒ Location job error:', err);
     } finally {
       locationJobRunning = false;
     }
@@ -35,7 +33,7 @@ export function startBackgroundJobs() {
     try {
       await checkNoDriverFound();
     } catch (err) {
-      console.error('❌ No-driver job error:', err);
+      console.error('âŒ No-driver job error:', err);
     } finally {
       noDriverJobRunning = false;
     }
@@ -48,7 +46,7 @@ export function startBackgroundJobs() {
     try {
       await checkNoShowPassengers();
     } catch (err) {
-      console.error('❌ No-show job error:', err);
+      console.error('âŒ No-show job error:', err);
     } finally {
       noShowJobRunning = false;
     }
@@ -61,24 +59,12 @@ export function startBackgroundJobs() {
     try {
       await syncDriverLocationsToDb();
     } catch (err) {
-      console.error('❌ Driver location sync error:', err);
+      console.error('âŒ Driver location sync error:', err);
     } finally {
       locationSyncJobRunning = false;
     }
   });
 
-  // 5. Ride matching — 48h re-notify + 24h cancel (every hour)
-  cron.schedule('0 * * * *', async () => {
-    if (rideMatchingJobRunning) return;
-    rideMatchingJobRunning = true;
-    try {
-      await startRideMatchingJob();
-    } catch (err) {
-      console.error('❌ Ride matching job error:', err);
-    } finally {
-      rideMatchingJobRunning = false;
-    }
-  });
-
-  console.log('✅ Background jobs are now running');
+  console.log('âœ… Background jobs are now running');
 }
+

@@ -1,4 +1,4 @@
-// jobs/noDriverFound.job.ts
+﻿// jobs/noDriverFound.job.ts
 import { getRedisClient } from '../config/redis.config';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { Passenger } from '../modules/passenger/passenger.model';
@@ -19,7 +19,7 @@ import { refundToWallet } from '../utils/splitFare.utils';
 
 const BATCH_SIZE = 50;
 
-// ── Load settings with fallback ───────────────────────────────────────────────
+// â”€â”€ Load settings with fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const getMatchingSettings = async (): Promise<{
   notifyHours: number; // re-notify X hours before departure
   cancelHours: number; // cancel Y hours before departure
@@ -44,7 +44,7 @@ export const checkNoDriverFound = async () => {
 
   const { notifyHours, cancelHours } = await getMatchingSettings();
 
-  // ── Phase 2: Re-notify drivers (X hours before departure) ────────────────
+  // â”€â”€ Phase 2: Re-notify drivers (X hours before departure) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const reNotifyBefore = new Date(now.getTime() + notifyHours * 3600000);
 
   // Grace period: ignore rides created in the last 30 minutes (already notified by rideRequest handler)
@@ -106,9 +106,11 @@ export const checkNoDriverFound = async () => {
         },
         departureDate: ride.departureDate,
         departureTime: ride.departureTime,
+        rideType: ride.type,
         requestedSeats: (passenger as any).requestedSeats || 1,
         estimatedFare: (passenger as any).estimatedFare || 0,
         estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,
+        estimatedDurationMinutes: (passenger as any).estimatedDurationMinutes || 0,
         status: PASSENGER_STATUS.pending,
         createdAt: (passenger as any).createdAt,
       };
@@ -127,7 +129,7 @@ export const checkNoDriverFound = async () => {
         reNotifiedAt: now,
       });
 
-      // ✅ Notify rider — re-matching in progress
+      // âœ… Notify rider â€” re-matching in progress
       const riderUser = await User.findById((ride as any).rideCreatedBy)
         .select('fcmToken')
         .lean();
@@ -148,12 +150,12 @@ export const checkNoDriverFound = async () => {
       }
 
       console.log(
-        `🔔 Phase 2 re-notify | ride ${ride._id} | ${notified} drivers | ${hoursUntilDeparture.toFixed(1)}h before departure`
+        `ðŸ”” Phase 2 re-notify | ride ${ride._id} | ${notified} drivers | ${hoursUntilDeparture.toFixed(1)}h before departure`
       );
     }
   }
 
-  // ── Phase 3: Cancel rides (Y hours before departure, still no driver) ─────
+  // â”€â”€ Phase 3: Cancel rides (Y hours before departure, still no driver) â”€â”€â”€â”€â”€
   const cancelBefore = new Date(now.getTime() + cancelHours * 3600000);
 
   const ridesForCancel = await Ride.find({
@@ -255,7 +257,7 @@ export const checkNoDriverFound = async () => {
     }
   );
 
-  // Notify riders — cancelled
+  // Notify riders â€” cancelled
   const cancelledPassengers = await Passenger.find(
     { rideId: { $in: cancelRideIds }, cancellationReason: 'no_driver_found' },
     'userId rideId'
@@ -269,12 +271,12 @@ export const checkNoDriverFound = async () => {
       retryAfter: 5,
     });
 
-    // ✅ FCM push — no driver found, cancelled
+    // âœ… FCM push â€” no driver found, cancelled
     const riderUser = await User.findById(p.userId).select('fcmToken').lean();
     if (riderUser?.fcmToken) {
       sendNotification([riderUser.fcmToken], {
         receiver: p.userId,
-        message: 'Ride Cancelled — No Driver Found',
+        message: 'Ride Cancelled â€” No Driver Found',
         description: `No driver was available for your ride. Your booking has been cancelled.`,
         reference: p.rideId.toString(),
         modelType: modeType.Ride,
@@ -290,5 +292,6 @@ export const checkNoDriverFound = async () => {
   }
   await multi.exec();
 
-  console.log(`🚫 No driver found: cancelled ${cancelRideIds.length} ride(s)`);
+  console.log(`ðŸš« No driver found: cancelled ${cancelRideIds.length} ride(s)`);
 };
+

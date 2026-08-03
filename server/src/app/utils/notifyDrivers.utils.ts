@@ -1,4 +1,4 @@
-// utils/notifyDrivers.utils.ts
+﻿// utils/notifyDrivers.utils.ts
 import { User } from '../modules/user/user.model';
 import { USER_ROLE, USER_STATUS } from '../modules/user/user.constant';
 import { ILatLng } from '../socket/interface/ride';
@@ -83,7 +83,7 @@ async function getDriverCurrentLocation(
   return null;
 }
 
-// ── Notify nearby drivers (private ride) ─────────────────────────────────────
+// â”€â”€ Notify nearby drivers (private ride) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function notifyNearbyDrivers(
   rideId: string,
   pickup: ILatLng,
@@ -97,7 +97,7 @@ export async function notifyNearbyDrivers(
   let notifiedCount = 0;
   const notifiedIds: string[] = [];
 
-  // ── Required for availability check ──────────────────────────────────────
+  // â”€â”€ Required for availability check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const departureDate = ridePayload.departureDate as string;
   const departureTime = ridePayload.departureTime as string;
   const rideType = ridePayload.rideType as string;
@@ -115,7 +115,7 @@ export async function notifyNearbyDrivers(
 
   const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
 
-  // ── Online drivers — availability check + socket + FCM ───────────────────
+  // â”€â”€ Online drivers â€” availability check + socket + FCM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   for (const [driverId] of onlineDrivers) {
     if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
@@ -153,7 +153,7 @@ export async function notifyNearbyDrivers(
     }
   }
 
-  // ── Offline drivers — availability check + FCM ────────────────────────────
+  // â”€â”€ Offline drivers â€” availability check + FCM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const offlineDrivers = await User.find({
     role: USER_ROLE.provider,
     isDeleted: false,
@@ -177,7 +177,7 @@ export async function notifyNearbyDrivers(
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    // ✅ Availability check
+    // âœ… Availability check
     const availability = await hasDriverRideAtDateTime(
       driverId,
       departureDate,
@@ -188,12 +188,18 @@ export async function notifyNearbyDrivers(
 
     if (!availability.available) {
       console.log(
-        `⏭️ Skipping offline driver ${driverId} — ${availability.reason}`
+        `â­ï¸ Skipping offline driver ${driverId} â€” ${availability.reason}`
       );
       continue;
     }
 
     notifiedIds.push(driverId);
+
+    const isKnownOnline = await redis.sismember('users:online', driverId);
+    if (isKnownOnline) {
+      io.to('driver:' + driverId).emit('ride:new-request', ridePayload);
+      notifiedCount++;
+    }
 
     const fcmToken = (driver as any).fcmToken;
     if (fcmToken) {
@@ -205,7 +211,7 @@ export async function notifyNearbyDrivers(
           reference: passengerId,
           modelType: modeType.Passenger,
         });
-        notifiedCount++;
+        if (!isKnownOnline) notifiedCount++;
       } catch (err) {
         console.warn(`FCM failed for offline driver ${driverId}:`, err);
       }
@@ -221,7 +227,7 @@ export async function notifyNearbyDrivers(
   return notifiedCount;
 }
 
-// ── Notify nearby drivers (split ride — route corridor) ───────────────────────
+// â”€â”€ Notify nearby drivers (split ride â€” route corridor) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function notifyNearbyDriversForSplitRide(
   rideId: string,
   routeGeometry: { type: string; coordinates: number[][] } | null,
@@ -234,7 +240,7 @@ export async function notifyNearbyDriversForSplitRide(
   let notifiedCount = 0;
   const notifiedIds: string[] = [];
 
-  // ── Required for availability check ──────────────────────────────────────
+  // â”€â”€ Required for availability check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const departureDate = ridePayload.departureDate as string;
   const departureTime = ridePayload.departureTime as string;
   const requestedSeats = (ridePayload.requestedSeats as number) || 1;
@@ -265,12 +271,12 @@ export async function notifyNearbyDriversForSplitRide(
 
   const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
 
-  // ── Online drivers — availability + route check + socket + FCM ───────────
+  // â”€â”€ Online drivers â€” availability + route check + socket + FCM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   for (const [driverId] of onlineDrivers) {
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    // ✅ Availability check for split ride
+    // âœ… Availability check for split ride
     const availability = await hasDriverRideAtDateTime(
       driverId,
       departureDate,
@@ -281,7 +287,7 @@ export async function notifyNearbyDriversForSplitRide(
 
     if (!availability.available) {
       console.log(
-        `⏭️ Skipping online split driver ${driverId} — ${availability.reason}`
+        `â­ï¸ Skipping online split driver ${driverId} â€” ${availability.reason}`
       );
       continue;
     }
@@ -311,7 +317,7 @@ export async function notifyNearbyDriversForSplitRide(
     }
   }
 
-  // ── Offline drivers — availability + route check + FCM ───────────────────
+  // â”€â”€ Offline drivers â€” availability + route check + FCM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const offlineDrivers = await User.find({
     role: USER_ROLE.provider,
     isDeleted: false,
@@ -334,7 +340,7 @@ export async function notifyNearbyDriversForSplitRide(
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    // ✅ Availability check for split ride
+    // âœ… Availability check for split ride
     const availability = await hasDriverRideAtDateTime(
       driverId,
       departureDate,
@@ -345,7 +351,7 @@ export async function notifyNearbyDriversForSplitRide(
 
     if (!availability.available) {
       console.log(
-        `⏭️ Skipping offline split driver ${driverId} — ${availability.reason}`
+        `â­ï¸ Skipping offline split driver ${driverId} â€” ${availability.reason}`
       );
       continue;
     }
@@ -380,3 +386,4 @@ export async function notifyNearbyDriversForSplitRide(
 
   return notifiedCount;
 }
+

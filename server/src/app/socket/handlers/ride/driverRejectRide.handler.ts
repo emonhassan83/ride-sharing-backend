@@ -1,4 +1,4 @@
-// handlers/driver/driverRejectRide.handler.ts
+﻿// handlers/driver/driverRejectRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import {
   RIDE_STATUS,
@@ -31,13 +31,18 @@ export const driverRejectRideHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io = getIO();
 
-    // ── Helper: add driver to rejected list ───────────────────────────────────
+    // â”€â”€ Helper: add driver to rejected list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const markRejected = async () => {
       await redis.sadd(`ride:rejected:${rideId}`, driverId);
-      await redis.expire(`ride:rejected:${rideId}`, 1800);
+      const departureMs = new Date(`${ride.departureDate}T${ride.departureTime}:00`).getTime();
+      const ttlSeconds = Math.max(
+        1800,
+        Math.floor((departureMs - Date.now()) / 1000) + 7200
+      );
+      await redis.expire(`ride:rejected:${rideId}`, ttlSeconds);
     };
 
-    // ── Helper: redis cleanup ─────────────────────────────────────────────────
+    // â”€â”€ Helper: redis cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const redisCleanup = async () => {
       await Promise.all([
         redis.zrem('ride:matching:queue', rideId),
@@ -45,7 +50,7 @@ export const driverRejectRideHandler = eventHandler<any>(
       ]);
     };
 
-    // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
+    // â”€â”€ PRIVATE RIDE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId
         ? await Passenger.findOne({
@@ -74,25 +79,26 @@ export const driverRejectRideHandler = eventHandler<any>(
       await markRejected();
 
       await Ride.findByIdAndUpdate(rideId, {
-        status: RIDE_STATUS.rejected,
-        cancellationReason: reason || 'Driver rejected the ride',
-        cancelledBy: CANCELLED_BY.driver,
-        cancelledAt: new Date(),
+        $unset: {
+          driverId: '',
+          vehicleId: '',
+        },
       });
 
-      passenger.status = PASSENGER_STATUS.rejected;
-      await passenger.save();
-
-      await redisCleanup();
+      await redis.hset(`ride:request:${rideId}`, {
+        matchingStatus: 'driver_rejected_waiting_for_fallback',
+        lastRejectedDriverId: driverId,
+        lastRejectedAt: Date.now().toString(),
+      });
 
       return callback?.({
         success: true,
-        message: 'Private ride rejected',
-        data: { passengerCount: passenger ? 1 : 0 },
+        message: 'Private ride rejection recorded. Ride remains pending for fallback matching.',
+        data: { passengerCount: passenger ? 1 : 0, rideCancelled: false },
       });
     }
 
-    // ── SPLIT RIDE — passengerId required ─────────────────────────────────────
+    // â”€â”€ SPLIT RIDE â€” passengerId required â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (ride.type === RIDE_TYPE.split) {
       if (!passengerId)
         return callback?.({
@@ -126,7 +132,7 @@ export const driverRejectRideHandler = eventHandler<any>(
 
       await markRejected();
 
-      // ✅ Case 6: Recalculate remaining passengers' fares
+      // âœ… Case 6: Recalculate remaining passengers' fares
       if (ride.type === RIDE_TYPE.split) {
         await recalculateSplitFares(rideId, 'passenger_rejected', io);
       }
@@ -145,7 +151,7 @@ export const driverRejectRideHandler = eventHandler<any>(
           cancelledAt: new Date(),
         });
         await redisCleanup();
-        console.log(`Ride ${rideId} cancelled — no passengers left`);
+        console.log(`Ride ${rideId} cancelled â€” no passengers left`);
       }
 
       return callback?.({
@@ -162,3 +168,7 @@ export const driverRejectRideHandler = eventHandler<any>(
     return callback?.({ success: false, message: 'Unknown ride type' });
   }
 );
+
+
+
+

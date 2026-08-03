@@ -1,4 +1,4 @@
-// handlers/ride/rideRequest.handler.ts
+﻿// handlers/ride/rideRequest.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Passenger } from '../../../modules/passenger/passenger.model';
@@ -15,6 +15,7 @@ import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { notifyNearbyDrivers } from '../../../utils/notifyDrivers.utils';
 import { fetchDriversWithinRadius } from '../../../utils/geo.utils';
+import { Setting } from '../../../modules/settings/settings.model';
 
 export const rideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -42,7 +43,15 @@ export const rideRequestHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io    = getIO();
 
-    // ✅ Check available drivers BEFORE creating ride/passenger
+    const cancelSetting = await Setting.findOne({
+      key: 'matchingLastNotifyHours',
+    }).lean();
+    const cancelHours = Number(cancelSetting?.value ?? 24);
+    const hoursUntilDeparture =
+      (departureDateTime.getTime() - Date.now()) / 3600000;
+    const isFutureScheduledRide = hoursUntilDeparture > cancelHours;
+
+    // âœ… Check available drivers BEFORE creating ride/passenger
     const eligibleDrivers = await fetchDriversWithinRadius(
       redis,
       pickup.lng,
@@ -61,7 +70,7 @@ export const rideRequestHandler = eventHandler<any>(
         )
       : eligibleDrivers.length > 0;
 
-    if (!driversAvailable) {
+    if (!driversAvailable && !isFutureScheduledRide) {
       return callback?.({
         success: false,
         message: 'No drivers available for this date and time. Please try a different time.',
@@ -69,7 +78,7 @@ export const rideRequestHandler = eventHandler<any>(
       });
     }
 
-    // ── Real distance & ETA ───────────────────────────────────────────────────
+    // â”€â”€ Real distance & ETA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let actualDistance = 0;
     let actualDuration = 0;
     try {
@@ -87,11 +96,11 @@ export const rideRequestHandler = eventHandler<any>(
       actualDuration = Math.ceil((actualDistance / 30) * 60);
     }
 
-    // ── Route geometry ────────────────────────────────────────────────────────
+    // â”€â”€ Route geometry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let routeGeometry = {};
     try { routeGeometry = await getRouteGeometry(pickup, destination); } catch { /* ignore */ }
 
-    // ── Fare breakdown ────────────────────────────────────────────────────────
+    // â”€â”€ Fare breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const fareBreakdown = await calculateFareBreakdown({
       distanceKm:     actualDistance,
       departureDate:  departureDateTime,
@@ -104,7 +113,7 @@ export const rideRequestHandler = eventHandler<any>(
     const roundedBreakdown = roundObjectNumbers(fareBreakdown);
     const fareType         = getFareType(departureDateTime);
 
-    // ── Determine totalSeats from vehicle for split rides ────────────────────
+    // â”€â”€ Determine totalSeats from vehicle for split rides â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // let totalSeats = requestedSeats;
     // if (type === RIDE_TYPE.split) {
     //   const vehicle = await Vehicle.findOne({
@@ -115,7 +124,7 @@ export const rideRequestHandler = eventHandler<any>(
     //   totalSeats = vehicle?.seats || requestedSeats;
     // }
 
-    // ── Create Ride ───────────────────────────────────────────────────────────
+    // â”€â”€ Create Ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const ride = await Ride.create({
       type,
       rideCreatedBy: userId,
@@ -129,7 +138,7 @@ export const rideRequestHandler = eventHandler<any>(
       routeGeometry,
     });
 
-    // ── Create Passenger ──────────────────────────────────────────────────────
+    // â”€â”€ Create Passenger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const passenger = await Passenger.create({
       userId,
       rideId:                   ride._id,
@@ -194,22 +203,24 @@ export const rideRequestHandler = eventHandler<any>(
       createdAt:           passenger.createdAt,
     };
 
-    // ── Notify drivers ────────────────────────────────────────────────────────
-    const notifiedCount = await notifyNearbyDrivers(
-      ride._id.toString(),
-      pickup,
-      ridePayload,
-      redis,
-      io,
-      passenger._id.toString(),
-      10,
-      requestedDriverId ? [requestedDriverId.toString()] : undefined,
-    );
+    // â”€â”€ Notify drivers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const notifiedCount = driversAvailable
+      ? await notifyNearbyDrivers(
+          ride._id.toString(),
+          pickup,
+          ridePayload,
+          redis,
+          io,
+          passenger._id.toString(),
+          10,
+          requestedDriverId ? [requestedDriverId.toString()] : undefined,
+        )
+      : 0;
 
-    console.log(`📡 Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);
+    console.log(`ðŸ“¡ Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);
 
-    // ── Rollback if no drivers were notified ──────────────────────────────────
-    if (notifiedCount === 0) {
+    // â”€â”€ Rollback if no drivers were notified â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if (notifiedCount === 0 && !isFutureScheduledRide) {
       await Ride.findByIdAndDelete(ride._id);
       await Passenger.findByIdAndDelete(passenger._id);
       return callback?.({
@@ -219,7 +230,7 @@ export const rideRequestHandler = eventHandler<any>(
       });
     }
 
-    // ── Redis ─────────────────────────────────────────────────────────────────
+    // â”€â”€ Redis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     await redis.hset(`ride:request:${ride._id}`, {
       userId,
       passengerId:        passenger._id.toString(),
@@ -231,6 +242,8 @@ export const rideRequestHandler = eventHandler<any>(
       departureTime,
       departureTimestamp: departureDateTime.getTime().toString(),
       notifiedCount:      notifiedCount.toString(),
+      selectedDriverId:   requestedDriverId ? requestedDriverId.toString() : '',
+      matchingStatus:     notifiedCount > 0 ? 'notified' : 'scheduled_pending',
       timestamp:          Date.now().toString(),
     });
 
@@ -239,14 +252,18 @@ export const rideRequestHandler = eventHandler<any>(
       Math.floor((departureDateTime.getTime() - Date.now()) / 1000) + 7200,
     );
     await redis.expire(`ride:request:${ride._id}`, ttlSeconds);
+    await redis.zadd('ride:matching:queue', departureDateTime.getTime(), ride._id.toString());
 
     return callback?.({
       success: true,
-      message: `Ride request created. ${notifiedCount} nearby driver(s) notified.`,
+      message: notifiedCount > 0
+        ? `Ride request created. ${notifiedCount} nearby driver(s) notified.`
+        : 'Ride request scheduled. We will keep looking for a driver before departure.',
       data: {
         rideId:            ride._id,
         passengerId:       passenger._id,
         notifiedDrivers:   notifiedCount,
+        matchingStatus:    notifiedCount > 0 ? 'notified' : 'scheduled_pending',
         estimatedFare:     roundedBreakdown.totalFare,
         estimatedDistance: roundTo2(actualDistance),
         estimatedDuration: actualDuration,
@@ -263,3 +280,6 @@ export const rideRequestHandler = eventHandler<any>(
     });
   },
 );
+
+
+
