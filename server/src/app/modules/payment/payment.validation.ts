@@ -1,4 +1,4 @@
-import { Types } from 'mongoose'
+﻿import { Types } from 'mongoose'
 import { z } from 'zod'
 
 const objectIdSchema = z.string().refine((val) => Types.ObjectId.isValid(val), {
@@ -9,10 +9,19 @@ const createValidationSchema = z.object({
   body: z.object({
     user: objectIdSchema,
     booking: objectIdSchema,
+    paymentMethodId: z.string().optional(),
+  }),
+})
+
+const confirmPaymentSchema = z.object({
+  body: z.object({
+    paymentIntentId: z.string({ message: 'Payment Intent ID is required!' }),
+    paymentId: objectIdSchema.optional(),
   }),
 })
 
 export const PaymentValidation = {
-  createValidationSchema
+  createValidationSchema,
+  confirmPaymentSchema,
 }
 

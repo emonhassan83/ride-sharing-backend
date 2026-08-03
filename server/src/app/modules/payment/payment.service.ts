@@ -1,4 +1,4 @@
-import Stripe from 'stripe';
+﻿import Stripe from 'stripe';
 import httpStatus from 'http-status';
 import QueryBuilder from '../../builder/QueryBuilder';
 import { Payment } from './payment.model';
@@ -12,7 +12,7 @@ import ApiError from '../../errors/ApiError';
 import { config } from '../../config/env.config';
 import { Booking } from '../booking/booking.model';
 import { generateTransactionId } from '../../utils/generateTransctionId';
-import { createCheckoutSession, paymentNotifyToUser } from './payment.utils';
+import { paymentNotifyToUser } from './payment.utils';
 import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
 import { Ride } from '../ride/ride.model';
@@ -27,13 +27,14 @@ const stripe = new Stripe(config.pay?.secretKey as string, {
 });
 
 /* =====================================================
-   🔹 CREATE PAYMENT INTENT / CHECKOUT SESSION
+   🔹 CREATE PAYMENT INTENT (IN-APP STRIPE SDK)
 ===================================================== */
 const createPaymentIntent = async (payload: {
   booking: string;
   user: string;
+  paymentMethodId?: string;
 }) => {
-  const { booking: bookingId, user: userId } = payload;
+  const { booking: bookingId, user: userId, paymentMethodId } = payload;
 
   // ── 1. Validate booking ───────────────────────────────────────────────────
   const booking = await Booking.findById(bookingId);
@@ -54,12 +55,48 @@ const createPaymentIntent = async (payload: {
   if (!user || user.isDeleted)
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
 
-  // ── 3. Get platform commission from settings ──────────────────────────────
+  // ── 3. Create / reuse Stripe customer for in-app SDK + saved cards ────────
+  let customerId = user.customerId;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      name: user.name || 'Customer',
+      email: user.email || undefined,
+      metadata: { userId: user._id.toString() },
+    });
+
+    customerId = customer.id;
+    await User.findByIdAndUpdate(userId, { customerId });
+  }
+
+  if (paymentMethodId) {
+    const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+
+    if (paymentMethod.type !== 'card') {
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'Only card payments are allowed');
+    }
+
+    if (
+      paymentMethod.customer &&
+      paymentMethod.customer.toString() !== customerId
+    ) {
+      throw new ApiError(
+        StatusCodes.FORBIDDEN,
+        'This card does not belong to this user'
+      );
+    }
+  }
+
+  const ephemeralKey = await stripe.ephemeralKeys.create(
+    { customer: customerId },
+    { apiVersion: '2026-06-24.dahlia' }
+  );
+
+  // ── 4. Get platform commission from settings ──────────────────────────────
   const commissionSetting = await Setting.findOne({
     key: 'platformCommissionPercent',
   }).lean();
 
-  const commissionPercent = Number(commissionSetting?.value ?? 10); // default 10%
+  const commissionPercent = Number(commissionSetting?.value ?? 10);
 
   const totalFare = Math.round(booking.totalFare * 100) / 100;
   const platformCommission =
@@ -67,11 +104,15 @@ const createPaymentIntent = async (payload: {
   const providerEarning =
     Math.round((totalFare - platformCommission) * 100) / 100;
 
+  if (totalFare <= 0) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid payment amount');
+  }
+
   console.log(
     `💰 Fare: ${totalFare} | Commission (${commissionPercent}%): ${platformCommission} | Provider: ${providerEarning}`
   );
 
-  // ── 4. Check existing unpaid payment ─────────────────────────────────────
+  // ── 5. Check existing unpaid payment ──────────────────────────────────────
   const transactionId = generateTransactionId();
 
   let payment = await Payment.findOne({
@@ -94,68 +135,94 @@ const createPaymentIntent = async (payload: {
       isPaid: false,
     });
   } else {
-    // Recalculate on retry (commission may have changed)
     payment.transactionId = transactionId;
+    payment.amount = totalFare;
     payment.platformCommission = platformCommission;
     payment.providerEarning = providerEarning;
+    payment.method = PAYMENT_METHOD.card;
     await payment.save();
   }
 
-  // ── 5. Create Stripe Checkout Session ────────────────────────────────────
-  const checkoutSession = await createCheckoutSession({
-    product: {
-      amount: totalFare,
-      name: `Ride Booking - ${booking._id}`,
-      quantity: 1,
+  // ── 6. Create Stripe PaymentIntent for frontend Stripe SDK ────────────────
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: Math.round(totalFare * 100),
+    currency: 'eur',
+    customer: customerId,
+    payment_method_types: ['card'],
+    ...(paymentMethodId ? { payment_method: paymentMethodId } : {}),
+    metadata: {
+      bookingId: bookingId.toString(),
+      userId: userId.toString(),
+      paymentId: payment._id.toString(),
     },
-    customer: {
-      name: user.name || 'Customer',
-      email: user.email || '',
-    },
-    paymentId: payment._id,
+    description: `Ride Booking - ${booking._id}`,
   });
 
-  return checkoutSession?.url;
+  payment.paymentIntentId = paymentIntent.id;
+  await payment.save();
+
+  return {
+    clientSecret: paymentIntent.client_secret,
+    paymentIntentId: paymentIntent.id,
+    paymentId: payment._id,
+    customerId,
+    ephemeralKey: ephemeralKey.secret,
+  };
 };
 
-const confirmPayment = async (query: Record<string, any>) => {
-  const { sessionId, paymentId } = query;
+const confirmPayment = async (payload: Record<string, any>) => {
+  const { paymentIntentId: requestedPaymentIntentId, paymentId } = payload;
 
   const session = await startSession();
-  let paymentIntentId: string | null = null;
+  let paymentIntentId: string | null = requestedPaymentIntentId || null;
   let transactionStarted = false;
   let recalcRideId: string | null = null;
 
   try {
-    const PaymentSession = await stripe.checkout.sessions.retrieve(sessionId);
-    paymentIntentId = PaymentSession.payment_intent as string;
-
-    if (PaymentSession.status !== 'complete') {
+    if (!paymentIntentId && !paymentId) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Payment session is not completed'
+        'Payment intent ID or payment ID is required'
       );
+    }
+
+    const paymentIntent = paymentIntentId
+      ? await stripe.paymentIntents.retrieve(paymentIntentId)
+      : null;
+
+    if (paymentIntent && paymentIntent.status !== 'succeeded') {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Payment not successful on Stripe'
+      );
+    }
+
+    paymentIntentId = paymentIntent?.id || paymentIntentId;
+    const resolvedPaymentId = paymentId || paymentIntent?.metadata?.paymentId;
+
+    if (!resolvedPaymentId) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Payment ID is required');
     }
 
     session.startTransaction();
     transactionStarted = true;
 
-    // ── 1. Payment check ──────────────────────────────────────────────────────
-    const payment = await Payment.findById(paymentId).session(session);
+    // â”€â”€ 1. Payment check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const payment = await Payment.findById(resolvedPaymentId).session(session);
     if (!payment) throw new ApiError(httpStatus.NOT_FOUND, 'Payment not found');
 
-    // ✅ Idempotency guard — already paid, skip everything
+    // âœ… Idempotency guard â€” already paid, skip everything
     if (payment.isPaid) {
       await session.commitTransaction();
       return payment;
     }
 
-    // ── 2. Booking check ──────────────────────────────────────────────────────
+    // â”€â”€ 2. Booking check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const booking = await Booking.findById(payment.booking).session(session);
     if (!booking) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
 
     if (booking.paymentStatus === PAYMENT_STATUS.paid) {
-      // Booking already paid but payment record not updated — sync it
+      // Booking already paid but payment record not updated â€” sync it
       await Payment.findByIdAndUpdate(
         payment._id,
         { isPaid: true, status: PAYMENT_STATUS.paid, paymentIntentId },
@@ -165,26 +232,26 @@ const confirmPayment = async (query: Record<string, any>) => {
       return payment;
     }
 
-    // ── 3. Update payment ─────────────────────────────────────────────────────
+    // â”€â”€ 3. Update payment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     payment.isPaid = true;
     payment.status = PAYMENT_STATUS.paid;
-    payment.paymentIntentId = paymentIntentId;
+    payment.paymentIntentId = paymentIntentId as string;
     await payment.save({ session });
 
-    // ── 4. Update booking ─────────────────────────────────────────────────────
+    // â”€â”€ 4. Update booking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     booking.paymentStatus = PAYMENT_STATUS.paid;
     booking.bookingStatus = BOOKING_STATUS.accepted;
     booking.amountPaid = booking.totalFare;
     await booking.save({ session });
 
-    // ── 4.5:  Update passenger ──────
+    // â”€â”€ 4.5:  Update passenger â”€â”€â”€â”€â”€â”€
     await Passenger.findByIdAndUpdate(
       booking.passengerId,
       { paymentStatus: PAYMENT_STATUS.paid },
       { returnDocument: 'after' }
     );
 
-    // ── 5. Update passenger & ride ────────────────────────────────────────────
+    // â”€â”€ 5. Update passenger & ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const passenger = await Passenger.findById(booking.passengerId).session(
       session
     );
@@ -198,7 +265,7 @@ const confirmPayment = async (query: Record<string, any>) => {
       recalcRideId = ride._id.toString();
     }
 
-    // ✅ Seat availability check
+    // âœ… Seat availability check
     const newBookedSeats =
       (ride.bookedSeats || 0) + (passenger.requestedSeats || 1);
     if (newBookedSeats > ride.totalSeats) {
@@ -208,20 +275,20 @@ const confirmPayment = async (query: Record<string, any>) => {
       );
     }
 
-    // ✅ Bug 5 fix: bookedSeats + malePassengers + femalePassengers all here
+    // âœ… Bug 5 fix: bookedSeats + malePassengers + femalePassengers all here
     await Ride.findByIdAndUpdate(
       ride._id,
       {
         $inc: {
           bookedSeats: passenger.requestedSeats || 1,
-          malePassengers: passenger.malePassengers || 0, // ✅ added
-          femalePassengers: passenger.femalePassengers || 0, // ✅ added
+          malePassengers: passenger.malePassengers || 0, // âœ… added
+          femalePassengers: passenger.femalePassengers || 0, // âœ… added
         },
       },
       { session }
     );
 
-    // ✅ Redis bookedSeats sync — also update driver hash
+    // âœ… Redis bookedSeats sync â€” also update driver hash
     const driverId = booking.driverId?.toString();
     if (driverId) {
       const redis = getRedisClient();
@@ -232,7 +299,7 @@ const confirmPayment = async (query: Record<string, any>) => {
       );
     }
 
-    // ── 6. Provider wallet update — duplicate safe ────────────────────────────
+    // â”€â”€ 6. Provider wallet update â€” duplicate safe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Only increment wallet if providerEarning > 0 and not already credited
     // We use paymentIntentId as the idempotency key stored on payment doc
     // Since payment.isPaid was false above, this is guaranteed to run once only
@@ -244,7 +311,7 @@ const confirmPayment = async (query: Record<string, any>) => {
       );
     }
 
-    // ── 7. Create chat ────────────────────────────────────────────────────────
+    // â”€â”€ 7. Create chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const existingChat = await Chat.findOne({ booking: booking._id }).session(
       session
     );
@@ -299,7 +366,7 @@ const confirmPayment = async (query: Record<string, any>) => {
 };
 
 /* =====================================================
-   🔹 PAY WITH WALLET (Direct Deduction)
+   ðŸ”¹ PAY WITH WALLET (Direct Deduction)
 ===================================================== */
 const payWithWallet = async (payload: { booking: string; user: string }) => {
   const { booking: bookingId, user: userId } = payload;
@@ -309,7 +376,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
   session.startTransaction();
 
   try {
-    // ── 1. Validate Booking ─────────────────────────────────────
+    // â”€â”€ 1. Validate Booking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const booking = await Booking.findById(bookingId).session(session);
     if (!booking)
       throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found');
@@ -325,7 +392,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       throw new ApiError(StatusCodes.BAD_REQUEST, 'Payment already completed');
     }
 
-    // ── 2. Validate User & Wallet Balance ───────────────────────
+    // â”€â”€ 2. Validate User & Wallet Balance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const user = await User.findById(userId).session(session);
     if (!user || user.isDeleted) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
@@ -340,7 +407,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       );
     }
 
-    // ── 3. Calculate Commission ────────────────────────────────
+    // â”€â”€ 3. Calculate Commission â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const commissionSetting = await Setting.findOne({
       key: 'platformCommissionPercent',
     }).lean();
@@ -353,7 +420,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
 
     const transactionId = generateTransactionId();
 
-    // ── 4. Create Payment Record ───────────────────────────────
+    // â”€â”€ 4. Create Payment Record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const payment = await Payment.create(
       [
         {
@@ -373,20 +440,20 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       { session }
     );
 
-    // ── 5. Deduct from User Wallet ─────────────────────────────
+    // â”€â”€ 5. Deduct from User Wallet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     await User.findByIdAndUpdate(
       userId,
       { $inc: { wallet: -totalFare } },
       { session, returnDocument: 'after' }
     );
 
-    // ── 6. Update Booking ───────────────────────────────────────
+    // â”€â”€ 6. Update Booking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     booking.paymentStatus = PAYMENT_STATUS.paid;
     booking.bookingStatus = BOOKING_STATUS.accepted;
     booking.amountPaid = totalFare;
     await booking.save({ session });
 
-    // ── 7. Credit Provider Wallet ───────────────────────────────
+    // â”€â”€ 7. Credit Provider Wallet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (providerEarning > 0) {
       await User.findByIdAndUpdate(
         booking.driverId,
@@ -395,7 +462,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       );
     }
 
-    // ── 8. Update Ride & Passenger (if needed) ─────────────────
+    // â”€â”€ 8. Update Ride & Passenger (if needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const passenger = await Passenger.findById(booking.passengerId).session(
       session
     );
@@ -436,7 +503,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       }
     }
 
-    // ── 9. Create Chat ─────────────────────────────────────────
+    // â”€â”€ 9. Create Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const existingChat = await Chat.findOne({ booking: booking._id }).session(
       session
     );
@@ -489,7 +556,7 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
     isPaid: true,
   };
 
-  // ── Date Range Filter ─────────────────────────────────────
+  // â”€â”€ Date Range Filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (query.dateFrom || query.dateTo) {
     filter.createdAt = {};
     if (query.dateFrom) {
@@ -500,14 +567,14 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
     }
   }
 
-  // ── Amount Range Filter ───────────────────────────────────
+  // â”€â”€ Amount Range Filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (query.minAmount || query.maxAmount) {
     filter.amount = {};
     if (query.minAmount) filter.amount.$gte = Number(query.minAmount);
     if (query.maxAmount) filter.amount.$lte = Number(query.maxAmount);
   }
 
-  console.log('🔍 Final Filter Applied:', JSON.stringify(filter, null, 2));
+  console.log('ðŸ” Final Filter Applied:', JSON.stringify(filter, null, 2));
 
   // QueryBuilder-> search, sort, paginate, fields
   const paymentModel = new QueryBuilder(
@@ -628,3 +695,5 @@ export const PaymentService = {
   getAPaymentsFromDB,
   refundPayment,
 };
+
+

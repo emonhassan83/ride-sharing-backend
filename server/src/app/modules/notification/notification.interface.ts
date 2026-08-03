@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+﻿import { Types } from 'mongoose';
 
 export enum modeType {
   Auth = 'Auth',
@@ -6,6 +6,7 @@ export enum modeType {
   Provider = 'Provider',
   Ride = 'Ride',
   Passenger = 'Passenger',
+  Booking = 'Booking',
   Payment = 'Payment',
   Withdraw = 'Withdraw',
   Refund = 'Refund',

@@ -1,4 +1,4 @@
-// handlers/driver/driverAcceptRide.handler.ts
+﻿// handlers/driver/driverAcceptRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import {
   BOOKING_STATUS,
@@ -58,6 +58,26 @@ const calcEstimatedArrival = async (
   }
 };
 
+
+const notifyAdminForNewPendingBooking = async (booking: any) => {
+  try {
+    const admin = await User.findOne({ role: 'admin', isDeleted: false })
+      .select('_id fcmToken')
+      .lean();
+
+    if (!admin?.fcmToken) return;
+
+    await sendNotification([admin.fcmToken], {
+      receiver: admin._id,
+      message: 'New Pending Order',
+      description: 'A new order/booking is waiting for review.',
+      reference: booking._id.toString(),
+      modelType: modeType.Booking,
+    });
+  } catch (error) {
+    console.error('Admin pending booking notification failed:', error);
+  }
+};
 const buildAcceptedPayload = (
   rideId: string,
   passenger: any,
@@ -121,7 +141,7 @@ const cancelOtherPendingRequests = async (
   }
 };
 
-// ── Helper: get driver available seats for a specific ride ────────────────────
+// â”€â”€ Helper: get driver available seats for a specific ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const getDriverAvailableSeats = async (
   driverId: string,
   targetRideId: string,
@@ -179,7 +199,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io = getIO();
 
-    // ── Driver details from Redis (fallback to DB if TTL expired) ────────────
+    // â”€â”€ Driver details from Redis (fallback to DB if TTL expired) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let driverDetails = await redis.hgetall(`driver:${driverId}:details`);
     if (!driverDetails || !Object.keys(driverDetails).length) {
       const driverUser = await User.findById(driverId)
@@ -216,7 +236,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       await redis.expire(`driver:${driverId}:details`, 7200);
     }
 
-    // ── Driver's default vehicle — DB থেকে (Redis stale হতে পারে) ─────────────
+    // â”€â”€ Driver's default vehicle â€” DB à¦¥à§‡à¦•à§‡ (Redis stale à¦¹à¦¤à§‡ à¦ªà¦¾à¦°à§‡) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const defaultVehicle = await Vehicle.findOne({
       userId: driverId,
       isDefault: true,
@@ -226,11 +246,11 @@ export const driverAcceptRideHandler = eventHandler<any>(
       .lean();
 
     const vehicleId = defaultVehicle?._id ?? null;
-    // ✅ DB থেকে vehicle seats নাও
+    // âœ… DB à¦¥à§‡à¦•à§‡ vehicle seats à¦¨à¦¾à¦“
     const vehicleTotalSeats =
       defaultVehicle?.seats || parseInt(driverDetails.seats) || 4;
 
-    // ── Ride ──────────────────────────────────────────────────────────────────
+    // â”€â”€ Ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const ride = await Ride.findById(rideId);
     if (!ride) return callback?.({ success: false, message: 'Ride not found' });
 
@@ -243,7 +263,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
         message: 'This ride has already been accepted or cancelled.',
       });
 
-    // ✅ Available seats: same date + overlapping time এর rides বাদ দিয়ে
+    // âœ… Available seats: same date + overlapping time à¦à¦° rides à¦¬à¦¾à¦¦ à¦¦à¦¿à¦¯à¦¼à§‡
     const availableSeats = await getDriverAvailableSeats(
       driverId,
       rideId,
@@ -255,7 +275,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
     socket.join(`ride:${rideId}`);
     socket.join(`driver:${driverId}`);
 
-    // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
+    // â”€â”€ PRIVATE RIDE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId
         ? await Passenger.findOne({
@@ -305,6 +325,8 @@ export const driverAcceptRideHandler = eventHandler<any>(
         bookingStatus: BOOKING_STATUS.accepted,
         paymentStatus: PAYMENT_STATUS.pending,
       });
+
+      notifyAdminForNewPendingBooking(booking).catch(() => { });
 
       passenger.status = PASSENGER_STATUS.confirmed;
       await passenger.save();
@@ -364,7 +386,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
 
       io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
       console.log(
-        `✅ Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`
+        `âœ… Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`
       );
 
       return callback?.({
@@ -374,7 +396,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       });
     }
 
-    // ── SPLIT RIDE ────────────────────────────────────────────────────────────
+    // â”€â”€ SPLIT RIDE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (ride.type === RIDE_TYPE.split) {
       if (!passengerId)
         return callback?.({
@@ -439,6 +461,8 @@ export const driverAcceptRideHandler = eventHandler<any>(
         paymentStatus: PAYMENT_STATUS.pending,
       });
 
+      notifyAdminForNewPendingBooking(booking).catch(() => { });
+
       passenger.status = PASSENGER_STATUS.confirmed;
       await passenger.save();
 
@@ -489,7 +513,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
 
       io.to(`user:${passenger.userId.toString()}`).emit('ride:driver-accepted', payload);
       console.log(
-        `✅ Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
+        `âœ… Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
       );
 
       return callback?.({
@@ -509,3 +533,5 @@ export const driverAcceptRideHandler = eventHandler<any>(
     return callback?.({ success: false, message: 'Unknown ride type' });
   }
 );
+
+

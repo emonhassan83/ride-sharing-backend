@@ -1,4 +1,4 @@
-import catchAsync from '../../utils/catchAsync'
+﻿import catchAsync from '../../utils/catchAsync'
 import httpStatus from 'http-status'
 import sendResponse from '../../utils/sendResponse'
 import { PaymentService } from './payment.service'
@@ -8,13 +8,13 @@ const checkout = catchAsync(async (req, res) => {
 
   sendResponse(res, {
     code: httpStatus.OK,
-    message: 'payment link get successful',
+    message: 'Payment intent created successfully',
     data: result,
   })
 })
 
 const confirmPayment = catchAsync(async (req, res) => {
-  const result = await PaymentService.confirmPayment(req.query)
+  const result = await PaymentService.confirmPayment(req.body)
 
   sendResponse(res, {
     code: httpStatus.OK,
@@ -93,3 +93,4 @@ export const PaymentControllers = {
   getAPaymentByBookingId,
   refundPayment,
 }
+

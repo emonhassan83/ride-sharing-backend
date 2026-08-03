@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import { USER_ROLE } from '../user/user.constant';
 import { PaymentValidation } from './payment.validation';
 import { PaymentControllers } from './payment.controllers';
@@ -19,7 +19,11 @@ router.post(
   PaymentControllers.payWithWallet
 );
 
-router.get('/confirm-payment', PaymentControllers.confirmPayment);
+router.post(
+  '/confirm-payment',
+  validateRequest(PaymentValidation.confirmPaymentSchema),
+  PaymentControllers.confirmPayment
+);
 
 router.get('/', auth(USER_ROLE.admin), PaymentControllers.getAllPayments);
 
@@ -40,3 +44,4 @@ router.get(
 router.patch('/refund-payment', PaymentControllers.refundPayment);
 
 export const PaymentRoutes = router;
+
