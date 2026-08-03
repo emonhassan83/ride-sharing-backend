@@ -9,6 +9,7 @@ const router = express.Router();
 
 router.post(
   '/checkout',
+  auth(USER_ROLE.user),
   validateRequest(PaymentValidation.createValidationSchema),
   PaymentControllers.checkout
 );
@@ -44,4 +45,5 @@ router.get(
 router.patch('/refund-payment', PaymentControllers.refundPayment);
 
 export const PaymentRoutes = router;
+
 

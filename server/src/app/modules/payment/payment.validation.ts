@@ -7,7 +7,6 @@ const objectIdSchema = z.string().refine((val) => Types.ObjectId.isValid(val), {
 
 const createValidationSchema = z.object({
   body: z.object({
-    user: objectIdSchema,
     booking: objectIdSchema,
     paymentMethodId: z.string().optional(),
   }),
@@ -24,4 +23,5 @@ export const PaymentValidation = {
   createValidationSchema,
   confirmPaymentSchema,
 }
+
 

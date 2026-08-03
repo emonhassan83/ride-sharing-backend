@@ -4,7 +4,10 @@ import sendResponse from '../../utils/sendResponse'
 import { PaymentService } from './payment.service'
 
 const checkout = catchAsync(async (req, res) => {
-  const result = await PaymentService.createPaymentIntent(req.body)
+    const result = await PaymentService.createPaymentIntent({
+    ...req.body,
+    user: req.user.userId,
+  })
 
   sendResponse(res, {
     code: httpStatus.OK,
@@ -93,4 +96,5 @@ export const PaymentControllers = {
   getAPaymentByBookingId,
   refundPayment,
 }
+
 
