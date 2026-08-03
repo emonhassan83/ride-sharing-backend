@@ -258,7 +258,7 @@ const sendOtpViaTokenInPhone = async (
   });
 
   // === Mock mode check ===
-  const isDevelopment = config.environment === 'development';
+  const isDevelopment = config.environment !== 'production';
 
   if (isDevelopment) {
     console.log('🔑 [MOCK OTP] Phone:', phone);
@@ -332,7 +332,7 @@ const sendOtpViaDirectPhone = async (payload: { phone: string }) => {
   });
 
   // === Mock mode check ===
-  const isDevelopment = config.environment === 'development';
+  const isDevelopment = config.environment !== 'production';
 
   if (isDevelopment) {
     console.log('🔑 [MOCK OTP] Phone:', phone);

@@ -43,7 +43,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: myStrongRedisPassword
-      NODE_ENV: production
+      NODE_ENV: development
     volumes:
       - ./worker/logs:/app/logs
     networks:
@@ -63,7 +63,7 @@ services:
     env_file:
       - ./server/.env
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - TZ=Asia/Nicosia
       - TIME_ZONE=Asia/Nicosia
     healthcheck:
@@ -85,3 +85,4 @@ networks:
 
 volumes:
   splitride_redis_volume:
+
