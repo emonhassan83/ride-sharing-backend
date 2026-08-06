@@ -1,5 +1,6 @@
 import { Model, Types } from 'mongoose'
 import { TWithdrawStatus } from './withdraw.constant'
+import { TProviderType } from '../user/user.constant'
 
 export type TWithdraw = {
   _id?: string
@@ -8,11 +9,15 @@ export type TWithdraw = {
   booking: Types.ObjectId
   amount: number
   stripeTransferId?: string
+  ibanNumber?: string
+  providerType?: TProviderType
+  manualTransferReference?: string
   status: TWithdrawStatus
   proceedAt?: Date
   completedAt?: Date
-  note?: String
+  note?: string
   createdAt?: Date
 }
 
 export type TWithdrawModel = Model<TWithdraw, Record<string, unknown>>
+

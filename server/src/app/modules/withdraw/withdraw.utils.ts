@@ -24,12 +24,12 @@ export const sendWithdrawNotify = async (
 
     case 'proceed':
       message = 'Withdrawal Processing Started'
-      description = `Your withdrawal of ${formattedAmount} has been approved and is now being processed. Funds will be transferred shortly.`
+      description = `Your withdrawal of ${formattedAmount} has been approved and is being processed by admin.`
       break
 
     case 'completed':
       message = 'Withdrawal Completed'
-      description = `Your withdrawal of ${formattedAmount} has been successfully completed! Check your bank/stripe account.`
+      description = `Your withdrawal of ${formattedAmount} has been successfully completed! Check your bank account.`
       break
 
     default:

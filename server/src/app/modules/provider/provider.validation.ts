@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PROVIDER_STATUS } from './provider.constant';
+import { PROVIDER_TYPE } from '../user/user.constant';
 
 const imageUrlSchema = z
   .string({ message: 'Image URL is required' })
@@ -11,6 +12,10 @@ const imageUrlSchema = z
 // ─────────────────────────────────────────────────────────────
 const createProviderZodSchema = z.object({
   body: z.object({
+    type: z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]], {
+      message: 'Provider type must be either self-employed or company',
+    }),
+
     companyName: z
       .string()
       .min(3, { message: 'Company name must be at least 3 characters long' })
@@ -27,9 +32,9 @@ const createProviderZodSchema = z.object({
       .min(3, { message: 'VAT number is required' })
       .trim(),
 
-    socialInsurance: z
+    ibanNumber: z
       .string()
-      .min(3, { message: 'Social insurance number is required' })
+      .min(3, { message: 'IBAN number is required' })
       .trim(),
 
     cnicFront: imageUrlSchema,
@@ -56,9 +61,10 @@ const updateProviderZodSchema = z.object({
       .trim()
       .optional(),
 
+    type: z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]]).optional(),
     companyReg: z.string().trim().optional(),
     vatNumber: z.string().trim().optional(),
-    socialInsurance: z.string().trim().optional(),
+    ibanNumber: z.string().trim().optional(),
 
     cnicFront: imageUrlSchema.optional(),
     cnicBack: imageUrlSchema.optional(),
@@ -108,9 +114,9 @@ const updateStatusZodSchema = z.object({
     ),
 });
 
-
 export const ProviderValidation = {
   createProviderZodSchema,
   updateProviderZodSchema,
   updateStatusZodSchema
 };
+

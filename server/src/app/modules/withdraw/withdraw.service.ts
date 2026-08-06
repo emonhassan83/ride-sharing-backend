@@ -7,6 +7,7 @@ import { Withdraw } from './withdraw.model';
 import { TWithdrawStatus, WITHDRAW_STATUS } from './withdraw.constant';
 import { sendWithdrawNotify } from './withdraw.utils';
 import { User } from '../user/user.model';
+import { Provider } from '../provider/provider.model';
 import ApiError from '../../errors/ApiError';
 import stripeService from '../../config/stripe.config'
 
@@ -24,14 +25,19 @@ const addWithdraw = async (
     if (!user || user.isDeleted)
       throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
 
-    // ── 2. Stripe account connected কিনা check ────────────────────────────────
-    if (!user.stripeAccountId)
+    // -- 2. Validate provider payout IBAN snapshot -----------------------------
+    const providerProfile = await Provider.findOne({ userId })
+      .select('ibanNumber type companyName')
+      .session(session);
+
+    if (!providerProfile?.ibanNumber) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Please connect your Stripe account before requesting a withdrawal.',
-      )
+        'Please add your IBAN number before requesting a withdrawal.',
+      );
+    }
 
-    // ── 3. Amount validation ──────────────────────────────────────────────────
+    // -- 3. Amount validation --------------------------------------------------
     const { amount } = payload;
     if (!amount || amount <= 0)
       throw new ApiError(httpStatus.BAD_REQUEST, 'Withdrawal amount must be greater than 0');
@@ -61,6 +67,8 @@ const addWithdraw = async (
         {
           user:   userId,
           amount,
+          ibanNumber: providerProfile.ibanNumber,
+          providerType: providerProfile.type,
           status: WITHDRAW_STATUS.pending,
         },
       ],
@@ -181,15 +189,15 @@ const getAWithdrawFromDB = async (id: string) => {
 };
 
 // ── Update withdrawal status (admin only) ─────────────────────────────────────
-// Flow: pending → proceed (wallet deduct + stripe transfer)
+// Flow: pending -> proceed (wallet deduct + manual bank transfer processing)
 //       pending → cancelled (no wallet touch)
 //       proceed → cancelled (wallet refund)
 //       proceed → completed (webhook করে অথবা admin manually)
 const updateWithdrawFromDB = async (
   id: string,
-  payload: { status: TWithdrawStatus; note?: string },
+  payload: { status: TWithdrawStatus; note?: string; manualTransferReference?: string },
 ) => {
-  const { status, note } = payload
+  const { status, note, manualTransferReference } = payload
  
   const session = await mongoose.startSession()
   session.startTransaction()
@@ -204,7 +212,7 @@ const updateWithdrawFromDB = async (
       throw new ApiError(httpStatus.BAD_REQUEST, 'Completed withdrawals cannot be updated')
  
     // ════════════════════════════════════════════════════════════════
-    // pending → proceed: wallet deduct + Stripe transfer
+    // pending -> proceed: wallet deduct + manual bank transfer processing
     // ════════════════════════════════════════════════════════════════
     if (status === WITHDRAW_STATUS.proceed) {
       if (currentStatus !== WITHDRAW_STATUS.pending)
@@ -214,19 +222,13 @@ const updateWithdrawFromDB = async (
         )
  
       const provider = await User.findById(withdraw.user)
-        .select('stripeAccountId wallet')
+        .select('wallet')
         .session(session)
  
       if (!provider)
         throw new ApiError(httpStatus.NOT_FOUND, 'Provider not found')
  
-      if (!provider.stripeAccountId)
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'Provider has not connected a Stripe account.',
-        )
- 
-      // Atomic wallet deduct
+      // Atomic wallet deduct. Admin completes the actual bank transfer manually.
       const updatedProvider = await User.findOneAndUpdate(
         { _id: withdraw.user, wallet: { $gte: withdraw.amount } },
         { $inc: { wallet: -withdraw.amount } },
@@ -239,42 +241,18 @@ const updateWithdrawFromDB = async (
           'Insufficient wallet balance or concurrent request detected.',
         )
  
-      // Stripe transfer
-      let stripeTransfer: any
-      try {
-        stripeTransfer = await stripeService.transfer(
-          Math.round(withdraw.amount * 100), // dollars → cents
-          provider.stripeAccountId,
-          'usd',
-        )
-      } catch (stripeError: any) {
-        // Stripe fail → wallet restore
-        await User.findByIdAndUpdate(
-          withdraw.user,
-          { $inc: { wallet: withdraw.amount } },
-          { session },
-        )
-        throw new ApiError(
-          httpStatus.BAD_GATEWAY,
-          `Stripe transfer failed: ${stripeError.message}. Wallet restored.`,
-        )
-      }
+      withdraw.status = WITHDRAW_STATUS.proceed
+      withdraw.proceedAt = new Date()
+      if (note) withdraw.note = note
+      if (manualTransferReference) withdraw.manualTransferReference = manualTransferReference
  
-      withdraw.status           = WITHDRAW_STATUS.proceed
-      withdraw.proceedAt        = new Date()
-      withdraw.stripeTransferId = stripeTransfer.id
-      if (note) withdraw.note   = note
- 
-      console.log(`✅ Stripe transfer done | id: ${stripeTransfer.id} | amount: ${withdraw.amount}`)
+      console.log(`Manual withdrawal processing started | withdraw: ${withdraw._id} | amount: ${withdraw.amount}`)
     }
- 
-    // ════════════════════════════════════════════════════════════════
-    // → cancelled
-    // ════════════════════════════════════════════════════════════════
     else if (status === WITHDRAW_STATUS.cancelled) {
       withdraw.status    = WITHDRAW_STATUS.cancelled
       withdraw.proceedAt = undefined
       if (note) withdraw.note = note
+      if (manualTransferReference) withdraw.manualTransferReference = manualTransferReference
  
       // proceed থেকে cancel → wallet already deducted ছিল, refund করো
       if (currentStatus === WITHDRAW_STATUS.proceed) {
@@ -301,6 +279,7 @@ const updateWithdrawFromDB = async (
       withdraw.status      = WITHDRAW_STATUS.completed
       withdraw.completedAt = new Date()
       if (note) withdraw.note = note
+      if (manualTransferReference) withdraw.manualTransferReference = manualTransferReference
     }
  
     else {
@@ -367,3 +346,4 @@ export const WithdrawService = {
   updateWithdrawFromDB,
   handleStripeWebhook
 };
+

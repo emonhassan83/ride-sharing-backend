@@ -13,6 +13,7 @@ const updateValidationSchema = z.object({
       message: 'Withdraw status is required!',
     }),
     note: z.string().optional(),
+    manualTransferReference: z.string().trim().optional(),
   }),
 });
 
@@ -20,3 +21,4 @@ export const WithdrawValidation = {
   updateValidationSchema,
   createValidationSchema,
 };
+

@@ -16,6 +16,10 @@ export const USER_STATUS = {
   blocked: 'blocked',
 } as const
 
+export const PROVIDER_TYPE = {
+  selfEmployed: 'self-employed',
+  company: 'company',
+} as const
 export const GENDER = {
   male: 'male',
   female: 'female',
@@ -31,3 +35,5 @@ export const registerWith = [
 export type TUserRole = keyof typeof USER_ROLE
 export type TUserStatus = keyof typeof USER_STATUS
 export type TGender = keyof typeof GENDER
+export type TProviderType = (typeof PROVIDER_TYPE)[keyof typeof PROVIDER_TYPE]
+
