@@ -15,7 +15,7 @@ import {
   REFUND_TYPE,
 } from '../modules/refund/refund.constant';
 
-// â”€â”€ Surcharge based on total seats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Surcharge based on total seats â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 export const getSurchargeMultiplier = (
   totalSeats: number
 ): { multiplier: number; percent: number } => {
@@ -24,7 +24,7 @@ export const getSurchargeMultiplier = (
   return { multiplier: 1.0, percent: 0 };
 };
 
-// â”€â”€ Calculate single passenger fare for split ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Calculate single passenger fare for split ride â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 export const calcSplitPassengerFare = async (
   distanceKm: number,
   requestedSeats: number,
@@ -82,7 +82,7 @@ export const calcSplitPassengerFare = async (
   };
 };
 
-// â”€â”€ Redis distributed lock (Case 31) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Redis distributed lock (Case 31) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 export const acquireRecalculateLock = async (
   rideId: string,
   ttl = 15
@@ -104,7 +104,7 @@ export const releaseRecalculateLock = async (rideId: string): Promise<void> => {
   await getRedisClient().del(`ride:recalculate:lock:${rideId}`);
 };
 
-// â”€â”€ Refund to wallet (Case 26 â€” always wallet, never card) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Refund to wallet (Case 26 â\u20AC” always wallet, never card) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 export const refundToWallet = async (
   userId: string,
   amount: number,
@@ -115,14 +115,14 @@ export const refundToWallet = async (
   const rounded = Math.round(amount * 100) / 100;
 
   await User.findByIdAndUpdate(userId, { $inc: { wallet: rounded } });
-  console.log(`ðŸ’° Wallet refund Â£${rounded} â†’ ${userId} (${reason})`);
+  console.log(`ðŸ’° Wallet refund Â\u20AC${rounded} â†’ ${userId} (${reason})`);
 
   const user = await User.findById(userId);
   if (user && user?.fcmToken) {
     sendNotification([user.fcmToken], {
       receiver: userId,
       message: 'Ride refund amount transfer',
-      description: `Â£${rounded.toFixed(2)} refunded to your wallet.`,
+      description: `Â\u20AC${rounded.toFixed(2)} refunded to your wallet.`,
       // reference:   rideId,
       modelType: modeType.Refund,
     }).catch((err: any) =>
@@ -131,7 +131,7 @@ export const refundToWallet = async (
   }
 };
 
-// â”€â”€ Charge user â€” wallet first, card fallback (Case 11) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Charge user â\u20AC” wallet first, card fallback (Case 11) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 export const chargeUser = async (
   userId: string,
   amount: number,
@@ -143,7 +143,7 @@ export const chargeUser = async (
 
   const rounded = Math.round(amount * 100) / 100;
 
-  // â”€â”€ Idempotency check (Case 33) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”\u20ACâ”\u20AC Idempotency check (Case 33) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
   const redis = getRedisClient();
   const idemKey = `payment:charged:${rideId}:${userId}:${Math.round(
     rounded * 100
@@ -157,7 +157,7 @@ export const chargeUser = async (
 
   const wallet = user.wallet ?? 0;
 
-  // â”€â”€ Full wallet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”\u20ACâ”\u20AC Full wallet â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
   if (wallet >= rounded) {
     await User.findByIdAndUpdate(userId, { $inc: { wallet: -rounded } });
     await redis.set(idemKey, 'wallet', 'EX', 86400);
@@ -169,7 +169,7 @@ export const chargeUser = async (
     return { success: true, method: 'wallet' };
   }
 
-  // â”€â”€ Partial wallet + card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”\u20ACâ”\u20AC Partial wallet + card â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
   const walletPortion = wallet;
   const cardPortion = Math.round((rounded - walletPortion) * 100) / 100;
 
@@ -189,7 +189,7 @@ export const chargeUser = async (
 
       await stripe.paymentIntents.create({
         amount: Math.round(cardPortion * 100),
-        currency: 'gbp',
+        currency: 'eur',
         customer: user.customerId,
         payment_method: defaultPM,
         confirm: true,
@@ -206,7 +206,7 @@ export const chargeUser = async (
       });
       return { success: true, method };
     } catch (err: any) {
-      // â”€â”€ Rollback wallet (Case 11) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // â”\u20ACâ”\u20AC Rollback wallet (Case 11) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
       if (walletPortion > 0) {
         await User.findByIdAndUpdate(userId, {
           $inc: { wallet: walletPortion },
@@ -234,7 +234,7 @@ export const chargeUser = async (
   return { success: false, method: 'failed', failReason: 'no_payment_method' };
 };
 
-// â”€â”€ Main recalculate (Cases 6, 29, 30, 31) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Main recalculate (Cases 6, 29, 30, 31) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 export const recalculateSplitFares = async (
   rideId: string,
   reason:
@@ -244,7 +244,7 @@ export const recalculateSplitFares = async (
     | 'passenger_rejected',
   io?: any
 ): Promise<void> => {
-  // â”€â”€ Acquire lock (Case 31) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”\u20ACâ”\u20AC Acquire lock (Case 31) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
   let locked = false;
   for (let i = 0; i < 3; i++) {
     locked = await acquireRecalculateLock(rideId);
@@ -297,7 +297,7 @@ export const recalculateSplitFares = async (
       const oldFare = passenger.estimatedFare || 0;
       const diff = Math.round((newFare.estimatedFare - oldFare) * 100) / 100;
 
-      if (Math.abs(diff) < 0.01) continue; // Case 13 â€” ignore rounding noise
+      if (Math.abs(diff) < 0.01) continue; // Case 13 â\u20AC” ignore rounding noise
 
       if (diff < 0) {
         const refundAmount = Math.abs(diff);
@@ -331,7 +331,7 @@ export const recalculateSplitFares = async (
           io
         );
         if (!result.success) {
-          // Case 11 â€” flag for manual recovery
+          // Case 11 â\u20AC” flag for manual recovery
           await Passenger.findByIdAndUpdate(passenger._id, {
             paymentStatus: 'pending_recovery',
           });
@@ -359,8 +359,8 @@ export const recalculateSplitFares = async (
           reason,
           message:
             diff > 0
-              ? `Your fare increased by Â£${diff.toFixed(2)}.`
-              : `You saved Â£${Math.abs(diff).toFixed(2)}!`,
+              ? `Your fare increased by Â\u20AC${diff.toFixed(2)}.`
+              : `You saved Â\u20AC${Math.abs(diff).toFixed(2)}!`,
         });
       }
     }
@@ -377,7 +377,7 @@ export const recalculateSplitFares = async (
   }
 };
 
-// â”€â”€ Cancellation refund (Cases 20, 21) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Cancellation refund (Cases 20, 21) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 export const calculateCancellationRefund = async (
   paidAmount: number,
   bookingTime: Date,
@@ -447,7 +447,7 @@ export const calculateCancellationRefund = async (
   };
 };
 
-// â”€â”€ Transfer ride ownership (Case 3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Transfer ride ownership (Case 3) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 export const transferRideOwnership = async (
   rideId: string,
   cancelledUserId: string,
@@ -477,10 +477,11 @@ export const transferRideOwnership = async (
       rideId,
       newPickup: newOwner.pickup,
       newDestination: newOwner.destination,
-      message: 'Pickup updated â€” original creator cancelled.',
+      message: 'Pickup updated â\u20AC” original creator cancelled.',
     });
   }
 
   console.log(`âœ… Ride ${rideId} ownership â†’ user ${newOwner.userId}`);
   return true;
 };
+

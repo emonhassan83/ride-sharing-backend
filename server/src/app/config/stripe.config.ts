@@ -68,7 +68,7 @@ class StripeService {
   public async transfer(
     amount: number,
     accountId: string,
-    currency: string = 'usd',
+    currency: string = 'eur',
   ) {
     try {
       const balance = await this.stripe().balance.retrieve();
@@ -171,3 +171,4 @@ class StripeService {
 }
 
 export default new StripeService();
+

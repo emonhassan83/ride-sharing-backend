@@ -97,7 +97,7 @@ export const driverArrivedHandler = eventHandler<any>(
     if (!validStatuses.includes(ride.status as any))
       return callback?.({
         success: false,
-        message: `Cannot trigger arrived â€” status: ${ride.status}`,
+        message: `Cannot trigger arrived â\u20AC” status: ${ride.status}`,
       });
 
     const io = getIO();
@@ -106,7 +106,7 @@ export const driverArrivedHandler = eventHandler<any>(
     const night = isNightFare(ride.departureTime ?? '08:00');
     const waitingRatePerMinute = await getWaitingRatePerMinute(night);
 
-    // â”€â”€ Helper: notify passenger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC Helper: notify passenger â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     const notifyPassenger = async (passenger: any, isLastArrival = false) => {
       await Passenger.findByIdAndUpdate(passenger._id, {
         arriveAt: new Date(),
@@ -135,7 +135,7 @@ export const driverArrivedHandler = eventHandler<any>(
         isLastArrival,
       });
 
-      // âœ… FCM push â€” driver arrived
+      // âœ… FCM push â\u20AC” driver arrived
       const riderUser = await User.findById(passenger.userId)
         .select('fcmToken')
         .lean();
@@ -150,7 +150,7 @@ export const driverArrivedHandler = eventHandler<any>(
         }).catch(() => {});
       }
 
-      // â”€â”€ 2 min grace â†’ waiting charge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // â”\u20ACâ”\u20AC 2 min grace â†’ waiting charge â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
       setTimeout(
         async () => {
           const p = await Passenger.findById(passenger._id);
@@ -170,7 +170,7 @@ export const driverArrivedHandler = eventHandler<any>(
               ratePerMinute: waitingRatePerMinute,
               ratePerHour: Math.round(waitingRatePerMinute * 60 * 100) / 100,
               startedAt: waitingStartedAt,
-              message: `Waiting charge started: Â£${waitingRatePerMinute.toFixed(4)}/min`,
+              message: `Waiting charge started: Â\u20AC${waitingRatePerMinute.toFixed(4)}/min`,
             }
           );
 
@@ -180,12 +180,12 @@ export const driverArrivedHandler = eventHandler<any>(
             message: 'Waiting charge is now active for this passenger.',
           });
 
-          // âœ… FCM push â€” waiting charge started
+          // âœ… FCM push â\u20AC” waiting charge started
           if (riderUser?.fcmToken) {
             sendNotification([riderUser.fcmToken], {
               receiver: passenger.userId,
               message: 'Waiting Charge Started!',
-              description: `Driver is waiting. Charge: Â£${waitingRatePerMinute.toFixed(4)}/min. Please arrive ASAP.`,
+              description: `Driver is waiting. Charge: Â\u20AC${waitingRatePerMinute.toFixed(4)}/min. Please arrive ASAP.`,
               reference: rideId,
               modelType: modeType.Ride,
             }).catch(() => {});
@@ -195,7 +195,7 @@ export const driverArrivedHandler = eventHandler<any>(
       );
     };
 
-    // â”€â”€ PRIVATE RIDE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC PRIVATE RIDE â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId ? await Passenger.findOne({
          _id: passengerId,
@@ -247,7 +247,7 @@ export const driverArrivedHandler = eventHandler<any>(
       });
     }
 
-    // â”€â”€ SPLIT â€” specific passenger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC SPLIT â\u20AC” specific passenger â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     if (passengerId && !arriveAll) {
       const passenger = await Passenger.findOne({
         _id: passengerId,
@@ -304,7 +304,7 @@ export const driverArrivedHandler = eventHandler<any>(
       });
     }
 
-    // â”€â”€ SPLIT â€” all passengers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC SPLIT â\u20AC” all passengers â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     if (arriveAll) {
       const passengers = await Passenger.find({
         rideId,
@@ -360,7 +360,7 @@ export const driverArrivedHandler = eventHandler<any>(
         message:
           notifiedCount > 0
             ? `Arrived notification sent to ${notifiedCount} passenger(s).${skippedCount > 0 ? ` ${skippedCount} skipped.` : ''}`
-            : 'No passengers notified â€” not near any pickup.',
+            : 'No passengers notified â\u20AC” not near any pickup.',
         data: { results, notifiedCount, skippedCount },
       });
     }
@@ -371,3 +371,4 @@ export const driverArrivedHandler = eventHandler<any>(
     });
   }
 );
+

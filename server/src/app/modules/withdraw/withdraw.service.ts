@@ -1,4 +1,4 @@
-// â”€â”€ withdraw.service.ts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC withdraw.service.ts â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
@@ -9,9 +9,8 @@ import { sendWithdrawNotify } from './withdraw.utils';
 import { User } from '../user/user.model';
 import { Provider } from '../provider/provider.model';
 import ApiError from '../../errors/ApiError';
-import stripeService from '../../config/stripe.config'
 
-// â”€â”€ Create withdrawal request â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Create withdrawal request â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 const addWithdraw = async (
   payload: { amount: number },
   userId: string,
@@ -20,24 +19,12 @@ const addWithdraw = async (
   session.startTransaction();
 
   try {
-    // â”€â”€ 1. Validate user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC 1. Validate user â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     const user = await User.findById(userId).session(session);
     if (!user || user.isDeleted)
       throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
 
-    // -- 2. Validate provider payout IBAN snapshot -----------------------------
-    const providerProfile = await Provider.findOne({ userId })
-      .select('ibanNumber companyName')
-      .session(session);
-
-    if (!providerProfile?.ibanNumber) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Please add your IBAN number before requesting a withdrawal.',
-      );
-    }
-
-    // -- 3. Amount validation --------------------------------------------------
+    // -- 2. Amount validation --------------------------------------------------
     const { amount } = payload;
     if (!amount || amount <= 0)
       throw new ApiError(httpStatus.BAD_REQUEST, 'Withdrawal amount must be greater than 0');
@@ -46,10 +33,10 @@ const addWithdraw = async (
     if (amount > walletBalance)
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Insufficient balance. Your current balance is ${walletBalance.toFixed(2)}, but you requested ${amount.toFixed(2)}.`,
+        `Insufficient balance. Your current balance is \u20AC${walletBalance.toFixed(2)}, but you requested \u20AC${amount.toFixed(2)}.`,
       );
 
-    // â”€â”€ 4. One pending request at a time â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC 4. One pending request at a time â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     const pendingRequest = await Withdraw.findOne({
       user: userId,
       status: WITHDRAW_STATUS.pending,
@@ -61,14 +48,12 @@ const addWithdraw = async (
         'You already have a pending withdrawal request. Please wait until it is processed.',
       );
 
-    // â”€â”€ 5. Create withdrawal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC 5. Create withdrawal â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     const [withdraw] = await Withdraw.create(
       [
         {
           user:   userId,
           amount,
-          ibanNumber: providerProfile.ibanNumber,
-          providerType: user.type,
           status: WITHDRAW_STATUS.pending,
         },
       ],
@@ -86,16 +71,16 @@ const addWithdraw = async (
   }
 };
 
-// â”€â”€ Get all withdrawals (admin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Get all withdrawals (admin) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
   const filter: any = {};
 
-  // â”€â”€ Status Filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”\u20ACâ”\u20AC Status Filter â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
   if (query.status) {
     filter.status = query.status;
   }
 
-  // â”€â”€ Date Range Filter (createdAt) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”\u20ACâ”\u20AC Date Range Filter (createdAt) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
   if (query.dateFrom || query.dateTo) {
     filter.createdAt = {};
     if (query.dateFrom) {
@@ -106,7 +91,7 @@ const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
     }
   }
 
-  // â”€â”€ Amount Range Filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”\u20ACâ”\u20AC Amount Range Filter â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
   if (query.minAmount || query.maxAmount) {
     filter.amount = {};
     if (query.minAmount) {
@@ -117,7 +102,7 @@ const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
     }
   }
 
-  // â”€â”€ User Filter (by userId) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”\u20ACâ”\u20AC User Filter (by userId) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
   if (query.userId) {
     filter.user = query.userId;
   }
@@ -147,7 +132,7 @@ const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
   };
 };
 
-// â”€â”€ Get my withdrawals (provider) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Get my withdrawals (provider) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 const getMyWithdrawsFromDB = async (
   query: Record<string, unknown>,
   userId: string,
@@ -179,7 +164,7 @@ const getMyWithdrawsFromDB = async (
   };
 };
 
-// â”€â”€ Get single withdrawal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”\u20ACâ”\u20AC Get single withdrawal â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
 const getAWithdrawFromDB = async (id: string) => {
   const result = await Withdraw.findById(id).populate([
     { path: 'user', select: 'name email profileImage phone' },
@@ -188,109 +173,75 @@ const getAWithdrawFromDB = async (id: string) => {
   return result;
 };
 
-// â”€â”€ Update withdrawal status (admin only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Flow: pending -> proceed (wallet deduct + manual bank transfer processing)
-//       pending â†’ cancelled (no wallet touch)
-//       proceed â†’ cancelled (wallet refund)
-//       proceed â†’ completed (webhook à¦•à¦°à§‡ à¦…à¦¥à¦¬à¦¾ admin manually)
+// â”\u20ACâ”\u20AC Update withdrawal status (admin only) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// Flow: pending -> completed (wallet deduct + IBAN snapshot)
+//       pending -> cancelled (no wallet touch)
 const updateWithdrawFromDB = async (
   id: string,
-  payload: { status: TWithdrawStatus; note?: string; manualTransferReference?: string },
+  payload: { status: TWithdrawStatus; note?: string },
 ) => {
-  const { status, note, manualTransferReference } = payload
- 
+  const { status, note } = payload
+
   const session = await mongoose.startSession()
   session.startTransaction()
- 
+
   try {
     const withdraw = await Withdraw.findById(id).session(session)
     if (!withdraw) throw new ApiError(httpStatus.NOT_FOUND, 'Withdraw not found')
- 
+
     const currentStatus = withdraw.status
- 
+
     if (currentStatus === WITHDRAW_STATUS.completed)
       throw new ApiError(httpStatus.BAD_REQUEST, 'Completed withdrawals cannot be updated')
- 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // pending -> proceed: wallet deduct + manual bank transfer processing
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    if (status === WITHDRAW_STATUS.proceed) {
-      if (currentStatus !== WITHDRAW_STATUS.pending)
+
+    if (currentStatus !== WITHDRAW_STATUS.pending)
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Cannot update withdrawal from "${currentStatus}" status.`,
+      )
+
+    if (status === WITHDRAW_STATUS.completed) {
+      const providerProfile = await Provider.findOne({ userId: withdraw.user })
+        .select('ibanNumber')
+        .session(session)
+
+      if (!providerProfile?.ibanNumber) {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
-          `Cannot move from "${currentStatus}" to "proceed". Only pending withdrawals can be proceeded.`,
+          'Please add your IBAN number before completing this withdrawal.',
         )
- 
-      const provider = await User.findById(withdraw.user)
-        .select('wallet')
-        .session(session)
- 
-      if (!provider)
-        throw new ApiError(httpStatus.NOT_FOUND, 'Provider not found')
- 
-      // Atomic wallet deduct. Admin completes the actual bank transfer manually.
+      }
+
       const updatedProvider = await User.findOneAndUpdate(
         { _id: withdraw.user, wallet: { $gte: withdraw.amount } },
         { $inc: { wallet: -withdraw.amount } },
         { session, returnDocument: 'after' },
       )
- 
+
       if (!updatedProvider)
         throw new ApiError(
           httpStatus.BAD_REQUEST,
           'Insufficient wallet balance or concurrent request detected.',
         )
- 
-      withdraw.status = WITHDRAW_STATUS.proceed
-      withdraw.proceedAt = new Date()
-      if (note) withdraw.note = note
-      if (manualTransferReference) withdraw.manualTransferReference = manualTransferReference
- 
-      console.log(`Manual withdrawal processing started | withdraw: ${withdraw._id} | amount: ${withdraw.amount}`)
-    }
-    else if (status === WITHDRAW_STATUS.cancelled) {
-      withdraw.status    = WITHDRAW_STATUS.cancelled
-      withdraw.proceedAt = undefined
-      if (note) withdraw.note = note
-      if (manualTransferReference) withdraw.manualTransferReference = manualTransferReference
- 
-      // proceed à¦¥à§‡à¦•à§‡ cancel â†’ wallet already deducted à¦›à¦¿à¦², refund à¦•à¦°à§‹
-      if (currentStatus === WITHDRAW_STATUS.proceed) {
-        await User.findByIdAndUpdate(
-          withdraw.user,
-          { $inc: { wallet: withdraw.amount } },
-          { session },
-        )
-        console.log(`ðŸ’° Wallet refunded | user: ${withdraw.user} | amount: ${withdraw.amount}`)
-      }
-      // pending à¦¥à§‡à¦•à§‡ cancel â†’ wallet touch à¦¹à¦¯à¦¼à¦¨à¦¿, refund à¦¨à§‡à¦‡
-    }
- 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // proceed â†’ completed (admin manually or webhook)
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    else if (status === WITHDRAW_STATUS.completed) {
-      if (currentStatus !== WITHDRAW_STATUS.proceed)
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'Only "proceed" withdrawals can be marked as completed.',
-        )
- 
+
       withdraw.status      = WITHDRAW_STATUS.completed
       withdraw.completedAt = new Date()
+      withdraw.ibanNumber  = providerProfile.ibanNumber
       if (note) withdraw.note = note
-      if (manualTransferReference) withdraw.manualTransferReference = manualTransferReference
     }
- 
+    else if (status === WITHDRAW_STATUS.cancelled) {
+      withdraw.status = WITHDRAW_STATUS.cancelled
+      if (note) withdraw.note = note
+    }
     else {
-      throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status transition: ${currentStatus} â†’ ${status}`)
+      throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status transition: ${currentStatus} -> ${status}`)
     }
- 
+
     await withdraw.save({ session })
- 
+
     const user = await User.findById(withdraw.user).session(session)
     if (user) await sendWithdrawNotify(status, withdraw, user)
- 
+
     await session.commitTransaction()
     return withdraw
   } catch (error) {
@@ -302,48 +253,11 @@ const updateWithdrawFromDB = async (
     session.endSession()
   }
 }
-
-// â”€â”€ Stripe Webhook: transfer.paid â†’ mark completed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const handleStripeWebhook = async (rawBody: Buffer, signature: string) => {
-  let event: any
- 
-  try {
-    event = stripeService.getStripe().webhooks.constructEvent(
-      rawBody,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET as string,
-    )
-  } catch (err: any) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Webhook signature verification failed: ${err.message}`)
-  }
- 
-  if (event.type === 'transfer.paid') {
-    const transfer = event.data.object
-    const withdraw = await Withdraw.findOne({ stripeTransferId: transfer.id })
- 
-    if (withdraw && withdraw.status === WITHDRAW_STATUS.proceed) {
-      withdraw.status      = WITHDRAW_STATUS.completed
-      withdraw.completedAt = new Date()
-      await withdraw.save()
- 
-      const user = await User.findById(withdraw.user)
-      if (user) {
-        await sendWithdrawNotify(WITHDRAW_STATUS.completed, withdraw, user)
-      }
- 
-      console.log(`âœ… Webhook: Withdraw ${withdraw._id} marked completed via transfer ${transfer.id}`)
-    }
-  }
- 
-  return { received: true }
-}
-
 export const WithdrawService = {
   addWithdraw,
   getAllWithdrawsFromDB,
   getMyWithdrawsFromDB,
   getAWithdrawFromDB,
-  updateWithdrawFromDB,
-  handleStripeWebhook
+  updateWithdrawFromDB
 };
 

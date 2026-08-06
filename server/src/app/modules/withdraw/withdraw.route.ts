@@ -8,12 +8,6 @@ import auth from '../../middlewares/auth'
 const router = express.Router()
 
 router.post(
-  '/webhook/stripe',
-  express.raw({ type: 'application/json' }),
-  WithdrawControllers.stripeWebhook,
-)
-
-router.post(
   '/',
   auth(USER_ROLE.provider),
   validateRequest(WithdrawValidation.createValidationSchema),
@@ -38,3 +32,4 @@ router.get('/', auth(USER_ROLE.admin), WithdrawControllers.getAllWithdraw)
 router.get('/:id', auth(USER_ROLE.admin), WithdrawControllers.getAWithdraw)
 
 export const WithdrawRoutes = router
+

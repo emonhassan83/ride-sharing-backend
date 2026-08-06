@@ -67,7 +67,7 @@ export const deductWaitingCharge = async (
       if (defaultPM) {
         await stripe.paymentIntents.create({
           amount: Math.round(cardPortion * 100),
-          currency: 'gbp',
+          currency: 'eur',
           customer: user.customerId,
           payment_method: defaultPM,
           confirm: true,
@@ -85,3 +85,4 @@ export const deductWaitingCharge = async (
     amount,
   };
 };
+

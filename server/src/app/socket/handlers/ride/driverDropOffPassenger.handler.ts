@@ -32,7 +32,7 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
     if (ride.driverId?.toString() !== driverId)
       return callback?.({ success: false, message: 'You are not assigned to this ride' });
     if (ride.status !== RIDE_STATUS.started)
-      return callback?.({ success: false, message: `Cannot drop off â€” status: ${ride.status}` });
+      return callback?.({ success: false, message: `Cannot drop off â\u20AC” status: ${ride.status}` });
 
     const locationKey = `ride:${rideId}:live`;
     const locations = await redis.lrange(locationKey, 0, -1);
@@ -73,13 +73,13 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
         timestamp: Date.now(),
       }));
 
-      // â”€â”€ Notification to Passenger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // â”\u20ACâ”\u20AC Notification to Passenger â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
       const riderUser = await User.findById(passenger.userId).select('fcmToken').lean();
       if (riderUser?.fcmToken) {
         await sendNotification([riderUser.fcmToken], {
           receiver: passenger.userId,
           message: 'ðŸ›‘ You have been dropped off',
-          description: `Total fare: Â£${totalFare} (Base: Â£${baseFare} + Waiting: Â£${waitingCharge})`,
+          description: `Total fare: Â\u20AC${totalFare} (Base: Â\u20AC${baseFare} + Waiting: Â\u20AC${waitingCharge})`,
           reference: rideId,
           modelType: modeType.Ride
         }).catch(() => {});
@@ -162,3 +162,4 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
     return callback?.({ success: false, message: 'Unknown ride type' });
   }
 );
+

@@ -82,31 +82,31 @@ export const pickUpRideHandler = eventHandler<any>(
         message:       'You have been picked up!',
       };
 
-      // âœ… Rider à¦ notify â€” user room (reliable, rider always in this room)
+      // âœ… Rider à¦ notify â\u20AC” user room (reliable, rider always in this room)
       io.to(`user:${passenger.userId}`).emit('ride:passenger-picked-up', pickupPayload);
 
-      // FCM â€” rider
+      // FCM â\u20AC” rider
       const riderUser = await User.findById(passenger.userId).select('fcmToken').lean();
       if (riderUser?.fcmToken) {
         sendNotification([riderUser.fcmToken], {
           receiver:    passenger.userId,
           message:     'You Have Been Picked Up!',
           description: waitingCharge > 0
-            ? `Waiting charge of Â£${waitingCharge} has been deducted from your ${paymentResult.method}.`
+            ? `Waiting charge of Â\u20AC${waitingCharge} has been deducted from your ${paymentResult.method}.`
             : 'Driver has picked you up. Safe journey!',
           reference:   rideId,
           modelType:   modeType.Ride,
         }).catch(() => {});
       }
 
-      // FCM â€” driver
+      // FCM â\u20AC” driver
       const driverUser = await User.findById(driverId).select('fcmToken').lean();
       if (driverUser?.fcmToken) {
         sendNotification([driverUser.fcmToken], {
           receiver:    driverId,
           message:     'Passenger Picked Up',
           description: waitingCharge > 0
-            ? `Passenger picked up. Waiting charge Â£${waitingCharge} received.`
+            ? `Passenger picked up. Waiting charge Â\u20AC${waitingCharge} received.`
             : 'Passenger has been successfully picked up.',
           reference:   rideId,
           modelType:   modeType.Ride,
@@ -123,7 +123,7 @@ export const pickUpRideHandler = eventHandler<any>(
       return { waitingCharge, paymentResult };
     };
 
-    // â”€â”€ PRIVATE RIDE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC PRIVATE RIDE â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId ? await Passenger.findOne({
          _id: passengerId,
@@ -145,7 +145,7 @@ export const pickUpRideHandler = eventHandler<any>(
       });
     }
 
-    // â”€â”€ SPLIT RIDE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC SPLIT RIDE â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     if (ride.type === RIDE_TYPE.split) {
       if (!passengerId)
         return callback?.({ success: false, message: 'passengerId is required for split ride' });
@@ -194,3 +194,4 @@ export const pickUpRideHandler = eventHandler<any>(
     return callback?.({ success: false, message: 'Unknown ride type' });
   },
 );
+

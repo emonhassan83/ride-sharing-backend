@@ -46,7 +46,7 @@ export const createCheckoutSession = async (payload: TPayload) => {
     line_items: [
       {
         price_data: {
-          currency: 'usd',
+          currency: 'eur',
           product_data: {
             name: product?.name || 'Ride Booking',
           },
@@ -77,8 +77,8 @@ export const paymentNotifyToUser = async (
 
   const description =
     type === 'SUCCESS'
-      ? `Your payment of Â£${payment.amount} has been successfully processed`
-      : `A refund of Â£${payment.amount} has been issued to your account`;
+      ? `Your payment of Â\u20AC${payment.amount} has been successfully processed`
+      : `A refund of Â\u20AC${payment.amount} has been issued to your account`;
 
   // Create a notification entry
   const notifyPayload = {
@@ -91,3 +91,4 @@ export const paymentNotifyToUser = async (
 
   await sendNotification([user.fcmToken], notifyPayload);
 };
+

@@ -31,13 +31,13 @@ export const driverCompleteTripHandler = eventHandler<any>(
     if (ride.driverId?.toString() !== driverId)
       return callback?.({ success: false, message: 'You are not assigned to this ride' });
     if (ride.status !== RIDE_STATUS.started)
-      return callback?.({ success: false, message: `Cannot complete â€” status: ${ride.status}` });
+      return callback?.({ success: false, message: `Cannot complete â\u20AC” status: ${ride.status}` });
 
     const locationKey = `ride:${rideId}:live`;
     const locations = await redis.lrange(locationKey, 0, -1);
     const parsedLocations = locations.map((loc: string) => JSON.parse(loc));
 
-    // â”€â”€ Determine which passengers to complete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC Determine which passengers to complete â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     let passengers: any[];
 
     if (ride.type === RIDE_TYPE.private) {
@@ -46,7 +46,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
         ? await Passenger.find({ _id: passengerId, rideId, status: PASSENGER_STATUS.dropped_off })
         : await Passenger.find({ rideId, status: PASSENGER_STATUS.dropped_off });
     } else {
-      // âœ… Split: passengerId optional â€” complete all dropped_off if not specified
+      // âœ… Split: passengerId optional â\u20AC” complete all dropped_off if not specified
       passengers = passengerId
         ? await Passenger.find({ _id: passengerId, rideId, status: PASSENGER_STATUS.dropped_off })
         : await Passenger.find({ rideId, status: PASSENGER_STATUS.dropped_off });
@@ -72,7 +72,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
       if (riderUser?.fcmToken) {
         sendNotification([riderUser.fcmToken], {
           receiver: passenger.userId, message: 'Trip Completed!',
-          description: `Total fare: Â£${totalFare}. Thank you for riding with us!`,
+          description: `Total fare: Â\u20AC${totalFare}. Thank you for riding with us!`,
           reference: rideId, modelType: modeType.Ride,
         }).catch(() => { });
       }
@@ -85,7 +85,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
       io.to(`user:${passenger.userId}`).emit('ride:request-rating', { rideId, driverId });
     }
 
-    // â”€â”€ Check if all passengers done (for split ride partial complete) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”\u20ACâ”\u20AC Check if all passengers done (for split ride partial complete) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     const remainingDroppedOff = await Passenger.countDocuments({
       rideId,
       status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.dropped_off] },
@@ -119,3 +119,4 @@ export const driverCompleteTripHandler = eventHandler<any>(
     });
   },
 );
+

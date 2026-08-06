@@ -14,17 +14,12 @@ export const sendWithdrawNotify = async (
   let message = ''
   let description = ''
 
-  const formattedAmount = `${withdraw.amount.toFixed(2)}`
+  const formattedAmount = `\u20AC${withdraw.amount.toFixed(2)}`
 
   switch (action) {
     case 'cancelled':
       message =  'Withdrawal Request Cancelled'
       description = `Your withdrawal request of ${formattedAmount} has been cancelled.`
-      break
-
-    case 'proceed':
-      message = 'Withdrawal Processing Started'
-      description = `Your withdrawal of ${formattedAmount} has been approved and is being processed by admin.`
       break
 
     case 'completed':
@@ -46,3 +41,4 @@ export const sendWithdrawNotify = async (
 
   await sendNotification([user.fcmToken], notifyPayload)
 }
+

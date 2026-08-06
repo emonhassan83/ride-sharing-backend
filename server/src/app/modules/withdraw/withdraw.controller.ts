@@ -63,29 +63,6 @@ const updateWithdraw = catchAsync(async (req, res) => {
   });
 });
 
-const stripeWebhook = catchAsync(async (req, res) => {
-  const signature = req.headers['stripe-signature'] as string;
-  if (!signature) {
-    return res
-      .status(httpStatus.BAD_REQUEST)
-      .json({ message: 'Missing stripe-signature header' });
-  }
-
-  try {
-    const result = await WithdrawService.handleStripeWebhook(
-      req.body as Buffer,
-      signature
-    );
-    sendResponse(res, {
-      code: httpStatus.OK,
-      message: 'Withdraw update successfully!',
-      data: result,
-    });
-  } catch (error: any) {
-    console.error('❌ Stripe webhook error:', error.message);
-    return res.status(httpStatus.BAD_REQUEST).json({ message: error.message });
-  }
-});
 
 export const WithdrawControllers = {
   addWithdraw,
@@ -93,5 +70,5 @@ export const WithdrawControllers = {
   getMyWithdraws,
   getAWithdraw,
   updateWithdraw,
-  stripeWebhook,
 };
+
