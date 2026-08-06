@@ -1,11 +1,9 @@
 import { Model, Types } from 'mongoose';
 import { TProviderStatus } from './provider.constant';
-import { TProviderType } from '../user/user.constant';
 
 export interface TProvider {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
-  type: TProviderType
   companyName: string
   companyReg: string
   vatNumber: string

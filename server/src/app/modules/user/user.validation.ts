@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { USER_ROLE, USER_STATUS } from './user.constant';
+import { PROVIDER_TYPE, USER_ROLE, USER_STATUS } from './user.constant';
 
 const createUserValidationSchema = z.object({
   body: z
@@ -29,13 +29,22 @@ const createUserValidationSchema = z.object({
         message: 'Role is required.',
       }),
 
+      type: z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]], {
+        message: 'Provider type must be either self-employed or company',
+      }).optional(),
+
       fcmToken: z.string().optional(),
     })
-    .strict(),
+    .strict()
+    .refine((data) => data.role !== USER_ROLE.provider || !!data.type, {
+      message: 'Provider type is required for provider registration.',
+      path: ['type'],
+    }),
 });
 
 const updateUserValidationSchema = z.object({
   body: z.object({
+    type: z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]]).optional(),
     name: z.string().optional(),
     phone: z.string().optional(),
     countryCode: z.string().optional(),
@@ -91,3 +100,4 @@ export const UserValidation = {
   profileDeletionValidationSchema,
   changeEmailZodSchema,
 };
+

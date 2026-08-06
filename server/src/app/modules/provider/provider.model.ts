@@ -1,7 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { TProvider, TProviderModel } from './provider.interface';
 import { PROVIDER_STATUS } from './provider.constant';
-import { PROVIDER_TYPE } from '../user/user.constant';
 
 const providerSchema = new Schema<TProvider>(
   {
@@ -10,15 +9,6 @@ const providerSchema = new Schema<TProvider>(
       ref: 'User',
       required: [true, 'User ID is required'],
       unique: true, // one provider profile per user
-    },
-    type: {
-      type: String,
-      enum: {
-        values: Object.values(PROVIDER_TYPE),
-        message: 'Invalid provider type',
-      },
-      required: [true, 'Provider type is required'],
-      trim: true,
     },
     companyName: {
       type: String,

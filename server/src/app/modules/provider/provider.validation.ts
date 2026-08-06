@@ -14,7 +14,7 @@ const createProviderZodSchema = z.object({
   body: z.object({
     type: z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]], {
       message: 'Provider type must be either self-employed or company',
-    }),
+    }).optional(),
 
     companyName: z
       .string()

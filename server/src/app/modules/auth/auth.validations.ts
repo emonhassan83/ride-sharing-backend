@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { USER_ROLE } from '../user/user.constant';
+import { PROVIDER_TYPE, USER_ROLE } from '../user/user.constant';
+
+const providerTypeSchema = z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]], {
+  message: 'Provider type must be either self-employed or company',
+});
 
 const loginValidationSchema = z.object({
   body: z.object({
@@ -107,11 +111,15 @@ const googleZodValidationSchema = z.object({
     role: z.enum(Object.values(USER_ROLE) as [string, ...string[]], {
       message: 'Role is required.',
     }),
+    type: providerTypeSchema.optional(),
     token: z.string({
       message: 'token is required!',
     }),
     fcmToken: z.string().optional(),
     profileImage: z.string().optional(),
+  }).refine((data) => data.role !== USER_ROLE.provider || !!data.type, {
+    message: 'Provider type is required for provider registration.',
+    path: ['type'],
   }),
 });
 
@@ -130,11 +138,15 @@ const appleZodValidationSchema = z.object({
     role: z.enum(Object.values(USER_ROLE) as [string, ...string[]], {
       message: 'Role is required.',
     }),
+    type: providerTypeSchema.optional(),
     token: z.string({
       message: 'token is required!',
     }),
     fcmToken: z.string().optional(),
     profileImage: z.string().optional(),
+  }).refine((data) => data.role !== USER_ROLE.provider || !!data.type, {
+    message: 'Provider type is required for provider registration.',
+    path: ['type'],
   }),
 });
 
@@ -148,3 +160,4 @@ export const AuthValidation = {
   googleZodValidationSchema,
   appleZodValidationSchema,
 };
+

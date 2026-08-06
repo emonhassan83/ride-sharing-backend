@@ -1,4 +1,4 @@
-import { TUserRole } from "../user/user.constant"
+import { TProviderType, TUserRole } from "../user/user.constant"
 
 export interface TLoginWithEmail {
   email: string
@@ -15,6 +15,7 @@ export interface TGoogleLoginPayload {
   name?: string
   email: string
   role?: TUserRole
+  type?: TProviderType
   photoUrl?: string
   token?: string // Google auth token or ID token
   fcmToken?: string
@@ -25,6 +26,8 @@ export interface TAppleLoginPayload {
   email: string
   photoUrl?: string
   role?: TUserRole
+  type?: TProviderType
   token?: string // Apple identity token
   fcmToken?: string
 }
+

@@ -11,7 +11,7 @@ import { sendKycStatusNotification } from './provider.utils';
 import { getEmailQueueInstance } from '../../utils/queueHelper';
 
 // Create a new Verification
-const insertIntoDB = async (userId: string, payload: TProvider) => {
+const insertIntoDB = async (userId: string, payload: TProvider & { type?: string }) => {
   const session = await startSession();
 
   try {
@@ -35,11 +35,29 @@ const insertIntoDB = async (userId: string, payload: TProvider) => {
       );
     }
 
+    const { type: providerType, ...providerPayload } = payload;
+    const userProviderType = providerType || user.type;
+
+    if (!userProviderType) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        'Provider type is required before submitting KYC verification!'
+      );
+    }
+
+    if (providerType && user.type !== providerType) {
+      await User.findByIdAndUpdate(
+        user._id,
+        { type: providerType },
+        { session },
+      );
+    }
+
     // Assign into payload
-    payload.userId = user._id;
+    providerPayload.userId = user._id;
 
     // Create verification record
-    const [verification] = await Provider.create([payload], { session });
+    const [verification] = await Provider.create([providerPayload], { session });
 
     if (!verification) {
       throw new ApiError(
@@ -226,3 +244,4 @@ export const ProviderService = {
   updateStatusIntoDB,
   getProviderByUserId,
 };
+

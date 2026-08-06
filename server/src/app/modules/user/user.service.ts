@@ -28,7 +28,7 @@ import StripeService from '../../config/stripe.config';
 const getAllUsersFromDB = async (query: Record<string, unknown>) => {
   const usersQuery = new QueryBuilder(
     User.find({ isDeleted: false, role: { $ne: USER_ROLE.admin } }).select(
-      '_id id name email profileImage role address status isOnline isKycVerified createdAt'
+      '_id id name email profileImage role type address status isOnline isKycVerified createdAt'
     ),
     query
   )
@@ -492,3 +492,4 @@ export const UserService = {
   updateLocationFromDB,
   deleteUserProfile,
 };
+

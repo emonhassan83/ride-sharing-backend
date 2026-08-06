@@ -101,6 +101,7 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
     email: payload.email,
     photoUrl: payload.photoUrl,
     fcmToken: payload.fcmToken,
+    type: payload.type,
   };
 
   if (user) {
@@ -174,6 +175,7 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
     email: payload.email,
     photoUrl: payload.photoUrl,
     fcmToken: payload.fcmToken,
+    type: payload.type,
   };
 
   if (user) {
@@ -616,3 +618,4 @@ export const AuthService = {
   changePassword,
   refreshToken,
 };
+

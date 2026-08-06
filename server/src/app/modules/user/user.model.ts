@@ -2,7 +2,7 @@ import { model, Schema } from 'mongoose';
 import { TUser, UserModal } from './user.interface';
 import bcrypt from 'bcrypt';
 import { config } from '../../config/env.config';
-import { GENDER, REGISTER_WITH, USER_ROLE, USER_STATUS } from './user.constant';
+import { GENDER, PROVIDER_TYPE, REGISTER_WITH, USER_ROLE, USER_STATUS } from './user.constant';
 
 // User Schema Definition
 const userSchema = new Schema<TUser, UserModal>(
@@ -32,10 +32,16 @@ const userSchema = new Schema<TUser, UserModal>(
       type: String,
       default: null,
     },
+
     role: {
       type: String,
       enum: Object.values(USER_ROLE),
       required: [true, 'Role is required'],
+    },
+    type: {
+      type: String,
+      enum: Object.values(PROVIDER_TYPE),
+      default: null,
     },
     profileImage: {
       type: String,
@@ -175,3 +181,4 @@ userSchema.index({ location: '2dsphere' });
 
 // Export the User model
 export const User = model<TUser, UserModal>('User', userSchema);
+

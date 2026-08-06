@@ -27,7 +27,7 @@ const addWithdraw = async (
 
     // -- 2. Validate provider payout IBAN snapshot -----------------------------
     const providerProfile = await Provider.findOne({ userId })
-      .select('ibanNumber type companyName')
+      .select('ibanNumber companyName')
       .session(session);
 
     if (!providerProfile?.ibanNumber) {
@@ -68,7 +68,7 @@ const addWithdraw = async (
           user:   userId,
           amount,
           ibanNumber: providerProfile.ibanNumber,
-          providerType: providerProfile.type,
+          providerType: user.type,
           status: WITHDRAW_STATUS.pending,
         },
       ],

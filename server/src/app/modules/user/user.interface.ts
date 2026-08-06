@@ -1,6 +1,6 @@
 import { Model, Types } from 'mongoose';
 import { PaginateOptions, PaginateResult } from '../../types/paginate';
-import { TGender, TUserRole, TUserStatus } from './user.constant';
+import { TGender, TProviderType, TUserRole, TUserStatus } from './user.constant';
 
 export type TGeoLocation = {
   type: 'Point';
@@ -15,6 +15,7 @@ export type TUser = {
   password: string;
   fcmToken: string
   role: TUserRole;
+  type?: TProviderType;
   profileImage: string;
   documents: string[];
   phone: string;
@@ -62,3 +63,4 @@ export interface UserModal extends Model<TUser> {
   isMatchPassword(password: string, hashPassword: string): Promise<boolean>;
 }
 ``
+
