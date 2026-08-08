@@ -22,6 +22,9 @@ const paymentSchema = new Schema<TPayment>(
     platformCommission: { type: Number, default: 0 },
     providerEarning: { type: Number, default: 0 },
     amount: { type: Number, min: 0 },
+    authorizedAmount: { type: Number, min: 0, default: 0 },
+    amountToCapture: { type: Number, min: 0, default: 0 },
+    authorizationExpiresAt: { type: Date, default: null },
     status: {
       type: String,
       enum: Object.values(PAYMENT_STATUS),

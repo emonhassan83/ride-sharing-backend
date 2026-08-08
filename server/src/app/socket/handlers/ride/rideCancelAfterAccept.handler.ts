@@ -9,6 +9,7 @@ import { Booking } from '../../../modules/booking/booking.model';
 import { User } from '../../../modules/user/user.model';
 import { Refund } from '../../../modules/refund/refund.model';
 import { Payment } from '../../../modules/payment/payment.model';
+import { PaymentService } from '../../../modules/payment/payment.service';
 import { REFUND_STATUS, REFUND_TYPE } from '../../../modules/refund/refund.constant';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { sendNotification } from '../../../utils/sentPushNotification';
@@ -22,7 +23,7 @@ import {
   transferRideOwnership,
 } from '../../../utils/splitFare.utils';
 
-// â”\u20ACâ”\u20AC Helper: notify driver (socket + FCM) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// ï¿½\u20ACï¿½\u20AC Helper: notify driver (socket + FCM) ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
 const notifyDriver = async (
   io:        any,
   driverId:  string,
@@ -68,7 +69,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
     if (![RIDE_STATUS.accepted, RIDE_STATUS.started].includes(ride.status as any))
       return callback?.({ success: false, message: 'Cannot cancel at this stage' });
 
-    // â”\u20ACâ”\u20AC Find passenger â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // ï¿½\u20ACï¿½\u20AC Find passenger ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
     let passenger: any;
 
     if (ride.type === RIDE_TYPE.split) {
@@ -92,10 +93,23 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
     if (!passenger)
       return callback?.({ success: false, message: 'No active booking found' });
 
-    const booking    = await Booking.findOne({ passengerId: passenger._id }).lean();
-    const paidAmount = booking?.amountPaid ?? passenger.estimatedFare ?? 0;
+    const booking = await Booking.findOne({ passengerId: passenger._id });
+    let paidAmount = booking?.amountPaid ?? 0;
 
-    // â”\u20ACâ”\u20AC Cancellation refund â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    if (booking) {
+      const payment = await Payment.findOne({ booking: booking._id });
+      if (
+        payment &&
+        [PAYMENT_STATUS.authorized, PAYMENT_STATUS.requires_reauthorization].includes(payment.status as any)
+      ) {
+        await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
+        paidAmount = 0;
+      } else if (!paidAmount) {
+        paidAmount = passenger.estimatedFare ?? 0;
+      }
+    }
+
+    // ï¿½\u20ACï¿½\u20AC Cancellation refund ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
     const departureDateTime = new Date(`${ride.departureDate}T${ride.departureTime}:00`);
     const { refundAmount, platformAmount, refundReason } = await calculateCancellationRefund(
       paidAmount,
@@ -103,7 +117,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       departureDateTime,
     );
 
-    // â”\u20ACâ”\u20AC Update passenger & booking â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // ï¿½\u20ACï¿½\u20AC Update passenger & booking ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
     await Passenger.findByIdAndUpdate(passenger._id, {
       status:             PASSENGER_STATUS.cancelled,
       cancellationReason: reason || 'Rider cancelled',
@@ -134,7 +148,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
           await User.findByIdAndUpdate(ride.driverId, {
             $inc: { wallet: -payment.providerEarning }
           });
-          console.log(`ðŸ’° Deducted driver earning: Â\u20AC${payment.providerEarning} from driver: ${ride.driverId}`);
+          console.log(`ðŸ’° Deducted driver earning: ï¿½\u20AC${payment.providerEarning} from driver: ${ride.driverId}`);
         }
       }
 
@@ -155,10 +169,10 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
     }
 
     if (platformAmount > 0) {
-      console.log(`ðŸ’¼ Platform revenue Â\u20AC${platformAmount} | ride ${rideId}`);
+      console.log(`ðŸ’¼ Platform revenue ï¿½\u20AC${platformAmount} | ride ${rideId}`);
     }
 
-    // â”\u20ACâ”\u20AC Decrement seats â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // ï¿½\u20ACï¿½\u20AC Decrement seats ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
     await Ride.findByIdAndUpdate(rideId, {
       $inc: {
         bookedSeats:      -(passenger.requestedSeats  || 1),
@@ -174,7 +188,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       );
     }
 
-    // â”\u20ACâ”\u20AC PRIVATE RIDE â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // ï¿½\u20ACï¿½\u20AC PRIVATE RIDE ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
     if (ride.type === RIDE_TYPE.private) {
       await Ride.findByIdAndUpdate(rideId, {
         status:             RIDE_STATUS.cancelled,
@@ -189,7 +203,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         redis.del(`ride:request:${rideId}`),
       ]);
 
-      // âœ… Notify driver â\u20AC” only ride:cancelled-by-rider
+      // âœ… Notify driver ï¿½\u20ACï¿½ only ride:cancelled-by-rider
       if (ride.driverId) {
         await notifyDriver(
           io,
@@ -207,7 +221,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       });
     }
 
-    // â”\u20ACâ”\u20AC SPLIT RIDE â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // ï¿½\u20ACï¿½\u20AC SPLIT RIDE ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
 
     // Case 3: rideCreatedBy cancelled â†’ check if only 1 passenger remains
     if (ride.rideCreatedBy?.toString() === userId) {
@@ -229,7 +243,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
           redis.zrem('ride:matching:queue', rideId),
         ]);
 
-        // âœ… Notify driver â\u20AC” only ride:cancelled-by-rider
+        // âœ… Notify driver ï¿½\u20ACï¿½ only ride:cancelled-by-rider
         if (ride.driverId) {
           await notifyDriver(
             io,
@@ -241,7 +255,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
 
         return callback?.({
           success: true,
-          message: 'Ride cancelled â\u20AC” only one passenger remaining.',
+          message: 'Ride cancelled ï¿½\u20ACï¿½ only one passenger remaining.',
           data:    { refundAmount, refundReason, rideCancelled: true },
         });
       }
@@ -259,7 +273,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
           redis.zrem('ride:matching:queue', rideId),
         ]);
 
-        // âœ… Notify driver â\u20AC” only ride:cancelled-by-rider
+        // âœ… Notify driver ï¿½\u20ACï¿½ only ride:cancelled-by-rider
         if (ride.driverId) {
           await notifyDriver(
             io,
@@ -271,7 +285,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
 
         return callback?.({
           success: true,
-          message: 'Ride cancelled â\u20AC” no other passengers.',
+          message: 'Ride cancelled ï¿½\u20ACï¿½ no other passengers.',
           data:    { refundAmount, refundReason, rideCancelled: true },
         });
       }
@@ -295,7 +309,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         redis.zrem('ride:matching:queue', rideId),
       ]);
 
-      // âœ… Notify driver â\u20AC” only ride:cancelled-by-rider
+      // âœ… Notify driver ï¿½\u20ACï¿½ only ride:cancelled-by-rider
       if (ride.driverId) {
         await notifyDriver(
           io,
@@ -307,15 +321,15 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
 
       return callback?.({
         success: true,
-        message: 'Ride cancelled â\u20AC” only one passenger remaining.',
+        message: 'Ride cancelled ï¿½\u20ACï¿½ only one passenger remaining.',
         data:    { refundAmount, refundReason, rideCancelled: true },
       });
     }
 
-    // Remaining passengers exist â\u20AC” recalculate + notify driver only
+    // Remaining passengers exist ï¿½\u20ACï¿½ recalculate + notify driver only
     await recalculateSplitFares(rideId, 'passenger_cancelled', io);
 
-    // âœ… Notify driver â\u20AC” only ride:cancelled-by-rider (not passenger-cancelled)
+    // âœ… Notify driver ï¿½\u20ACï¿½ only ride:cancelled-by-rider (not passenger-cancelled)
     if (ride.driverId) {
       await notifyDriver(
         io,
@@ -329,7 +343,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       );
     }
 
-    // âœ… Notify co-passengers â\u20AC” ride:co-passenger-cancelled (riders listen to this)
+    // âœ… Notify co-passengers ï¿½\u20ACï¿½ ride:co-passenger-cancelled (riders listen to this)
     const others = await Passenger.find({
       rideId,
       _id:    { $ne: passenger._id },

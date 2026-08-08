@@ -14,6 +14,7 @@ export const PAYMENT_STATUS = {
     pending: 'pending',
     paid: 'paid',
     authorized: 'authorized',
+    requires_reauthorization: 'requires_reauthorization',
     failed: 'failed',
     cancelled_authorization: 'cancelled_authorization',
     pending_recovery: 'pending_recovery'

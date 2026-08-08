@@ -17,6 +17,7 @@ import { Booking } from '../../../modules/booking/booking.model';
 import { Refund } from '../../../modules/refund/refund.model';
 import { User } from '../../../modules/user/user.model';
 import { Payment } from '../../../modules/payment/payment.model';
+import { PaymentService } from '../../../modules/payment/payment.service';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { sendNotification } from '../../../utils/sentPushNotification';
 import { TSocket } from '../../interface/index.interface';
@@ -24,7 +25,7 @@ import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { refundToWallet } from '../../../utils/splitFare.utils';
 
-// â”\u20ACâ”\u20AC Helper: cancel single passenger booking + refund + notify â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// ï¿½\u20ACï¿½\u20AC Helper: cancel single passenger booking + refund + notify ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
 const cancelBookingWithRefund = async (
   passengerId: any,
   rideId: string,
@@ -34,13 +35,25 @@ const cancelBookingWithRefund = async (
 ) => {
   const booking = await Booking.findOne({ passengerId });
   if (!booking) return { refundAmount: 0, userId: null };
+  const paymentForAuthorization = await Payment.findOne({ booking: booking._id });
+  const hasAuthorizedHold =
+    paymentForAuthorization &&
+    [PAYMENT_STATUS.authorized, PAYMENT_STATUS.requires_reauthorization].includes(
+      paymentForAuthorization.status as any
+    );
 
-  const paidAmount = booking.amountPaid ?? 0;
+  if (hasAuthorizedHold) {
+    await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
+  }
+
+  const paidAmount = hasAuthorizedHold ? 0 : booking.amountPaid ?? 0;
 
   booking.bookingStatus = BOOKING_STATUS.cancelled;
   booking.refundAmount = paidAmount;
   if (paidAmount > 0) {
     booking.paymentStatus = PAYMENT_STATUS.refunded;
+  } else if (hasAuthorizedHold) {
+    booking.paymentStatus = PAYMENT_STATUS.cancelled_authorization as any;
   }
   await booking.save();
 
@@ -61,7 +74,7 @@ const cancelBookingWithRefund = async (
         await User.findByIdAndUpdate(driverId, {
           $inc: { wallet: -payment.providerEarning }
         });
-        console.log(`ğŸ’° Deducted driver earning: Â\u20AC${payment.providerEarning} from driver: ${driverId}`);
+        console.log(`ğŸ’° Deducted driver earning: ï¿½\u20AC${payment.providerEarning} from driver: ${driverId}`);
       }
     }
 
@@ -121,7 +134,7 @@ const cancelBookingWithRefund = async (
   return { refundAmount, userId: passenger?.userId };
 };
 
-// â”\u20ACâ”\u20AC Helper: cancel entire ride (all active passengers) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// ï¿½\u20ACï¿½\u20AC Helper: cancel entire ride (all active passengers) ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
 const cancelEntireRide = async (
   rideId: string,
   driverId: string,
@@ -213,7 +226,7 @@ export const driverCancelRideHandler = eventHandler<any>(
       ]);
     };
 
-    // â”\u20ACâ”\u20AC PRIVATE RIDE â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // ï¿½\u20ACï¿½\u20AC PRIVATE RIDE ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId
         ? await Passenger.findOne({
@@ -276,10 +289,10 @@ export const driverCancelRideHandler = eventHandler<any>(
       });
     }
 
-    // â”\u20ACâ”\u20AC SPLIT RIDE â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // ï¿½\u20ACï¿½\u20AC SPLIT RIDE ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
     if (ride.type === RIDE_TYPE.split) {
 
-      // âœ… Case 1: passengerId à¦¨à§‡à¦‡ â\u20AC” à¦ªà§à¦°à§‹ ride cancel à¦•à¦°à§‹
+      // âœ… Case 1: passengerId à¦¨à§‡à¦‡ ï¿½\u20ACï¿½ à¦ªà§à¦°à§‹ ride cancel à¦•à¦°à§‹
       if (!passengerId) {
         const { cancelledPassengerCount, totalRefunded } = await cancelEntireRide(
           rideId,
@@ -307,7 +320,7 @@ export const driverCancelRideHandler = eventHandler<any>(
         });
       }
 
-      // âœ… Case 2: passengerId à¦†à¦›à§‡ â\u20AC” à¦¶à§à¦§à§ à¦¸à§‡à¦‡ passenger cancel à¦•à¦°à§‹
+      // âœ… Case 2: passengerId à¦†à¦›à§‡ ï¿½\u20ACï¿½ à¦¶à§à¦§à§ à¦¸à§‡à¦‡ passenger cancel à¦•à¦°à§‹
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,

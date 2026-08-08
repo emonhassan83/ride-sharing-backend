@@ -1,4 +1,4 @@
-﻿import Stripe from 'stripe';
+import Stripe from 'stripe';
 import httpStatus from 'http-status';
 import QueryBuilder from '../../builder/QueryBuilder';
 import { Payment } from './payment.model';
@@ -129,6 +129,9 @@ const createPaymentIntent = async (payload: {
       method: PAYMENT_METHOD.card,
       transactionId,
       amount: totalFare,
+      authorizedAmount: totalFare,
+      amountToCapture: totalFare,
+      authorizationExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       platformCommission,
       providerEarning,
       status: PAYMENT_STATUS.unpaid,
@@ -137,6 +140,9 @@ const createPaymentIntent = async (payload: {
   } else {
     payment.transactionId = transactionId;
     payment.amount = totalFare;
+    payment.authorizedAmount = totalFare;
+    payment.amountToCapture = totalFare;
+    payment.authorizationExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     payment.platformCommission = platformCommission;
     payment.providerEarning = providerEarning;
     payment.method = PAYMENT_METHOD.card;
@@ -160,6 +166,9 @@ const createPaymentIntent = async (payload: {
   });
 
   payment.paymentIntentId = paymentIntent.id;
+  payment.authorizedAmount = totalFare;
+  payment.amountToCapture = totalFare;
+  payment.authorizationExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   await payment.save();
 
   return {
@@ -230,6 +239,9 @@ const confirmPayment = async (payload: Record<string, any>) => {
       payment.isPaid = false;
       payment.status = PAYMENT_STATUS.authorized;
       payment.paymentIntentId = paymentIntent.id;
+      payment.authorizedAmount = Math.round((paymentIntent.amount || payment.amount * 100) / 100) / 100;
+      payment.amountToCapture = payment.amountToCapture || payment.authorizedAmount;
+      payment.authorizationExpiresAt = payment.authorizationExpiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       await payment.save({ session });
 
       booking.paymentStatus = PAYMENT_STATUS.authorized as any;
@@ -245,7 +257,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
       await session.commitTransaction();
       return {
         success: true,
-        message: 'Payment authorized successfully. It will be captured after a driver accepts.',
+        message: 'Payment authorized successfully. It will be captured at the correct ride payment capture point.',
         payment,
       };
     }
@@ -404,7 +416,36 @@ const confirmPayment = async (payload: Record<string, any>) => {
 /* =====================================================
    ðŸ”¹ PAY WITH WALLET (Direct Deduction)
 ===================================================== */
-const captureAuthorizedBookingPayment = async (bookingId: string, driverId: string) => {
+type TCaptureAuthorizedOptions = {
+  incrementRideSeats?: boolean;
+  createChat?: boolean;
+  recalculateSplit?: boolean;
+  updateBookingStatus?: boolean;
+};
+
+const getCommissionBreakdown = async (fare: number) => {
+  const commissionSetting = await Setting.findOne({
+    key: 'platformCommissionPercent',
+  }).lean();
+  const commissionPercent = Number(commissionSetting?.value ?? 10);
+  const platformCommission =
+    Math.round(((fare * commissionPercent) / 100) * 100) / 100;
+  const providerEarning = Math.round((fare - platformCommission) * 100) / 100;
+  return { platformCommission, providerEarning };
+};
+
+const captureAuthorizedBookingPayment = async (
+  bookingId: string,
+  driverId: string,
+  options: TCaptureAuthorizedOptions = {}
+) => {
+  const {
+    incrementRideSeats = true,
+    createChat = true,
+    recalculateSplit = true,
+    updateBookingStatus = true,
+  } = options;
+
   const session = await startSession();
   let recalcRideId: string | null = null;
 
@@ -416,7 +457,7 @@ const captureAuthorizedBookingPayment = async (bookingId: string, driverId: stri
 
     const payment = await Payment.findOne({
       booking: bookingId,
-      status: PAYMENT_STATUS.authorized,
+      status: { $in: [PAYMENT_STATUS.authorized, PAYMENT_STATUS.requires_reauthorization] },
       isPaid: false,
     }).session(session);
 
@@ -428,11 +469,25 @@ const captureAuthorizedBookingPayment = async (bookingId: string, driverId: stri
       return null;
     }
 
+    if (payment.status === PAYMENT_STATUS.requires_reauthorization) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Payment requires re-authorization before this ride can be started'
+      );
+    }
+
+    const finalFare = Math.round(
+      Number(payment.amountToCapture || booking.totalFare || payment.amount) * 100
+    ) / 100;
+    const captureAmount = Math.round(finalFare * 100);
+
     let capturedIntent: Stripe.PaymentIntent | null = null;
     if (payment.paymentIntentId) {
       const intent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
       if (intent.status === 'requires_capture') {
-        capturedIntent = await stripe.paymentIntents.capture(payment.paymentIntentId);
+        capturedIntent = await stripe.paymentIntents.capture(payment.paymentIntentId, {
+          amount_to_capture: captureAmount,
+        });
       } else if (intent.status === 'succeeded') {
         capturedIntent = intent;
       } else {
@@ -447,14 +502,21 @@ const captureAuthorizedBookingPayment = async (bookingId: string, driverId: stri
       throw new ApiError(httpStatus.BAD_REQUEST, 'Payment capture failed');
     }
 
+    const { platformCommission, providerEarning } = await getCommissionBreakdown(finalFare);
+
     payment.provider = new mongoose.Types.ObjectId(driverId) as any;
+    payment.amount = finalFare;
+    payment.amountToCapture = finalFare;
+    payment.platformCommission = platformCommission;
+    payment.providerEarning = providerEarning;
     payment.status = PAYMENT_STATUS.paid;
     payment.isPaid = true;
     await payment.save({ session });
 
     booking.paymentStatus = PAYMENT_STATUS.paid as any;
-    booking.bookingStatus = BOOKING_STATUS.accepted;
-    booking.amountPaid = booking.totalFare;
+    if (updateBookingStatus) booking.bookingStatus = BOOKING_STATUS.accepted;
+    booking.totalFare = finalFare;
+    booking.amountPaid = finalFare;
     await booking.save({ session });
 
     const passenger = await Passenger.findById(booking.passengerId).session(session);
@@ -462,46 +524,50 @@ const captureAuthorizedBookingPayment = async (bookingId: string, driverId: stri
 
     await Passenger.findByIdAndUpdate(
       booking.passengerId,
-      { paymentStatus: PAYMENT_STATUS.paid },
+      { paymentStatus: PAYMENT_STATUS.paid, paidAmount: finalFare },
       { session }
     );
 
     const ride = await Ride.findById(booking.rideId).session(session);
     if (ride) {
-      if (ride.type === RIDE_TYPE.split) recalcRideId = ride._id.toString();
-      await Ride.findByIdAndUpdate(
-        ride._id,
-        {
-          $inc: {
-            bookedSeats: passenger.requestedSeats || 1,
-            malePassengers: passenger.malePassengers || 0,
-            femalePassengers: passenger.femalePassengers || 0,
+      if (ride.type === RIDE_TYPE.split && recalculateSplit) recalcRideId = ride._id.toString();
+      if (incrementRideSeats) {
+        await Ride.findByIdAndUpdate(
+          ride._id,
+          {
+            $inc: {
+              bookedSeats: passenger.requestedSeats || 1,
+              malePassengers: passenger.malePassengers || 0,
+              femalePassengers: passenger.femalePassengers || 0,
+            },
           },
-        },
-        { session }
-      );
+          { session }
+        );
+      }
     }
 
-    if (payment.providerEarning && payment.providerEarning > 0) {
+    if (providerEarning > 0) {
       await User.findByIdAndUpdate(
         driverId,
-        { $inc: { wallet: payment.providerEarning } },
+        { $inc: { wallet: providerEarning } },
         { session }
       );
     }
 
-    const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
-    if (!existingChat) {
-      await Chat.create(
-        [
-          {
-            booking: booking._id,
-            participants: [booking.userId, booking.driverId as any],
-            status: CHAT_STATUS.accepted,
-          },
-        ],
-        { session }
-      );
+    if (createChat) {
+      const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
+      if (!existingChat) {
+        await Chat.create(
+          [
+            {
+              booking: booking._id,
+              participants: [booking.userId, booking.driverId as any],
+              status: CHAT_STATUS.accepted,
+            },
+          ],
+          { session }
+        );
+      }
     }
 
     await session.commitTransaction();
@@ -523,6 +589,44 @@ const captureAuthorizedBookingPayment = async (bookingId: string, driverId: stri
   }
 };
 
+const cancelAuthorizedBookingPayment = async (bookingId: string) => {
+  const payment = await Payment.findOne({
+    booking: bookingId,
+    status: { $in: [PAYMENT_STATUS.authorized, PAYMENT_STATUS.requires_reauthorization] },
+    isPaid: false,
+  });
+
+  if (!payment) return false;
+
+  if (payment.paymentIntentId) {
+    try {
+      const intent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
+      if (intent.status === 'requires_capture') {
+        await stripe.paymentIntents.cancel(payment.paymentIntentId);
+      }
+    } catch (error: any) {
+      console.error('Failed to cancel authorized payment:', error.message);
+    }
+  }
+
+  payment.status = PAYMENT_STATUS.cancelled_authorization;
+  payment.isPaid = false;
+  payment.amountToCapture = 0;
+  await payment.save();
+
+  const booking = await Booking.findById(bookingId);
+  if (booking) {
+    booking.paymentStatus = PAYMENT_STATUS.cancelled_authorization as any;
+    booking.amountPaid = 0;
+    await booking.save();
+
+    await Passenger.findByIdAndUpdate(booking.passengerId, {
+      paymentStatus: PAYMENT_STATUS.cancelled_authorization,
+    });
+  }
+
+  return true;
+};
 const payWithWallet = async (payload: { booking: string; user: string }) => {
   const { booking: bookingId, user: userId } = payload;
 
@@ -845,6 +949,7 @@ export const PaymentService = {
   createPaymentIntent,
   confirmPayment,
   captureAuthorizedBookingPayment,
+  cancelAuthorizedBookingPayment,
   payWithWallet,
   getAllPaymentsFromDB,
   getDashboardDataFromDB,

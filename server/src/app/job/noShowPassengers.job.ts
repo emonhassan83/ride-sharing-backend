@@ -10,6 +10,8 @@ import { recalculateSplitFares } from '../utils/splitFare.utils';
 import { sendNotification } from '../utils/sentPushNotification'; // ← Import করো
 import { modeType } from '../modules/notification/notification.interface';
 import { User } from '../modules/user/user.model';
+import { Booking } from '../modules/booking/booking.model';
+import { PaymentService } from '../modules/payment/payment.service';
 
 const BATCH_SIZE = 50;
 
@@ -41,6 +43,11 @@ export const checkNoShowPassengers = async (): Promise<void> => {
       });
 
       // ── Get Ride & Driver Info ──────────────────────────────────────
+      const booking = await Booking.findOne({ passengerId: passenger._id });
+      if (booking) {
+        await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
+      }
+
       const ride = await Ride.findById(passenger.rideId)
         .select('driverId rideCreatedBy type')
         .lean();

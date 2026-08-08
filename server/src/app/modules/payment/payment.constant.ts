@@ -7,6 +7,7 @@ export enum PAYMENT_STATUS {
   unpaid = 'unpaid',
   paid = 'paid',
   authorized = 'authorized',
+  requires_reauthorization = 'requires_reauthorization',
   refunded = 'refunded',
   cancelled_authorization = 'cancelled_authorization',
   failed = 'failed',

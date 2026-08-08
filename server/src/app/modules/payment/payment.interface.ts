@@ -13,6 +13,9 @@ export type TPayment = {
   providerEarning: number
   platformCommission: number
   amount: number
+  authorizedAmount?: number
+  amountToCapture?: number
+  authorizationExpiresAt?: Date
   status: TPaymentStatus
   isPaid: boolean
   isDeleted: boolean

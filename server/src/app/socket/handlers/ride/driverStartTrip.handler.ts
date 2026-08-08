@@ -1,11 +1,14 @@
 // handlers/driver/driverStartTrip.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
-import { RIDE_STATUS } from '../../../modules/ride/ride.constant';
+import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
+import { Payment } from '../../../modules/payment/payment.model';
+import { PAYMENT_STATUS as PAYMENT_RECORD_STATUS } from '../../../modules/payment/payment.constant';
+import { PaymentService } from '../../../modules/payment/payment.service';
 import { User } from '../../../modules/user/user.model';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { sendNotification } from '../../../utils/sentPushNotification';
@@ -52,7 +55,63 @@ export const driverStartTripHandler = eventHandler<any>(
         message: 'No confirmed passengers found',
       });
 
-    // ── Update ride → started ─────────────────────────────────────────────────
+    if (ride.type === RIDE_TYPE.split) {
+      const passengerIds = passengers.map((passenger) => passenger._id);
+      const bookings = await Booking.find({
+        rideId,
+        passengerId: { $in: passengerIds },
+      });
+
+      if (bookings.length !== passengers.length) {
+        return callback?.({
+          success: false,
+          message: 'All split ride passengers must have bookings before trip start',
+        });
+      }
+
+      for (const booking of bookings) {
+        const payment = await Payment.findOne({ booking: booking._id });
+
+        if (!payment) {
+          return callback?.({
+            success: false,
+            message: 'All split ride passengers must complete payment authorization before trip start',
+          });
+        }
+
+        if (payment.status === PAYMENT_RECORD_STATUS.requires_reauthorization) {
+          return callback?.({
+            success: false,
+            message: 'One or more passengers must re-authorize payment before trip start',
+            data: { bookingId: booking._id, paymentStatus: payment.status },
+          });
+        }
+
+        if (payment.status === PAYMENT_RECORD_STATUS.authorized) {
+          await PaymentService.captureAuthorizedBookingPayment(
+            booking._id.toString(),
+            driverId,
+            {
+              incrementRideSeats: false,
+              createChat: false,
+              recalculateSplit: false,
+              updateBookingStatus: false,
+            }
+          );
+          continue;
+        }
+
+        if (payment.status !== PAYMENT_RECORD_STATUS.paid) {
+          return callback?.({
+            success: false,
+            message: 'All split ride payments must be authorized before trip start',
+            data: { bookingId: booking._id, paymentStatus: payment.status },
+          });
+        }
+      }
+    }
+
+    // Update ride -> started
     await Ride.findByIdAndUpdate(rideId, {
       status: RIDE_STATUS.started,
       tripStartedAt: new Date(),

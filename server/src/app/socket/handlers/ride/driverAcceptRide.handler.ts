@@ -1,10 +1,12 @@
-﻿// handlers/driver/driverAcceptRide.handler.ts
+// handlers/driver/driverAcceptRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import {
   BOOKING_STATUS,
   PAYMENT_STATUS,
 } from '../../../modules/booking/booking.constant';
 import { Booking } from '../../../modules/booking/booking.model';
+import { Chat } from '../../../modules/chat/chat.models';
+import { CHAT_STATUS } from '../../../modules/chat/chat.constants';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
@@ -20,6 +22,7 @@ import { ILatLng } from '../../interface/ride';
 import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { PaymentService } from '../../../modules/payment/payment.service';
+import { recalculateSplitFares } from '../../../utils/splitFare.utils';
 
 const ensureRiderInRoom = (userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
@@ -478,11 +481,28 @@ export const driverAcceptRideHandler = eventHandler<any>(
         },
         { upsert: true, new: true }
       );
+      await Ride.findByIdAndUpdate(ride._id, {
+        $inc: {
+          bookedSeats: passenger.requestedSeats || 1,
+          malePassengers: passenger.malePassengers || 0,
+          femalePassengers: passenger.femalePassengers || 0,
+        },
+      });
 
-      await PaymentService.captureAuthorizedBookingPayment(
-        booking._id.toString(),
-        driverId
+      await redis.hincrby(
+        `driver:${driverId}:details`,
+        'bookedSeats',
+        passenger.requestedSeats || 1
       );
+
+      const existingChat = await Chat.findOne({ booking: booking._id });
+      if (!existingChat) {
+        await Chat.create({
+          booking: booking._id,
+          participants: [booking.userId, booking.driverId as any],
+          status: CHAT_STATUS.accepted,
+        });
+      }
 
       notifyAdminForNewPendingBooking(booking).catch(() => { });
 
@@ -503,9 +523,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       }
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
-
-      // NOTE: Do not recalculate fares on accept. Recalculation should happen
-      // after the passenger payment is completed, not immediately on acceptance.
+      await recalculateSplitFares(rideId, 'passenger_joined', io);
 
       if (isLastPassenger) {
         await redis.hset(`ride:active:${rideId}`, {
