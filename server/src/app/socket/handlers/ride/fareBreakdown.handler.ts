@@ -34,7 +34,8 @@ export const fareBreakdownHandler = eventHandler<any>(
     if (departureDate && departureTime) {
       ({ departureDateTime } = await assertMinimumBookingLeadTime(
         departureDate,
-        departureTime
+        departureTime,
+        type
       ));
     }
 

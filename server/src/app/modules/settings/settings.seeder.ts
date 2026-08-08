@@ -4,10 +4,12 @@ const settingSeeder = async () => {
   const settingsData = [
       // Access & validation ride
     { key: 'bookingMaxDaysAhead', value: 30 },
-    { key: 'bookingMinDaysAhead', value: 1 },
+    { key: 'splitRideMinBookingHours', value: 24 },
+    { key: 'splitRideRefundRestrictionHours', value: 24 },
+    { key: 'privateRideMinBookingHours', value: 1 },
+    { key: 'privateRideRefundRestrictionHours', value: 1 },
     { key: 'matchingNoDriverNotifyHours', value: 48 },
     { key: 'matchingLastNotifyHours', value: 1 },
-    { key: 'matchingDriverResponseMinutes', value: 5 },
     { key: 'cancellationFreeWindowHours', value: 24 },
     { key: 'cancellationPercentage50Hours', value: 3 },
     { key: 'waitingReminderIntervals', value: 5 },
@@ -55,3 +57,4 @@ const settingSeeder = async () => {
 };
 
 export default settingSeeder;
+

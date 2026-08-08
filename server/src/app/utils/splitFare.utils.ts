@@ -9,6 +9,7 @@ import { User } from '../modules/user/user.model';
 import { Setting } from '../modules/settings/settings.model';
 import StripeService from '../config/stripe.config';
 import { isPublicHoliday, loadFareSettings } from './fareCalculator';
+import { getDepartureDateTime, getRefundRestrictionHours } from './rideSchedule.utils';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { sendNotification } from './sentPushNotification';
 import { modeType } from '../modules/notification/notification.interface';
@@ -282,9 +283,14 @@ export const recalculateSplitFares = async (
 
     const ride = await Ride.findById(rideId).lean();
     if (!ride) return;
+    if ((ride as any).splitFareLocked) {
+      console.log(`Split fare already locked | ride: ${rideId}`);
+      return;
+    }
 
-    const depDate = new Date(
-      `${(ride as any).departureDate}T${(ride as any).departureTime}:00`
+    const depDate = getDepartureDateTime(
+      (ride as any).departureDate,
+      (ride as any).departureTime
     );
 
     for (const passenger of activePassengers) {
@@ -440,8 +446,8 @@ export const recalculateSplitFares = async (
 // �\u20AC�\u20AC Cancellation refund (Cases 20, 21) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
 export const calculateCancellationRefund = async (
   paidAmount: number,
-  bookingTime: Date,
-  departureTime: Date
+  departureTime: Date,
+  rideType: 'private' | 'split'
 ): Promise<{
   refundAmount: number;
   platformAmount: number;
@@ -455,23 +461,10 @@ export const calculateCancellationRefund = async (
     };
   }
 
-  const settings = await Setting.find({
-    key: {
-      $in: ['cancellationFreeWindowHours', 'cancellationPercentage50Hours'],
-    },
-  }).lean();
-
-  const map: Record<string, number> = {};
-  for (const s of settings) map[s.key] = Number(s.value);
-
-  const freeWindowHours = map.cancellationFreeWindowHours ?? 2;
-  const penalty50Hours = map.cancellationPercentage50Hours ?? 24;
-
+  const restrictionHours = await getRefundRestrictionHours(rideType);
   const now = new Date();
-  const hoursSinceBook = (now.getTime() - bookingTime.getTime()) / 3600000;
   const hoursBeforeDep = (departureTime.getTime() - now.getTime()) / 3600000;
 
-  // Case 1: Cancellation AFTER departure time (no refund)
   if (hoursBeforeDep < 0) {
     return {
       refundAmount: 0,
@@ -480,34 +473,20 @@ export const calculateCancellationRefund = async (
     };
   }
 
-  // Case 2: Free cancellation window after booking
-  if (hoursSinceBook <= freeWindowHours) {
+  if (hoursBeforeDep <= restrictionHours) {
     return {
-      refundAmount: paidAmount,
-      platformAmount: 0,
-      refundReason: 'free_window',
+      refundAmount: 0,
+      platformAmount: paidAmount,
+      refundReason: `${rideType}_refund_restricted_${restrictionHours}h_before_pickup`,
     };
   }
 
-  // Case 3: 50% penalty if cancelled close to departure
-  if (hoursBeforeDep <= penalty50Hours) {
-    const refund = Math.round(paidAmount * 0.5 * 100) / 100;
-    return {
-      refundAmount: refund,
-      platformAmount: paidAmount - refund,
-      refundReason: 'penalty_50',
-    };
-  }
-
-  // Case 4: Full refund if cancelled outside the penalty window
   return {
     refundAmount: paidAmount,
     platformAmount: 0,
-    refundReason: 'outside_penalty_window',
+    refundReason: 'outside_refund_restriction_window',
   };
 };
-
-// �\u20AC�\u20AC Transfer ride ownership (Case 3) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
 export const transferRideOwnership = async (
   rideId: string,
   cancelledUserId: string,
@@ -545,3 +524,36 @@ export const transferRideOwnership = async (
   return true;
 };
 
+
+export const lockSplitRideFare = async (
+  rideId: string,
+  reason: 'departure_time' | 'trip_start',
+  io?: any
+): Promise<boolean> => {
+  const ride = await Ride.findById(rideId);
+  if (!ride || ride.type !== 'split') return false;
+  if ((ride as any).splitFareLocked) return true;
+
+  await recalculateSplitFares(rideId, 'passenger_joined', io);
+
+  const lockedRide = await Ride.findOneAndUpdate(
+    { _id: rideId, splitFareLocked: { $ne: true } },
+    {
+      splitFareLocked: true,
+      splitFareLockedAt: new Date(),
+      splitFareLockReason: reason,
+    },
+    { new: true }
+  );
+
+  if (lockedRide && io) {
+    io.to(`ride:${rideId}`).emit('ride:split-fare-locked', {
+      rideId,
+      reason,
+      lockedAt: lockedRide.splitFareLockedAt,
+      message: 'Split ride fare has been finalized.',
+    });
+  }
+
+  return Boolean(lockedRide || (ride as any).splitFareLocked);
+};

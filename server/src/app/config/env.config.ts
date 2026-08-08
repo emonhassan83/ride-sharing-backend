@@ -38,6 +38,10 @@ export const config = {
   smtp: {
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT as string),
+    secure:
+      process.env.SMTP_SECURE !== undefined
+        ? process.env.SMTP_SECURE === 'true'
+        : process.env.SMTP_PORT === '465',
     username: process.env.SMTP_USERNAME,
     password: process.env.SMTP_PASSWORD,
     emailFrom: process.env.EMAIL_FROM,
@@ -84,3 +88,4 @@ export const config = {
   timeZone: process.env.TIME_ZONE,
   google_maps_key: process.env.GOOGLE_MAPS_API_KEY,
 };
+

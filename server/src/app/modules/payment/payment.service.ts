@@ -20,6 +20,7 @@ import { RIDE_TYPE } from '../ride/ride.constant';
 import { Setting } from '../settings/settings.model';
 import { getRedisClient } from '../../config/redis.config';
 import { recalculateSplitFares } from '../../utils/splitFare.utils';
+import { assertMinimumBookingLeadTime } from '../../utils/rideSchedule.utils';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-06-24.dahlia',
@@ -49,6 +50,14 @@ const createPaymentIntent = async (payload: {
       StatusCodes.BAD_REQUEST,
       'Payment already completed for this booking'
     );
+  const ride = await Ride.findById(booking.rideId).lean();
+  if (!ride) throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
+
+  await assertMinimumBookingLeadTime(
+    ride.departureDate,
+    ride.departureTime,
+    ride.type
+  );
 
   // ── 2. Validate user ──────────────────────────────────────────────────────
   const user = await User.findById(userId);

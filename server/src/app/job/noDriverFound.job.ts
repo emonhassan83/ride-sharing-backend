@@ -30,11 +30,9 @@ const stripe = new Stripe(config.pay?.secretKey as string, {
 // â”€â”€ Load settings with fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const getMatchingSettings = async (): Promise<{
   notifyHours: number; // re-notify X hours before departure
-  cancelHours: number; // cancel Y hours before departure
-  driverResponseMinutes: number; // minimum time to wait after notifying drivers
 }> => {
   const settings = await Setting.find({
-    key: { $in: ['matchingNoDriverNotifyHours', 'matchingLastNotifyHours', 'matchingDriverResponseMinutes'] },
+    key: { $in: ['matchingNoDriverNotifyHours'] },
   }).lean();
 
   const map: Record<string, number> = {};
@@ -42,8 +40,6 @@ const getMatchingSettings = async (): Promise<{
 
   return {
     notifyHours: map.matchingNoDriverNotifyHours ?? 48, // fallback 48h
-    cancelHours: map.matchingLastNotifyHours ?? 1, // fallback 1h
-    driverResponseMinutes: map.matchingDriverResponseMinutes ?? 5, // fallback 5 min
   };
 };
 
@@ -52,8 +48,7 @@ export const checkNoDriverFound = async () => {
   const io = getIO();
   const now = new Date();
 
-  const { notifyHours, cancelHours, driverResponseMinutes } = await getMatchingSettings();
-  const driverResponseMs = Math.max(1, driverResponseMinutes) * 60 * 1000;
+  const { notifyHours } = await getMatchingSettings();
 
   // Phase 2: Re-notify drivers before pickup time. Do not cancel before pickup.
   const reNotifyBefore = new Date(now.getTime() + notifyHours * 3600000);
@@ -322,4 +317,6 @@ export const checkNoDriverFound = async () => {
 
   console.log(`ðŸš« No driver found: cancelled ${cancelRideIds.length} ride(s)`);
 };
+
+
 

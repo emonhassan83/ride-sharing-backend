@@ -1,9 +1,11 @@
 export const GENERAL_KEYS = [
   'bookingMaxDaysAhead',
-  "bookingMinDaysAhead",
+  "splitRideMinBookingHours",
+  "splitRideRefundRestrictionHours",
+  "privateRideMinBookingHours",
+  "privateRideRefundRestrictionHours",
   "matchingNoDriverNotifyHours",
   "matchingLastNotifyHours",
-  "matchingDriverResponseMinutes",
   "cancellationFreeWindowHours",
   "cancellationPercentage50Hours",
   "waitingReminderIntervals",
@@ -33,3 +35,4 @@ export const ALLOWED_KEYS = [
   'userTramsAndCondition',
   'providerTramsAndCondition',
 ] as const;
+

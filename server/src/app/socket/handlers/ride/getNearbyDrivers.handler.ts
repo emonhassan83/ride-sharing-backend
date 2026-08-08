@@ -30,7 +30,7 @@ export const getNearbyDriversHandler = eventHandler<any>(
         message: 'Departure date and time are required',
       });
 
-    await assertMinimumBookingLeadTime(departureDate, departureTime);
+    await assertMinimumBookingLeadTime(departureDate, departureTime, rideType);
 
     const redis = getRedisClient();
     // Keep seat eligibility identical to ride submission for all ride types.

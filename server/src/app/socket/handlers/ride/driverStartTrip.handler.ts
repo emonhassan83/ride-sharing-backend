@@ -15,6 +15,7 @@ import { sendNotification } from '../../../utils/sentPushNotification';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
+import { lockSplitRideFare } from '../../../utils/splitFare.utils';
 
 export const driverStartTripHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -56,6 +57,8 @@ export const driverStartTripHandler = eventHandler<any>(
       });
 
     if (ride.type === RIDE_TYPE.split) {
+      await lockSplitRideFare(rideId, 'trip_start', io);
+
       const passengerIds = passengers.map((passenger) => passenger._id);
       const bookings = await Booking.find({
         rideId,

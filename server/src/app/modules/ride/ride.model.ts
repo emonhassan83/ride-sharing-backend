@@ -75,6 +75,12 @@ const rideSchema = new Schema<TRide>(
 
     // ── Split fare surcharge (new) ────────────────────────────────────────────
     currentSurchargePercent: { type: Number, default: 0 }, // tracks current tier
+    splitFareLocked: { type: Boolean, default: false },
+    splitFareLockedAt: { type: Date },
+    splitFareLockReason: {
+      type: String,
+      enum: ['departure_time', 'trip_start'],
+    },
 
     status: {
       type: String,
@@ -101,5 +107,6 @@ rideSchema.index({ driverId: 1, status: 1 });
 rideSchema.index({ departureDate: 1, departureTime: 1, status: 1 });
 rideSchema.index({ status: 1, createdAt: 1 });
 rideSchema.index({ status: 1, arrivedAt: 1 });
+rideSchema.index({ type: 1, splitFareLocked: 1, departureDate: 1, departureTime: 1 });
 
 export const Ride = mongoose.model<TRide, TRideModel>('Ride', rideSchema);

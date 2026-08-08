@@ -22,10 +22,12 @@ export const updateGeneralsZodSchema = z.object({
     .object({
       // Access & validation ride
       bookingMaxDaysAhead: z.number().optional(),
-      bookingMinDaysAhead: z.number().optional(),
+      splitRideMinBookingHours: z.number().optional(),
+      splitRideRefundRestrictionHours: z.number().optional(),
+      privateRideMinBookingHours: z.number().optional(),
+      privateRideRefundRestrictionHours: z.number().optional(),
       matchingNoDriverNotifyHours: z.number().optional(),
       matchingLastNotifyHours: z.number().optional(),
-      matchingDriverResponseMinutes: z.number().optional(),
       cancellationFreeWindowHours: z.number().optional(),
       cancellationPercentage50Hours: z.number().optional(),
       waitingReminderIntervals: z.number().optional(),
@@ -60,3 +62,4 @@ export const SettingValidation = {
   createOrUpdateSettingZodSchema,
   updateGeneralsZodSchema,
 };
+

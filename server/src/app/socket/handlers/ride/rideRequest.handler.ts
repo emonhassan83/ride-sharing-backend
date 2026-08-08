@@ -1,4 +1,4 @@
-﻿// handlers/ride/rideRequest.handler.ts
+// handlers/ride/rideRequest.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Passenger } from '../../../modules/passenger/passenger.model';
@@ -39,7 +39,8 @@ export const rideRequestHandler = eventHandler<any>(
 
     const { departureDateTime } = await assertMinimumBookingLeadTime(
       departureDate,
-      departureTime
+      departureTime,
+      type
     );
 
     const redis = getRedisClient();

@@ -44,6 +44,9 @@ export interface TRide {
   };
 
   currentSurchargePercent: number
+  splitFareLocked: boolean
+  splitFareLockedAt?: Date
+  splitFareLockReason?: 'departure_time' | 'trip_start'
 
   status: TRideStatus;
   cancellationReason: string;

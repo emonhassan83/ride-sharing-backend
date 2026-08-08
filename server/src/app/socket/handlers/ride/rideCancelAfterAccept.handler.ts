@@ -16,6 +16,7 @@ import { sendNotification } from '../../../utils/sentPushNotification';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
+import { getDepartureDateTime } from '../../../utils/rideSchedule.utils';
 import {
   calculateCancellationRefund,
   recalculateSplitFares,
@@ -110,11 +111,11 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
     }
 
     // �\u20AC�\u20AC Cancellation refund �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
-    const departureDateTime = new Date(`${ride.departureDate}T${ride.departureTime}:00`);
+    const departureDateTime = getDepartureDateTime(ride.departureDate, ride.departureTime);
     const { refundAmount, platformAmount, refundReason } = await calculateCancellationRefund(
       paidAmount,
-      (passenger as any).createdAt || new Date(),
       departureDateTime,
+      ride.type as any,
     );
 
     // �\u20AC�\u20AC Update passenger & booking �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC

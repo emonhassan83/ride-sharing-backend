@@ -77,7 +77,8 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
     // ── DB query — basic filter only ──────────────────────────────────────────
     const rides = await Ride.find({
       type: RIDE_TYPE.split,
-      status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted, RIDE_STATUS.started] },
+      splitFareLocked: { $ne: true },
+      status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
       departureDate,
       $or: [
         { totalSeats: 0 }, // pending ride, driver not yet assigned — no seat constraint
@@ -93,6 +94,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
 
     // ── Application level corridor + direction filter ─────────────────────────
     const filteredRides = rides.filter((ride: any) => {
+      if (ride.splitFareLocked) return false;
       const coords = ride.routeGeometry?.coordinates ?? [];
       if (!coords.length) return false;
 

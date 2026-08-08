@@ -1,14 +1,16 @@
-﻿// jobs/jobScheduler.ts
+// jobs/jobScheduler.ts
 import cron from 'node-cron';
 import { batchInsertLocationHistory } from './locationHistory.job';
 import { checkNoDriverFound } from './noDriverFound.job';
 import { checkNoShowPassengers } from './noShowPassengers.job';
 import { syncDriverLocationsToDb } from './driverLocationSync.job';
+import { checkSplitFareLock } from './splitFareLock.job';
 
 let locationJobRunning = false;
 let noDriverJobRunning = false;
 let noShowJobRunning = false;
 let locationSyncJobRunning = false;
+let splitFareLockJobRunning = false;
 
 export function startBackgroundJobs() {
   console.log('ðŸ•’ Starting background jobs...');
@@ -52,7 +54,21 @@ export function startBackgroundJobs() {
     }
   });
 
-  // 4. Driver location sync (every 5 min)
+  // 4. Split fare lock (every 30 sec)
+  cron.schedule('*/30 * * * * *', async () => {
+    if (splitFareLockJobRunning) return;
+    splitFareLockJobRunning = true;
+    try {
+      await checkSplitFareLock();
+    } catch (err) {
+      console.error('Split fare lock job error:', err);
+    } finally {
+      splitFareLockJobRunning = false;
+    }
+  });
+
+
+  // 5. Driver location sync (every 5 min)
   cron.schedule('*/5 * * * *', async () => {
     if (locationSyncJobRunning) return;
     locationSyncJobRunning = true;

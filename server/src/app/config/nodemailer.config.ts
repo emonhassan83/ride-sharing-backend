@@ -8,7 +8,7 @@ import { ISendEmail } from '../types/email';
 const transporter = nodemailer.createTransport({
   host: config.smtp.host,
   port: Number(config.smtp.port),
-  secure: false, // true for 465, false for other ports
+  secure: config.smtp.secure, // true for 465, false for 587/STARTTLS
   auth: {
     user: config.smtp.username,
     pass: config.smtp.password,

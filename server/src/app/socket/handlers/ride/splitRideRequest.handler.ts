@@ -52,12 +52,14 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     const requestedSeats = passengers || 1;
     const { departureDateTime } = await assertMinimumBookingLeadTime(
       departureDate,
-      departureTime
+      departureTime,
+      RIDE_TYPE.split
     );
 
     // â”€â”€ Find matching split rides â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const nearbySplitRides = await Ride.find({
       type: RIDE_TYPE.split,
+      splitFareLocked: { $ne: true },
       status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
       departureDate: departureDate,
       $or: [
@@ -67,6 +69,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     }).lean();
 
     const matchingRides = nearbySplitRides.filter((ride) => {
+      if ((ride as any).splitFareLocked) return false;
       const coords = (ride as any).routeGeometry?.coordinates;
       if (!coords?.length) return false;
 
