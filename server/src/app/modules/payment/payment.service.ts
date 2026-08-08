@@ -149,6 +149,7 @@ const createPaymentIntent = async (payload: {
     currency: 'eur',
     customer: customerId,
     payment_method_types: ['card'],
+    capture_method: 'manual',
     ...(paymentMethodId ? { payment_method: paymentMethodId } : {}),
     metadata: {
       bookingId: bookingId.toString(),
@@ -190,10 +191,13 @@ const confirmPayment = async (payload: Record<string, any>) => {
       ? await stripe.paymentIntents.retrieve(paymentIntentId)
       : null;
 
-    if (paymentIntent && paymentIntent.status !== 'succeeded') {
+    if (
+      paymentIntent &&
+      !['succeeded', 'requires_capture'].includes(paymentIntent.status)
+    ) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Payment not successful on Stripe'
+        'Payment authorization not successful on Stripe'
       );
     }
 
@@ -220,6 +224,38 @@ const confirmPayment = async (payload: Record<string, any>) => {
     // â”€â”€ 2. Booking check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const booking = await Booking.findById(payment.booking).session(session);
     if (!booking) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
+
+
+    if (paymentIntent?.status === 'requires_capture') {
+      payment.isPaid = false;
+      payment.status = PAYMENT_STATUS.authorized;
+      payment.paymentIntentId = paymentIntent.id;
+      await payment.save({ session });
+
+      booking.paymentStatus = PAYMENT_STATUS.authorized as any;
+      booking.amountPaid = 0;
+      await booking.save({ session });
+
+      await Passenger.findByIdAndUpdate(
+        booking.passengerId,
+        { paymentStatus: PAYMENT_STATUS.authorized },
+        { session }
+      );
+
+      await session.commitTransaction();
+      return {
+        success: true,
+        message: 'Payment authorized successfully. It will be captured after a driver accepts.',
+        payment,
+      };
+    }
+
+    if (!booking.driverId) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Driver has not accepted this booking yet. Payment can only be captured after driver acceptance.'
+      );
+    }
 
     if (booking.paymentStatus === PAYMENT_STATUS.paid) {
       // Booking already paid but payment record not updated â€” sync it
@@ -320,7 +356,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
         [
           {
             booking: booking._id,
-            participants: [booking.userId, booking.driverId],
+            participants: [booking.userId, booking.driverId as any],
             status: CHAT_STATUS.accepted,
           },
         ],
@@ -368,6 +404,125 @@ const confirmPayment = async (payload: Record<string, any>) => {
 /* =====================================================
    ðŸ”¹ PAY WITH WALLET (Direct Deduction)
 ===================================================== */
+const captureAuthorizedBookingPayment = async (bookingId: string, driverId: string) => {
+  const session = await startSession();
+  let recalcRideId: string | null = null;
+
+  try {
+    session.startTransaction();
+
+    const booking = await Booking.findById(bookingId).session(session);
+    if (!booking) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
+
+    const payment = await Payment.findOne({
+      booking: bookingId,
+      status: PAYMENT_STATUS.authorized,
+      isPaid: false,
+    }).session(session);
+
+    booking.driverId = new mongoose.Types.ObjectId(driverId) as any;
+
+    if (!payment) {
+      await booking.save({ session });
+      await session.commitTransaction();
+      return null;
+    }
+
+    let capturedIntent: Stripe.PaymentIntent | null = null;
+    if (payment.paymentIntentId) {
+      const intent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
+      if (intent.status === 'requires_capture') {
+        capturedIntent = await stripe.paymentIntents.capture(payment.paymentIntentId);
+      } else if (intent.status === 'succeeded') {
+        capturedIntent = intent;
+      } else {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Payment cannot be captured. Current status: ${intent.status}`
+        );
+      }
+    }
+
+    if (capturedIntent && capturedIntent.status !== 'succeeded') {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Payment capture failed');
+    }
+
+    payment.provider = new mongoose.Types.ObjectId(driverId) as any;
+    payment.status = PAYMENT_STATUS.paid;
+    payment.isPaid = true;
+    await payment.save({ session });
+
+    booking.paymentStatus = PAYMENT_STATUS.paid as any;
+    booking.bookingStatus = BOOKING_STATUS.accepted;
+    booking.amountPaid = booking.totalFare;
+    await booking.save({ session });
+
+    const passenger = await Passenger.findById(booking.passengerId).session(session);
+    if (!passenger) throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
+
+    await Passenger.findByIdAndUpdate(
+      booking.passengerId,
+      { paymentStatus: PAYMENT_STATUS.paid },
+      { session }
+    );
+
+    const ride = await Ride.findById(booking.rideId).session(session);
+    if (ride) {
+      if (ride.type === RIDE_TYPE.split) recalcRideId = ride._id.toString();
+      await Ride.findByIdAndUpdate(
+        ride._id,
+        {
+          $inc: {
+            bookedSeats: passenger.requestedSeats || 1,
+            malePassengers: passenger.malePassengers || 0,
+            femalePassengers: passenger.femalePassengers || 0,
+          },
+        },
+        { session }
+      );
+    }
+
+    if (payment.providerEarning && payment.providerEarning > 0) {
+      await User.findByIdAndUpdate(
+        driverId,
+        { $inc: { wallet: payment.providerEarning } },
+        { session }
+      );
+    }
+
+    const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
+    if (!existingChat) {
+      await Chat.create(
+        [
+          {
+            booking: booking._id,
+            participants: [booking.userId, booking.driverId as any],
+            status: CHAT_STATUS.accepted,
+          },
+        ],
+        { session }
+      );
+    }
+
+    await session.commitTransaction();
+
+    if (recalcRideId) {
+      try {
+        await recalculateSplitFares(recalcRideId, 'passenger_paid');
+      } catch (err) {
+        console.error('Recalculate error after capture:', err);
+      }
+    }
+
+    return payment;
+  } catch (error: any) {
+    await session.abortTransaction();
+    throw new ApiError(httpStatus.BAD_REQUEST, error.message || 'Payment capture failed');
+  } finally {
+    session.endSession();
+  }
+};
+
 const payWithWallet = async (payload: { booking: string; user: string }) => {
   const { booking: bookingId, user: userId } = payload;
 
@@ -512,7 +667,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
         [
           {
             booking: booking._id,
-            participants: [booking.userId, booking.driverId],
+            participants: [booking.userId, booking.driverId as any],
             status: CHAT_STATUS.accepted,
           },
         ],
@@ -689,6 +844,7 @@ const refundPayment = async (payload: { intendId: string; amount: number }) => {
 export const PaymentService = {
   createPaymentIntent,
   confirmPayment,
+  captureAuthorizedBookingPayment,
   payWithWallet,
   getAllPaymentsFromDB,
   getDashboardDataFromDB,

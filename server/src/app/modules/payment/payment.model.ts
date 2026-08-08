@@ -11,7 +11,7 @@ const paymentSchema = new Schema<TPayment>(
       default: () => generateCryptoString(10),
     },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    provider: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    provider: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     booking: { type: Schema.Types.ObjectId, ref: 'Booking', required: true },
     method: {
       type: String,

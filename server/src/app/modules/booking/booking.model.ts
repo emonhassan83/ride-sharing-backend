@@ -28,7 +28,7 @@ const bookingSchema = new Schema<TBooking>(
     driverId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Driver ID is required'],
+      default: null,
     },
 
     totalFare: {

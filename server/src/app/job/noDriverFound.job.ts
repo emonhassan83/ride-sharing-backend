@@ -1,4 +1,4 @@
-﻿// jobs/noDriverFound.job.ts
+// jobs/noDriverFound.job.ts
 import { getRedisClient } from '../config/redis.config';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { Passenger } from '../modules/passenger/passenger.model';
@@ -16,16 +16,25 @@ import { Refund } from '../modules/refund/refund.model';
 import { BOOKING_STATUS, PAYMENT_STATUS } from '../modules/booking/booking.constant';
 import { REFUND_STATUS, REFUND_TYPE } from '../modules/refund/refund.constant';
 import { refundToWallet } from '../utils/splitFare.utils';
+import { getDepartureDateTime } from '../utils/rideSchedule.utils';
+import Stripe from 'stripe';
+import { config } from '../config/env.config';
 
 const BATCH_SIZE = 50;
+
+const stripe = new Stripe(config.pay?.secretKey as string, {
+  apiVersion: '2026-06-24.dahlia',
+  typescript: true,
+});
 
 // â”€â”€ Load settings with fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const getMatchingSettings = async (): Promise<{
   notifyHours: number; // re-notify X hours before departure
   cancelHours: number; // cancel Y hours before departure
+  driverResponseMinutes: number; // minimum time to wait after notifying drivers
 }> => {
   const settings = await Setting.find({
-    key: { $in: ['matchingNoDriverNotifyHours', 'matchingLastNotifyHours'] },
+    key: { $in: ['matchingNoDriverNotifyHours', 'matchingLastNotifyHours', 'matchingDriverResponseMinutes'] },
   }).lean();
 
   const map: Record<string, number> = {};
@@ -33,7 +42,8 @@ const getMatchingSettings = async (): Promise<{
 
   return {
     notifyHours: map.matchingNoDriverNotifyHours ?? 48, // fallback 48h
-    cancelHours: map.matchingLastNotifyHours ?? 24, // fallback 24h
+    cancelHours: map.matchingLastNotifyHours ?? 1, // fallback 1h
+    driverResponseMinutes: map.matchingDriverResponseMinutes ?? 5, // fallback 5 min
   };
 };
 
@@ -42,17 +52,17 @@ export const checkNoDriverFound = async () => {
   const io = getIO();
   const now = new Date();
 
-  const { notifyHours, cancelHours } = await getMatchingSettings();
+  const { notifyHours, cancelHours, driverResponseMinutes } = await getMatchingSettings();
+  const driverResponseMs = Math.max(1, driverResponseMinutes) * 60 * 1000;
 
-  // â”€â”€ Phase 2: Re-notify drivers (X hours before departure) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Phase 2: Re-notify drivers before pickup time. Do not cancel before pickup.
   const reNotifyBefore = new Date(now.getTime() + notifyHours * 3600000);
-
-  // Grace period: ignore rides created in the last 30 minutes (already notified by rideRequest handler)
+  const reNotifyBeforeLocal = `${reNotifyBefore.getFullYear()}-${String(reNotifyBefore.getMonth() + 1).padStart(2, '0')}-${String(reNotifyBefore.getDate()).padStart(2, '0')}`;
   const gracePeriodCutoff = new Date(now.getTime() - 30 * 60 * 1000);
 
   const ridesForRenotify = await Ride.find({
     status: RIDE_STATUS.pending,
-    departureDate: { $lte: reNotifyBefore.toISOString().split('T')[0] },
+    departureDate: { $lte: reNotifyBeforeLocal },
     reNotifiedAt: { $exists: false },
     createdAt: { $lte: gracePeriodCutoff },
   })
@@ -60,18 +70,14 @@ export const checkNoDriverFound = async () => {
     .lean();
 
   for (const ride of ridesForRenotify) {
-    // Check departure is actually within the window
-    const departureMs = new Date(
-      `${ride.departureDate}T${ride.departureTime}:00`
-    ).getTime();
+    const departureDateTime = getDepartureDateTime(
+      ride.departureDate,
+      ride.departureTime
+    );
+    const hoursUntilDeparture =
+      (departureDateTime.getTime() - now.getTime()) / 3600000;
 
-    const hoursUntilDeparture = (departureMs - now.getTime()) / 3600000;
-
-    // Only re-notify if within notify window but not yet in cancel window
-    if (
-      hoursUntilDeparture > cancelHours &&
-      hoursUntilDeparture <= notifyHours
-    ) {
+    if (hoursUntilDeparture > 0 && hoursUntilDeparture <= notifyHours) {
       const passenger = await Passenger.findOne({
         rideId: ride._id,
         status: PASSENGER_STATUS.pending,
@@ -83,7 +89,6 @@ export const checkNoDriverFound = async () => {
         .select('_id name profileImage')
         .lean();
 
-      // Re-notify nearby drivers
       const ridePayload = {
         _id: passenger._id,
         userId: {
@@ -124,12 +129,16 @@ export const checkNoDriverFound = async () => {
         passenger._id.toString()
       );
 
-      // Mark as re-notified
       await Ride.findByIdAndUpdate(ride._id, {
         reNotifiedAt: now,
       });
 
-      // âœ… Notify rider â€” re-matching in progress
+      await redis.hset(`ride:request:${ride._id}`, {
+        notifiedCount: notified.toString(),
+        matchingStatus: notified > 0 ? 'renotified' : 'renotify_no_driver',
+        lastNotifiedAt: now.getTime().toString(),
+      });
+
       const riderUser = await User.findById((ride as any).rideCreatedBy)
         .select('fcmToken')
         .lean();
@@ -148,19 +157,15 @@ export const checkNoDriverFound = async () => {
           modelType: modeType.Ride,
         }).catch(() => {});
       }
-
-      console.log(
-        `ðŸ”” Phase 2 re-notify | ride ${ride._id} | ${notified} drivers | ${hoursUntilDeparture.toFixed(1)}h before departure`
-      );
     }
   }
 
-  // â”€â”€ Phase 3: Cancel rides (Y hours before departure, still no driver) â”€â”€â”€â”€â”€
-  const cancelBefore = new Date(now.getTime() + cancelHours * 3600000);
+  // Phase 3: Cancel only after pickup time has passed and no driver accepted
+  const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   const ridesForCancel = await Ride.find({
     status: RIDE_STATUS.pending,
-    departureDate: { $lte: cancelBefore.toISOString().split('T')[0] },
+    departureDate: { $lte: todayLocal },
   })
     .limit(BATCH_SIZE)
     .lean();
@@ -168,13 +173,12 @@ export const checkNoDriverFound = async () => {
   const cancelRideIds: string[] = [];
 
   for (const ride of ridesForCancel) {
-    const departureMs = new Date(
-      `${ride.departureDate}T${ride.departureTime}:00`
-    ).getTime();
+    const departureDateTime = getDepartureDateTime(
+      ride.departureDate,
+      ride.departureTime
+    );
 
-    const hoursUntilDeparture = (departureMs - now.getTime()) / 3600000;
-
-    if (hoursUntilDeparture <= cancelHours) {
+    if (departureDateTime.getTime() <= now.getTime()) {
       cancelRideIds.push(ride._id.toString());
     }
   }
@@ -199,11 +203,32 @@ export const checkNoDriverFound = async () => {
   });
 
   for (const booking of bookingsToRefund) {
+    const payment = await Payment.findOne({ booking: booking._id });
+
+    if (payment?.status === PAYMENT_STATUS.authorized && payment.paymentIntentId) {
+      try {
+        const intent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
+        if (intent.status === 'requires_capture') {
+          await stripe.paymentIntents.cancel(payment.paymentIntentId);
+        }
+      } catch (error: any) {
+        console.error('Failed to cancel authorized payment:', error.message);
+      }
+
+      payment.status = PAYMENT_STATUS.cancelled_authorization as any;
+      payment.isPaid = false;
+      await payment.save();
+
+      booking.bookingStatus = BOOKING_STATUS.cancelled;
+      booking.paymentStatus = PAYMENT_STATUS.cancelled_authorization as any;
+      booking.amountPaid = 0;
+      await booking.save();
+      continue;
+    }
+
     const paidAmount = booking.amountPaid ?? 0;
     if (paidAmount > 0) {
-      // Find corresponding payment record
-      const payment = await Payment.findOne({ booking: booking._id, status: PAYMENT_STATUS.paid });
-      if (payment) {
+      if (payment && payment.status === PAYMENT_STATUS.paid) {
         payment.status = PAYMENT_STATUS.refunded as any;
         payment.isPaid = false;
         await payment.save();

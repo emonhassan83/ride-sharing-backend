@@ -19,6 +19,7 @@ import eventHandler from '../../utils/eventHandler';
 import { ILatLng } from '../../interface/ride';
 import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';
+import { PaymentService } from '../../../modules/payment/payment.service';
 
 const ensureRiderInRoom = (userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
@@ -315,16 +316,27 @@ export const driverAcceptRideHandler = eventHandler<any>(
         ...(ride.totalSeats === 0 && { totalSeats: vehicleTotalSeats }),
       });
 
-      const booking = await Booking.create({
-        passengerId: passenger._id,
-        rideId: ride._id,
-        userId: passenger.userId,
-        driverId,
-        totalFare: passenger.estimatedFare,
-        amountPaid: 0,
-        bookingStatus: BOOKING_STATUS.accepted,
-        paymentStatus: PAYMENT_STATUS.pending,
-      });
+      const booking = await Booking.findOneAndUpdate(
+        { passengerId: passenger._id, rideId: ride._id },
+        {
+          $set: {
+            userId: passenger.userId,
+            driverId,
+            totalFare: passenger.estimatedFare,
+            bookingStatus: BOOKING_STATUS.accepted,
+          },
+          $setOnInsert: {
+            amountPaid: 0,
+            paymentStatus: PAYMENT_STATUS.pending,
+          },
+        },
+        { upsert: true, new: true }
+      );
+
+      await PaymentService.captureAuthorizedBookingPayment(
+        booking._id.toString(),
+        driverId
+      );
 
       notifyAdminForNewPendingBooking(booking).catch(() => { });
 
@@ -450,16 +462,27 @@ export const driverAcceptRideHandler = eventHandler<any>(
         await Ride.findByIdAndUpdate(rideId, rideUpdate);
       }
 
-      const booking = await Booking.create({
-        passengerId: passenger._id,
-        rideId: ride._id,
-        userId: passenger.userId,
-        driverId,
-        totalFare: passenger.estimatedFare,
-        amountPaid: 0,
-        bookingStatus: BOOKING_STATUS.accepted,
-        paymentStatus: PAYMENT_STATUS.pending,
-      });
+      const booking = await Booking.findOneAndUpdate(
+        { passengerId: passenger._id, rideId: ride._id },
+        {
+          $set: {
+            userId: passenger.userId,
+            driverId,
+            totalFare: passenger.estimatedFare,
+            bookingStatus: BOOKING_STATUS.accepted,
+          },
+          $setOnInsert: {
+            amountPaid: 0,
+            paymentStatus: PAYMENT_STATUS.pending,
+          },
+        },
+        { upsert: true, new: true }
+      );
+
+      await PaymentService.captureAuthorizedBookingPayment(
+        booking._id.toString(),
+        driverId
+      );
 
       notifyAdminForNewPendingBooking(booking).catch(() => { });
 

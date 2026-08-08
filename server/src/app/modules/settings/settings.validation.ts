@@ -25,6 +25,7 @@ export const updateGeneralsZodSchema = z.object({
       bookingMinDaysAhead: z.number().optional(),
       matchingNoDriverNotifyHours: z.number().optional(),
       matchingLastNotifyHours: z.number().optional(),
+      matchingDriverResponseMinutes: z.number().optional(),
       cancellationFreeWindowHours: z.number().optional(),
       cancellationPercentage50Hours: z.number().optional(),
       waitingReminderIntervals: z.number().optional(),

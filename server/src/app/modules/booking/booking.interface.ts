@@ -7,7 +7,7 @@ export interface TBooking {
   passengerId: Types.ObjectId; 
   rideId: Types.ObjectId; 
   userId: Types.ObjectId;
-  driverId: Types.ObjectId;          // Kept (for quick access & indexing)
+  driverId?: Types.ObjectId | null;     // Set after driver accepts
 
   totalFare: number;                 // Most important
   amountPaid: number;

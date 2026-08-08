@@ -1,4 +1,4 @@
-﻿// utils/notifyDrivers.utils.ts
+// utils/notifyDrivers.utils.ts
 import { User } from '../modules/user/user.model';
 import { USER_ROLE, USER_STATUS } from '../modules/user/user.constant';
 import { ILatLng } from '../socket/interface/ride';
@@ -147,6 +147,12 @@ export async function notifyNearbyDrivers(
         description: `New ${rideType} ride from ${ridePayload.pickup?.address || 'nearby'}`,
         reference: passengerId,
         modelType: modeType.Passenger,
+        data: {
+          type: 'RIDE_REQUEST',
+          rideId,
+          passengerId: passengerId || '',
+          rideType,
+        },
       }).catch((err: any) =>
         console.warn(`FCM failed for online driver ${driverId}:`, err)
       );
@@ -210,6 +216,12 @@ export async function notifyNearbyDrivers(
           description: `New ${rideType} ride from ${ridePayload.pickup?.address || 'nearby'}`,
           reference: passengerId,
           modelType: modeType.Passenger,
+          data: {
+            type: 'RIDE_REQUEST',
+            rideId,
+            passengerId: passengerId || '',
+            rideType,
+          },
         });
         if (!isKnownOnline) notifiedCount++;
       } catch (err) {
@@ -311,6 +323,12 @@ export async function notifyNearbyDriversForSplitRide(
         description: `Split ride from ${ridePayload.pickup?.address || 'nearby'}`,
         reference: passengerId || ridePayload.passengerId,
         modelType: modeType.Passenger,
+        data: {
+          type: 'SPLIT_RIDE_REQUEST',
+          rideId,
+          passengerId: passengerId || ridePayload.passengerId || '',
+          rideType: 'split',
+        },
       }).catch((err: any) =>
         console.warn(`FCM failed for online split driver ${driverId}:`, err)
       );
@@ -370,6 +388,12 @@ export async function notifyNearbyDriversForSplitRide(
           description: `Split ride from ${ridePayload.pickup?.address || 'nearby'}`,
           reference: passengerId || ridePayload.passengerId,
           modelType: modeType.Passenger,
+          data: {
+            type: 'SPLIT_RIDE_REQUEST',
+            rideId,
+            passengerId: passengerId || ridePayload.passengerId || '',
+            rideType: 'split',
+          },
         });
         notifiedCount++;
       } catch (err) {
@@ -386,4 +410,5 @@ export async function notifyNearbyDriversForSplitRide(
 
   return notifiedCount;
 }
+
 

@@ -10,8 +10,10 @@ export const BOOKING_STATUS = {
 export const PAYMENT_STATUS = {
   pending: 'pending',
   paid: 'paid',
+  authorized: 'authorized',
   failed: 'failed',
   refunded: 'refunded',
+  cancelled_authorization: 'cancelled_authorization',
 } as const;
 
 export type TBookingStatus = keyof typeof BOOKING_STATUS;

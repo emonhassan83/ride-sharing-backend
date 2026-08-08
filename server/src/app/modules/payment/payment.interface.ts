@@ -5,7 +5,7 @@ export type TPayment = {
   _id: string
   id: string
   user: Types.ObjectId
-  provider: Types.ObjectId
+  provider?: Types.ObjectId | null
   booking: Types.ObjectId
   method: TPaymentMethod
   transactionId: string

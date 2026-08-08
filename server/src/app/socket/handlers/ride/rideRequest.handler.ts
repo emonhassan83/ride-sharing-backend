@@ -15,7 +15,9 @@ import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { notifyNearbyDrivers } from '../../../utils/notifyDrivers.utils';
 import { fetchDriversWithinRadius } from '../../../utils/geo.utils';
-import { Setting } from '../../../modules/settings/settings.model';
+import { Booking } from '../../../modules/booking/booking.model';
+import { BOOKING_STATUS, PAYMENT_STATUS as BOOKING_PAYMENT_STATUS } from '../../../modules/booking/booking.constant';
+import { assertMinimumBookingLeadTime } from '../../../utils/rideSchedule.utils';
 
 export const rideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -36,20 +38,13 @@ export const rideRequestHandler = eventHandler<any>(
 
     const requestedSeats = Number(passengers) > 0 ? Number(passengers) : 1;
 
-    const [year, month, day] = departureDate.split('-').map(Number);
-    const [hour, minute]     = departureTime.split(':').map(Number);
-    const departureDateTime  = new Date(year, month - 1, day, hour, minute);
+    const { departureDateTime } = await assertMinimumBookingLeadTime(
+      departureDate,
+      departureTime
+    );
 
     const redis = getRedisClient();
     const io    = getIO();
-
-    const cancelSetting = await Setting.findOne({
-      key: 'matchingLastNotifyHours',
-    }).lean();
-    const cancelHours = Number(cancelSetting?.value ?? 24);
-    const hoursUntilDeparture =
-      (departureDateTime.getTime() - Date.now()) / 3600000;
-    const isFutureScheduledRide = hoursUntilDeparture > cancelHours;
 
     // âœ… Check available drivers BEFORE creating ride/passenger
     const eligibleDrivers = await fetchDriversWithinRadius(
@@ -69,14 +64,6 @@ export const rideRequestHandler = eventHandler<any>(
           (driver: any) => driver.driverId === requestedDriverId.toString()
         )
       : eligibleDrivers.length > 0;
-
-    if (!driversAvailable && !isFutureScheduledRide) {
-      return callback?.({
-        success: false,
-        message: 'No drivers available for this date and time. Please try a different time.',
-        code:    'NO_DRIVERS_AVAILABLE',
-      });
-    }
 
     // â”€â”€ Real distance & ETA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let actualDistance = 0;
@@ -219,21 +206,21 @@ export const rideRequestHandler = eventHandler<any>(
 
     console.log(`ðŸ“¡ Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);
 
-    // â”€â”€ Rollback if no drivers were notified â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if (notifiedCount === 0 && !isFutureScheduledRide) {
-      await Ride.findByIdAndDelete(ride._id);
-      await Passenger.findByIdAndDelete(passenger._id);
-      return callback?.({
-        success: false,
-        message: 'No available drivers found for this date and time. Please try again later.',
-        code: 'NO_DRIVERS_AVAILABLE',
-      });
-    }
-
     // â”€â”€ Redis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const booking = await Booking.create({
+      passengerId: passenger._id,
+      rideId: ride._id,
+      userId,
+      totalFare: passenger.estimatedFare,
+      amountPaid: 0,
+      bookingStatus: BOOKING_STATUS.pending,
+      paymentStatus: BOOKING_PAYMENT_STATUS.pending,
+    });
+
     await redis.hset(`ride:request:${ride._id}`, {
       userId,
       passengerId:        passenger._id.toString(),
+      bookingId:          booking._id.toString(),
       pickup:             JSON.stringify(pickup),
       destination:        JSON.stringify(destination),
       seats:              requestedSeats.toString(),
@@ -242,6 +229,7 @@ export const rideRequestHandler = eventHandler<any>(
       departureTime,
       departureTimestamp: departureDateTime.getTime().toString(),
       notifiedCount:      notifiedCount.toString(),
+      lastNotifiedAt:     notifiedCount > 0 ? Date.now().toString() : '',
       selectedDriverId:   requestedDriverId ? requestedDriverId.toString() : '',
       matchingStatus:     notifiedCount > 0 ? 'notified' : 'scheduled_pending',
       timestamp:          Date.now().toString(),
@@ -258,10 +246,11 @@ export const rideRequestHandler = eventHandler<any>(
       success: true,
       message: notifiedCount > 0
         ? `Ride request created. ${notifiedCount} nearby driver(s) notified.`
-        : 'Ride request scheduled. We will keep looking for a driver before departure.',
+        : 'Ride request created. We will keep looking for a driver.',
       data: {
         rideId:            ride._id,
         passengerId:       passenger._id,
+        bookingId:          booking._id,
         notifiedDrivers:   notifiedCount,
         matchingStatus:    notifiedCount > 0 ? 'notified' : 'scheduled_pending',
         estimatedFare:     roundedBreakdown.totalFare,

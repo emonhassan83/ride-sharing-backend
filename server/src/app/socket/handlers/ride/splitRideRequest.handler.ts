@@ -4,6 +4,8 @@ import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant'
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { Ride } from '../../../modules/ride/ride.model';
+import { Booking } from '../../../modules/booking/booking.model';
+import { BOOKING_STATUS, PAYMENT_STATUS as BOOKING_PAYMENT_STATUS } from '../../../modules/booking/booking.constant';
 import { User } from '../../../modules/user/user.model';
 import { Vehicle } from '../../../modules/vehicle/vehicle.model';
 import { calculateDistance } from '../../../utils/location.utils';
@@ -11,11 +13,14 @@ import { getFareType } from '../../../utils/time.utils';
 import { roundTo2 } from '../../../utils/number.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { notifyNearbyDriversForSplitRide } from '../../../utils/notifyDrivers.utils';
+import { modeType } from '../../../modules/notification/notification.interface';
+import { sendNotification } from '../../../utils/sentPushNotification';
 import { calcSplitPassengerFare } from '../../../utils/splitFare.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { haversineMeters, isPointNearRoute } from '../../../utils/geo.utils';
+import { assertMinimumBookingLeadTime } from '../../../utils/rideSchedule.utils';
 
 export const joinSplitRideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -45,17 +50,18 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       });
 
     const requestedSeats = passengers || 1;
-    const [year, month, day] = departureDate.split('-').map(Number);
-    const [hour, minute] = departureTime.split(':').map(Number);
-    const departureDateTime = new Date(year, month - 1, day, hour, minute);
+    const { departureDateTime } = await assertMinimumBookingLeadTime(
+      departureDate,
+      departureTime
+    );
 
-    // ── Find matching split rides ─────────────────────────────────────────────
+    // â”€â”€ Find matching split rides â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const nearbySplitRides = await Ride.find({
       type: RIDE_TYPE.split,
       status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
       departureDate: departureDate,
       $or: [
-        { totalSeats: 0 }, // pending ride, no driver yet — no seat constraint
+        { totalSeats: 0 }, // pending ride, no driver yet â€” no seat constraint
         { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },
       ],
     }).lean();
@@ -67,7 +73,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       if (!isPointNearRoute(pickup.lat, pickup.lng, coords)) return false;
       if (!isPointNearRoute(destination.lat, destination.lng, coords)) return false;
 
-      // Direction check — passenger's pickup must appear before their destination on the route
+      // Direction check â€” passenger's pickup must appear before their destination on the route
       let pickupIdx = -1, destIdx = -1;
       let pickupDist = Infinity, destDist = Infinity;
 
@@ -87,7 +93,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         message: 'No nearby split rides found for your route.',
       });
 
-    // ── Distance & ETA ────────────────────────────────────────────────────────
+    // â”€â”€ Distance & ETA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let actualDistance = 0;
     let actualDuration = 0;
     try {
@@ -117,7 +123,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     const notifiedRides: any[] = [];
 
     for (const ride of matchingRides) {
-      // ── Duplicate join check ──────────────────────────────────────────────
+      // â”€â”€ Duplicate join check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const alreadyJoined = await Passenger.findOne({
         rideId: ride._id,
         userId,
@@ -125,7 +131,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       });
       if (alreadyJoined) continue;
 
-      // ── Fare with correct totalSeats ──────────────────────────────────────
+      // â”€â”€ Fare with correct totalSeats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const totalSeatsAfterJoin = (ride.bookedSeats || 0) + requestedSeats;
       const fareBreakdown = await calcSplitPassengerFare(
         actualDistance,
@@ -136,7 +142,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         departureDateTime
       );
 
-      // ── Create Passenger ──────────────────────────────────────────────────
+      // â”€â”€ Create Passenger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const passenger = await Passenger.create({
         userId,
         rideId: ride._id,
@@ -175,7 +181,18 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       socket.join(`ride:${ride._id}`);
       socket.join(`passenger:${passenger._id}`);
 
-      // ── Vehicle info (if ride has a driver) ───────────────────────────────
+      const booking = await Booking.create({
+        passengerId: passenger._id,
+        rideId: ride._id,
+        userId,
+        driverId: (ride as any).driverId || undefined,
+        totalFare: passenger.estimatedFare,
+        amountPaid: 0,
+        bookingStatus: BOOKING_STATUS.pending,
+        paymentStatus: BOOKING_PAYMENT_STATUS.pending,
+      });
+
+      // â”€â”€ Vehicle info (if ride has a driver) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       let vehicleInfo = null;
       const existingDriverId = (ride as any).driverId?.toString();
       if (existingDriverId) {
@@ -197,7 +214,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         }
       }
 
-      // ── Socket payload — same structure as getDriverRideRequest REST ──────
+      // â”€â”€ Socket payload â€” same structure as getDriverRideRequest REST â”€â”€â”€â”€â”€â”€
       const ridePayload = {
         _id: passenger._id,
         userId: {
@@ -227,47 +244,51 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         createdAt: passenger.createdAt,
       };
 
-      // ── Notify driver ─────────────────────────────────────────────────────
+      // â”€â”€ Notify driver â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (existingDriverId) {
-        // Ride already has driver → notify only that driver
+        // Ride already has driver -> notify only that driver
         io.to(`driver:${existingDriverId}`).emit(
           'ride:new-request',
           ridePayload
         );
 
-        // FCM if driver offline
         const driverUser = await User.findById(existingDriverId)
           .select('fcmToken')
           .lean();
 
         if (driverUser?.fcmToken) {
-          // sendPushNotification({
-          //   fcmToken: driverUser.fcmToken,
-          //   title:    'New Passenger Request!',
-          //   body:     `A passenger wants to join your split ride from ${pickup.address || 'nearby'}`,
-          //   data: {
-          //     type:          'SPLIT_RIDE_REQUEST',
-          //     rideId:        ride._id.toString(),
-          //     passengerId:   passenger._id.toString(),
-          //     estimatedFare: String(fareBreakdown.estimatedFare),
-          //     departureDate: scheduledDate,
-          //     departureTime: scheduledTime,
-          //   },
-          // }).catch(() => {});
+          sendNotification([driverUser.fcmToken], {
+            receiver: existingDriverId,
+            message: 'New Split Ride Request!',
+            description: 'A passenger wants to join your split ride from ' + (pickup.address || 'nearby'),
+            reference: passenger._id.toString(),
+            modelType: modeType.Passenger,
+            data: {
+              type: 'SPLIT_RIDE_REQUEST',
+              rideId: ride._id.toString(),
+              passengerId: passenger._id.toString(),
+              rideType: 'split',
+            },
+          }).catch(() => {});
         }
+
+        await Ride.findByIdAndUpdate(ride._id, {
+          $addToSet: { notifiedDriverIds: existingDriverId },
+        });
       } else {
-        // No driver yet → notify nearby drivers along the route
+        // No driver yet -> notify nearby drivers along the route
         await notifyNearbyDriversForSplitRide(
           ride._id.toString(),
           (ride as any).routeGeometry,
           pickup,
           ridePayload,
           redis,
-          io
+          io,
+          passenger._id.toString()
         );
       }
 
-      // ── Redis ─────────────────────────────────────────────────────────────
+      // â”€â”€ Redis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const ttl = Math.max(
         3600,
         Math.floor((departureDateTime.getTime() - Date.now()) / 1000) + 7200
@@ -276,6 +297,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         userId,
         passengerId: passenger._id.toString(),
         rideId: ride._id.toString(),
+        bookingId: booking._id.toString(),
         estimatedFare: fareBreakdown.estimatedFare.toString(),
         timestamp: Date.now().toString(),
       });
@@ -284,6 +306,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       notifiedRides.push({
         rideId: ride._id,
         passengerId: passenger._id,
+        bookingId: booking._id,
         estimatedFare: fareBreakdown.estimatedFare,
         surchargePercent: fareBreakdown.surchargePercent,
         availableSeats:

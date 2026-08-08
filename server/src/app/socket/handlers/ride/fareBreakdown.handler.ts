@@ -5,6 +5,7 @@ import { roundObjectNumbers, roundTo2 } from '../../../utils/number.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
+import { assertMinimumBookingLeadTime } from '../../../utils/rideSchedule.utils';
 
 export const fareBreakdownHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -31,9 +32,10 @@ export const fareBreakdownHandler = eventHandler<any>(
     // ── Departure datetime ────────────────────────────────────────────────────
     let departureDateTime = new Date();
     if (departureDate && departureTime) {
-      const [year, month, day] = departureDate.split('-').map(Number);
-      const [hour, minute]     = departureTime.split(':').map(Number);
-      departureDateTime = new Date(year, month - 1, day, hour, minute);
+      ({ departureDateTime } = await assertMinimumBookingLeadTime(
+        departureDate,
+        departureTime
+      ));
     }
 
     // ── Real distance & ETA (Google Maps) ─────────────────────────────────────

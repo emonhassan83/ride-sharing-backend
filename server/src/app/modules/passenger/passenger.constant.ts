@@ -13,7 +13,9 @@ export const PASSENGER_STATUS = {
 export const PAYMENT_STATUS = {
     pending: 'pending',
     paid: 'paid',
+    authorized: 'authorized',
     failed: 'failed',
+    cancelled_authorization: 'cancelled_authorization',
     pending_recovery: 'pending_recovery'
 } as const;
 

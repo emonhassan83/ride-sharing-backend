@@ -3,6 +3,7 @@ export const GENERAL_KEYS = [
   "bookingMinDaysAhead",
   "matchingNoDriverNotifyHours",
   "matchingLastNotifyHours",
+  "matchingDriverResponseMinutes",
   "cancellationFreeWindowHours",
   "cancellationPercentage50Hours",
   "waitingReminderIntervals",

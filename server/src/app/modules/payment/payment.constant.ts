@@ -6,7 +6,9 @@ export const PAYMENT_METHOD = {
 export enum PAYMENT_STATUS {
   unpaid = 'unpaid',
   paid = 'paid',
+  authorized = 'authorized',
   refunded = 'refunded',
+  cancelled_authorization = 'cancelled_authorization',
   failed = 'failed',
 }
 

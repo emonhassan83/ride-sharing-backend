@@ -5,6 +5,7 @@ import { fetchDriversWithinRadius } from '../../../utils/geo.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
+import { assertMinimumBookingLeadTime } from '../../../utils/rideSchedule.utils';
 
 export const getNearbyDriversHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -28,6 +29,8 @@ export const getNearbyDriversHandler = eventHandler<any>(
         success: false,
         message: 'Departure date and time are required',
       });
+
+    await assertMinimumBookingLeadTime(departureDate, departureTime);
 
     const redis = getRedisClient();
     // Keep seat eligibility identical to ride submission for all ride types.

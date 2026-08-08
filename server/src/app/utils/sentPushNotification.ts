@@ -15,6 +15,18 @@ export const sendNotification = async (
       return { successCount: 0, failureCount: 0, responses: [] };
     }
 
+    const dataPayload: Record<string, string> = {};
+    const sourceData = payload?.data || {};
+
+    Object.entries(sourceData).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        dataPayload[key] = String(value);
+      }
+    });
+
+    if (payload?.reference) dataPayload.reference = String(payload.reference);
+    if (payload?.modelType) dataPayload.modelType = String(payload.modelType);
+
     // Map your array of tokens into individual message objects for the new sendEach API
     const messages = validTokens.map((token) => ({
       token: token,
@@ -22,6 +34,7 @@ export const sendNotification = async (
         title: payload.message,
         body: payload.description,
       },
+      data: dataPayload,
       apns: {
         headers: {
           'apns-push-type': 'alert',
@@ -58,3 +71,4 @@ export const sendNotification = async (
     );
   }
 };
+
