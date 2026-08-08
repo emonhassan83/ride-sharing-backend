@@ -126,7 +126,10 @@ export const checkNoDriverFound = async () => {
         ridePayload,
         redis,
         io,
-        passenger._id.toString()
+        passenger._id.toString(),
+        10,
+        undefined,
+        { notifyMode: 'all_eligible' }
       );
 
       await Ride.findByIdAndUpdate(ride._id, {

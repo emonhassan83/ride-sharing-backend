@@ -14,7 +14,6 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { notifyNearbyDrivers } from '../../../utils/notifyDrivers.utils';
-import { fetchDriversWithinRadius } from '../../../utils/geo.utils';
 import { Booking } from '../../../modules/booking/booking.model';
 import { BOOKING_STATUS, PAYMENT_STATUS as BOOKING_PAYMENT_STATUS } from '../../../modules/booking/booking.constant';
 import { assertMinimumBookingLeadTime } from '../../../utils/rideSchedule.utils';
@@ -46,24 +45,8 @@ export const rideRequestHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io    = getIO();
 
-    // âœ… Check available drivers BEFORE creating ride/passenger
-    const eligibleDrivers = await fetchDriversWithinRadius(
-      redis,
-      pickup.lng,
-      pickup.lat,
-      10,
-      type,
-      requestedSeats,
-      destination,
-      departureDate,
-      departureTime,
-    );
     const requestedDriverId = selectedDriverId || driverId;
-    const driversAvailable = requestedDriverId
-      ? eligibleDrivers.some(
-          (driver: any) => driver.driverId === requestedDriverId.toString()
-        )
-      : eligibleDrivers.length > 0;
+    const notifyMode = 'all_eligible';
 
     // â”€â”€ Real distance & ETA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let actualDistance = 0;
@@ -191,18 +174,17 @@ export const rideRequestHandler = eventHandler<any>(
     };
 
     // â”€â”€ Notify drivers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const notifiedCount = driversAvailable
-      ? await notifyNearbyDrivers(
-          ride._id.toString(),
-          pickup,
-          ridePayload,
-          redis,
-          io,
-          passenger._id.toString(),
-          10,
-          requestedDriverId ? [requestedDriverId.toString()] : undefined,
-        )
-      : 0;
+    const notifiedCount = await notifyNearbyDrivers(
+      ride._id.toString(),
+      pickup,
+      ridePayload,
+      redis,
+      io,
+      passenger._id.toString(),
+      10,
+      requestedDriverId ? [requestedDriverId.toString()] : undefined,
+      { notifyMode }
+    );
 
     console.log(`ðŸ“¡ Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);
 

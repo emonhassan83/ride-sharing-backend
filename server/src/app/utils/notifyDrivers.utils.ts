@@ -92,7 +92,8 @@ export async function notifyNearbyDrivers(
   io: any,
   passengerId?: string,
   radiusKm = 10,
-  targetDriverIds?: string[]
+  targetDriverIds?: string[],
+  options?: { notifyMode?: 'nearby' | 'all_eligible' }
 ): Promise<number> {
   let notifiedCount = 0;
   const notifiedIds: string[] = [];
@@ -102,6 +103,71 @@ export async function notifyNearbyDrivers(
   const departureTime = ridePayload.departureTime as string;
   const rideType = ridePayload.rideType as string;
   const requestedSeats = (ridePayload.requestedSeats as number) || 1;
+  const notifyMode = options?.notifyMode || 'nearby';
+
+  if (notifyMode === 'all_eligible') {
+    const eligibleDrivers = await User.find({
+      role: USER_ROLE.provider,
+      isDeleted: false,
+      status: USER_STATUS.active,
+      isKycVerified: true,
+      ...(targetDriverIds?.length ? { _id: { $in: targetDriverIds } } : {}),
+    })
+      .select('_id fcmToken')
+      .lean();
+
+    for (const driver of eligibleDrivers) {
+      const driverId = driver._id.toString();
+      const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
+      if (rejected) continue;
+
+      const availability = await hasDriverRideAtDateTime(
+        driverId,
+        departureDate,
+        departureTime,
+        rideType,
+        requestedSeats
+      );
+      if (!availability.available) continue;
+
+      const isKnownOnline = await redis.sismember('users:online', driverId);
+      if (isKnownOnline) {
+        io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+      }
+
+      const fcmToken = (driver as any).fcmToken;
+      if (fcmToken) {
+        try {
+          await sendNotification([fcmToken], {
+            receiver: driver._id,
+            message: 'New Ride Request!',
+            description: `New ${rideType} scheduled ride from ${ridePayload.pickup?.address || 'nearby'}`,
+            reference: passengerId,
+            modelType: modeType.Passenger,
+            data: {
+              type: 'RIDE_REQUEST',
+              rideId,
+              passengerId: passengerId || '',
+              rideType,
+            },
+          });
+        } catch (err) {
+          console.warn(`FCM failed for scheduled driver ${driverId}:`, err);
+        }
+      }
+
+      notifiedIds.push(driverId);
+      notifiedCount++;
+    }
+
+    if (notifiedIds.length) {
+      await Ride.findByIdAndUpdate(rideId, {
+        $addToSet: { notifiedDriverIds: { $each: notifiedIds } },
+      });
+    }
+
+    return notifiedCount;
+  }
 
   type GeoResult = Array<[string, string]>;
   const onlineDrivers = (await redis.georadius(
