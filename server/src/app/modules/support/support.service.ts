@@ -86,9 +86,10 @@ const sentSupportMessage = async (id: string, payload: TSupportMessage) => {
   await emailQueue.add(
     'send-support-reply-email',
     {
+      email: support.email,
       support,
-      subject: payload.subject,
-      message: payload.messages,
+      subj: payload.subject,
+      messages: payload.messages,
     },
     {
       priority: 1,
@@ -154,3 +155,4 @@ export const SupportService = {
   changeStatus,
   remove,
 };
+

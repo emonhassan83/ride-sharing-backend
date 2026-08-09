@@ -76,11 +76,9 @@ export const createEmailWorker = (): Worker => {
             }
 
             case 'send-support-reply-email': {
-              const { support, subj, messages } = data as {
-                support: any;
-                subj: string;
-                messages: string;
-              };
+              const { support } = data as { support: any };
+              const subj = (data as any).subj || (data as any).subject || 'Support Reply';
+              const messages = (data as any).messages || (data as any).message || '';
               subject = `Support Message: ${subj}`;
 
               const template = compile(sendSupportReplyEmail);
@@ -93,10 +91,11 @@ export const createEmailWorker = (): Worker => {
           }
 
           // Send email using your external service
-          if (!data.email) {
+          const recipientEmail = (data as any).email || (data as any).support?.email;
+          if (!recipientEmail) {
             throw new Error('Recipient email is missing in job data');
           }
-          await sendEmail({ to: data.email, subject, html });
+          await sendEmail({ to: recipientEmail, subject, html });
         } catch (error) {
           logger.error('Worker job failed', {
             jobName: name,
@@ -133,3 +132,5 @@ export const createEmailWorker = (): Worker => {
   });
   return EmailWorker;
 };
+
+

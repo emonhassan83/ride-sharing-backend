@@ -7,10 +7,10 @@ import { errorLogger, logger } from './logger.configs';
 const transporter = createTransport({
   host: env.SMTP_HOST,
   port: env.SMTP_PORT,
-  secure: env.SMTP_PORT === 465 ? true : false,
+  secure: env.SMTP_SECURE, // true for 465, false for 587/STARTTLS
   auth: {
-    user: env.SMTP_USER,
-    pass: env.SMTP_PASS,
+    user: env.SMTP_USERNAME,
+    pass: env.SMTP_PASSWORD,
   },
 } as TransportOptions);
 
@@ -18,7 +18,7 @@ const transporter = createTransport({
 export const sendEmail = async (values: ISendEmail) => {
   try {
     const info = await transporter.sendMail({
-      from: `${env.SMTP_USER}`, // sender address
+      from: `${env.EMAIL_FROM}`, // sender address
       to: values.to, // list of receivers
       subject: values.subject, // subject line
       html: values.html, // html body
@@ -28,3 +28,4 @@ export const sendEmail = async (values: ISendEmail) => {
     errorLogger.error('Email', error);
   }
 };
+

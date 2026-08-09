@@ -5,8 +5,12 @@ export const env: TEnv = {
   NODE_ENV: getEnv('NODE_ENV'),
   SMTP_HOST: getEnv('SMTP_HOST'),
   SMTP_PORT: Number(getEnv('SMTP_PORT')),
-  SMTP_USER: getEnv('SMTP_USER'),
-  SMTP_PASS: getEnv('SMTP_PASS'),
+  SMTP_SECURE: process.env.SMTP_SECURE !== undefined
+    ? process.env.SMTP_SECURE === 'true'
+    : getEnv('SMTP_PORT') === '465',
+  SMTP_USERNAME: getEnv('SMTP_USERNAME'),
+  SMTP_PASSWORD: getEnv('SMTP_PASSWORD'),
+  EMAIL_FROM: getEnv('EMAIL_FROM'),
   REDIS_HOST: getEnv('REDIS_HOST'),
   REDIS_PASSWORD: getEnv('REDIS_PASSWORD'),
   REDIS_PORT: Number(getEnv('REDIS_PORT')),
@@ -17,3 +21,4 @@ export const env: TEnv = {
   timeZone: getEnv('TIME_ZONE'),
   SERVER_URL: getEnv('SERVER_URL'),
 };
+

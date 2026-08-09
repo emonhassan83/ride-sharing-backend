@@ -2,8 +2,10 @@ export type TEnv = {
   NODE_ENV: string;
   SMTP_HOST: string;
   SMTP_PORT: number;
-  SMTP_USER: string;
-  SMTP_PASS: string;
+  SMTP_SECURE: boolean;
+  SMTP_USERNAME: string;
+  SMTP_PASSWORD: string;
+  EMAIL_FROM: string;
   REDIS_HOST: string;
   REDIS_PASSWORD: string;
   REDIS_PORT: number;
@@ -20,3 +22,4 @@ export type ISendEmail = {
   subject: string;
   html: string;
 };
+
