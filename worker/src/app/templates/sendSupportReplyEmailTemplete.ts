@@ -8,7 +8,7 @@ const sendSupportReplyEmail = `
   <div style="padding: 30px;">
     <p style="margin: 0 0 12px 0; color: #333333; font-size: 14px;">
       <strong style="color: #1a1a1a;">From:</strong> 
-      <span style="color: #555555;">{{support.email}}</span>
+      <span style="color: #555555;">SplitRide Support ({{fromEmail}})</span>
     </p>
 
     <p style="margin: 0 0 20px 0; color: #333333; font-size: 14px;">
@@ -24,7 +24,7 @@ const sendSupportReplyEmail = `
     <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 24px 0;"/>
 
     <p style="margin: 0; color: #888888; font-size: 12px; font-style: italic;">
-      Sent via Support Ticket ID: {{support._id}}
+      Sent via Support Ticket ID: {{support.id}}
     </p>
   </div>
 
@@ -32,3 +32,4 @@ const sendSupportReplyEmail = `
 `;
 
 export default sendSupportReplyEmail;
+

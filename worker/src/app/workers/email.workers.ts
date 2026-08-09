@@ -1,4 +1,5 @@
 import { Job, Worker } from 'bullmq';
+import { env } from '@/env';
 import { compile } from 'handlebars';
 import { requestContext } from '@/app/configs/requestContext.configs';
 import { getRedisClient } from '@/app/configs/redis.configs';
@@ -82,7 +83,7 @@ export const createEmailWorker = (): Worker => {
               subject = `Support Message: ${subj}`;
 
               const template = compile(sendSupportReplyEmail);
-              html = template({ support, subj, messages });
+              html = template({ support, subj, messages, fromEmail: env.EMAIL_FROM });
               break;
             }
 
@@ -132,5 +133,7 @@ export const createEmailWorker = (): Worker => {
   });
   return EmailWorker;
 };
+
+
 
 
