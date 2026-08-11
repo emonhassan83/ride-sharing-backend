@@ -20,12 +20,12 @@ const createProviderZodSchema = z.object({
       .string()
       .min(3, { message: 'Company name must be at least 3 characters long' })
       .max(100, { message: 'Company name is too long' })
-      .trim(),
+      .trim().optional(),
 
     companyReg: z
       .string()
       .min(3, { message: 'Company registration number is required' })
-      .trim(),
+      .trim().optional(),
 
     vatNumber: z
       .string()
