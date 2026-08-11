@@ -4,8 +4,8 @@ import { TProviderStatus } from './provider.constant';
 export interface TProvider {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
-  companyName: string
-  companyReg: string
+  companyName?: string | null
+  companyReg?: string | null
   vatNumber: string
   ibanNumber: string
   cnicFront: string;
@@ -21,4 +21,5 @@ export interface TProvider {
 }
 
 export type TProviderModel = Model<TProvider>;
+
 

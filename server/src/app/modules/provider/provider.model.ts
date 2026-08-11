@@ -12,13 +12,13 @@ const providerSchema = new Schema<TProvider>(
     },
     companyName: {
       type: String,
-      required: [true, 'Company name is required'],
       trim: true,
+      default: null,
     },
     companyReg: {
       type: String,
-      required: [true, 'Company registration number is required'],
       trim: true,
+      default: null,
     },
     vatNumber: {
       type: String,
@@ -94,4 +94,5 @@ providerSchema.virtual('user', {
 });
 
 export const Provider = mongoose.model<TProvider, TProviderModel>('Provider', providerSchema);
+
 
