@@ -29,17 +29,9 @@ const createUserValidationSchema = z.object({
         message: 'Role is required.',
       }),
 
-      type: z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]], {
-        message: 'Provider type must be either self-employed or company',
-      }).optional(),
-
       fcmToken: z.string().optional(),
     })
-    .strict()
-    .refine((data) => data.role !== USER_ROLE.provider || !!data.type, {
-      message: 'Provider type is required for provider registration.',
-      path: ['type'],
-    }),
+    .strict(),
 });
 
 const updateUserValidationSchema = z.object({
@@ -100,4 +92,5 @@ export const UserValidation = {
   profileDeletionValidationSchema,
   changeEmailZodSchema,
 };
+
 

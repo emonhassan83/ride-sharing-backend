@@ -26,7 +26,7 @@ import { getEmailQueueInstance } from '../../utils/queueHelper';
 const OTP_EXPIRE = 60 * 5; // 5 minutes in seconds
 
 const createUser = async (payload: any) => {
-  const { email, phone, fcmToken, ...rest } = payload;
+  const { email, phone, fcmToken, type: _providerType, ...rest } = payload;
 
   // Prevent users from assigning themselves admin role during registration
   if (payload.role === USER_ROLE.admin) {
@@ -54,14 +54,14 @@ const createUser = async (payload: any) => {
 
     // 2. Soft deleted user — recreate
     if (existingUser.isDeleted) {
-      existingUser.set({ ...payload, isDeleted: false });
+      existingUser.set({ ...rest, email, phone, fcmToken, isDeleted: false });
       const user = await existingUser.save();
       return user;
     }
 
     // 3. Unverified user — update fields and re-save
     if (!existingUser.isSignUpOtpVerified) {
-      existingUser.set({ ...payload });
+      existingUser.set({ ...rest, email, phone, fcmToken });
       const user = await existingUser.save();
       return user;
     }
@@ -101,7 +101,6 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
     email: payload.email,
     photoUrl: payload.photoUrl,
     fcmToken: payload.fcmToken,
-    type: payload.type,
   };
 
   if (user) {
@@ -175,7 +174,6 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
     email: payload.email,
     photoUrl: payload.photoUrl,
     fcmToken: payload.fcmToken,
-    type: payload.type,
   };
 
   if (user) {
@@ -618,4 +616,5 @@ export const AuthService = {
   changePassword,
   refreshToken,
 };
+
 
