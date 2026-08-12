@@ -49,7 +49,9 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         message: 'departureDate and departureTime are required',
       });
 
-    const requestedSeats = passengers || 1;
+    const requestedSeats = Number(passengers) > 0 ? Number(passengers) : 1;
+    const malePassengerCount = Number(malePassengers) > 0 ? Number(malePassengers) : 0;
+    const femalePassengerCount = Number(femalePassengers) > 0 ? Number(femalePassengers) : 0;
     const { departureDateTime } = await assertMinimumBookingLeadTime(
       departureDate,
       departureTime,
@@ -160,8 +162,8 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         departureDate: departureDate,
         departureTime: departureTime,
         requestedSeats,
-        malePassengers: malePassengers || 0,
-        femalePassengers: femalePassengers || 0,
+        malePassengers: malePassengerCount,
+        femalePassengers: femalePassengerCount,
         fareType,
         initialCharge: fareBreakdown.initialCharge,
         perKmCharge: fareBreakdown.totalKmCharge / (actualDistance || 1),
@@ -245,6 +247,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         estimatedDistanceKm: roundTo2(actualDistance),
         status: PASSENGER_STATUS.pending,
         createdAt: passenger.createdAt,
+        bookingId: booking._id.toString(),
       };
 
       // â”€â”€ Notify driver â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -309,7 +312,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       notifiedRides.push({
         rideId: ride._id,
         passengerId: passenger._id,
-        bookingId: booking._id,
+        bookingId: booking._id.toString(),
         estimatedFare: fareBreakdown.estimatedFare,
         surchargePercent: fareBreakdown.surchargePercent,
         availableSeats:
@@ -338,3 +341,4 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     });
   }
 );
+

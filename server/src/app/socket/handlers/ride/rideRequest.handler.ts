@@ -36,6 +36,8 @@ export const rideRequestHandler = eventHandler<any>(
       return callback?.({ success: false, message: 'departureDate and departureTime are required' });
 
     const requestedSeats = Number(passengers) > 0 ? Number(passengers) : 1;
+    const malePassengerCount = Number(malePassengers) > 0 ? Number(malePassengers) : 0;
+    const femalePassengerCount = Number(femalePassengers) > 0 ? Number(femalePassengers) : 0;
 
     const { departureDateTime } = await assertMinimumBookingLeadTime(
       departureDate,
@@ -118,8 +120,8 @@ export const rideRequestHandler = eventHandler<any>(
       departureDate:            departureDate,
       departureTime:            departureTime,
       requestedSeats,
-      malePassengers:           malePassengers   || 0,
-      femalePassengers:         femalePassengers || 0,
+      malePassengers:           malePassengerCount,
+      femalePassengers:         femalePassengerCount,
       fareType,
       initialCharge:            fareBreakdown.initialCharge,
       perKmCharge:              fareBreakdown.perKmCharge,
@@ -169,12 +171,25 @@ export const rideRequestHandler = eventHandler<any>(
       rideType:            type,
       requestedSeats,
       estimatedFare:       roundTo2(fareBreakdown.totalFare),
+      bookingId:           '',
       estimatedDistanceKm: roundTo2(actualDistance),
       status:              PASSENGER_STATUS.pending,
       createdAt:           passenger.createdAt,
     };
 
     // â”€â”€ Notify drivers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const booking = await Booking.create({
+      passengerId: passenger._id,
+      rideId: ride._id,
+      userId,
+      totalFare: passenger.estimatedFare,
+      amountPaid: 0,
+      bookingStatus: BOOKING_STATUS.pending,
+      paymentStatus: BOOKING_PAYMENT_STATUS.pending,
+    });
+
+    ridePayload.bookingId = booking._id.toString();
+
     const notifiedCount = await notifyNearbyDrivers(
       ride._id.toString(),
       pickup,
@@ -190,16 +205,6 @@ export const rideRequestHandler = eventHandler<any>(
     console.log(`ðŸ“¡ Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);
 
     // â”€â”€ Redis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const booking = await Booking.create({
-      passengerId: passenger._id,
-      rideId: ride._id,
-      userId,
-      totalFare: passenger.estimatedFare,
-      amountPaid: 0,
-      bookingStatus: BOOKING_STATUS.pending,
-      paymentStatus: BOOKING_PAYMENT_STATUS.pending,
-    });
-
     await redis.hset(`ride:request:${ride._id}`, {
       userId,
       passengerId:        passenger._id.toString(),
@@ -233,7 +238,7 @@ export const rideRequestHandler = eventHandler<any>(
       data: {
         rideId:            ride._id,
         passengerId:       passenger._id,
-        bookingId:          booking._id,
+        bookingId:          booking._id.toString(),
         notifiedDrivers:   notifiedCount,
         matchingStatus:    notifiedCount > 0 ? 'notified' : 'scheduled_pending',
         estimatedFare:     roundedBreakdown.totalFare,
@@ -252,6 +257,7 @@ export const rideRequestHandler = eventHandler<any>(
     });
   },
 );
+
 
 
 
