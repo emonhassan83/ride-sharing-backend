@@ -128,6 +128,8 @@ export const rideRequestHandler = eventHandler<any>(
       totalKmCharge:            roundTo2(fareBreakdown.totalKmCharge),
       luggageCharge:            fareBreakdown.luggageCharge,
       holidayTripCharge:        fareBreakdown.holidaySurcharge,
+      surchargePercent:         fareBreakdown.splitSurchargePercent || 0,
+      surchargeAmount:          fareBreakdown.splitSurchargeAmount || 0,
       vat:                      fareBreakdown.vat,
       estimatedFare:            roundTo2(fareBreakdown.totalFare),
       totalFare:                roundTo2(fareBreakdown.totalFare),
@@ -190,19 +192,7 @@ export const rideRequestHandler = eventHandler<any>(
 
     ridePayload.bookingId = booking._id.toString();
 
-    const notifiedCount = await notifyNearbyDrivers(
-      ride._id.toString(),
-      pickup,
-      ridePayload,
-      redis,
-      io,
-      passenger._id.toString(),
-      10,
-      requestedDriverId ? [requestedDriverId.toString()] : undefined,
-      { notifyMode }
-    );
-
-    console.log(`ðŸ“¡ Phase 1: Notified ${notifiedCount} driver(s) for ride ${ride._id}`);
+    const notifiedCount = 0;
 
     // â”€â”€ Redis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     await redis.hset(`ride:request:${ride._id}`, {
@@ -219,7 +209,7 @@ export const rideRequestHandler = eventHandler<any>(
       notifiedCount:      notifiedCount.toString(),
       lastNotifiedAt:     notifiedCount > 0 ? Date.now().toString() : '',
       selectedDriverId:   requestedDriverId ? requestedDriverId.toString() : '',
-      matchingStatus:     notifiedCount > 0 ? 'notified' : 'scheduled_pending',
+      matchingStatus:     'awaiting_payment',
       timestamp:          Date.now().toString(),
     });
 
@@ -228,7 +218,7 @@ export const rideRequestHandler = eventHandler<any>(
       Math.floor((departureDateTime.getTime() - Date.now()) / 1000) + 7200,
     );
     await redis.expire(`ride:request:${ride._id}`, ttlSeconds);
-    await redis.zadd('ride:matching:queue', departureDateTime.getTime(), ride._id.toString());
+    // Matching starts only after payment authorization succeeds.
 
     return callback?.({
       success: true,
@@ -240,7 +230,7 @@ export const rideRequestHandler = eventHandler<any>(
         passengerId:       passenger._id,
         bookingId:          booking._id.toString(),
         notifiedDrivers:   notifiedCount,
-        matchingStatus:    notifiedCount > 0 ? 'notified' : 'scheduled_pending',
+        matchingStatus:     'awaiting_payment',
         estimatedFare:     roundedBreakdown.totalFare,
         estimatedDistance: roundTo2(actualDistance),
         estimatedDuration: actualDuration,
@@ -257,6 +247,8 @@ export const rideRequestHandler = eventHandler<any>(
     });
   },
 );
+
+
 
 
 

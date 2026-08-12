@@ -15,17 +15,139 @@ import { generateTransactionId } from '../../utils/generateTransctionId';
 import { paymentNotifyToUser } from './payment.utils';
 import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
+import { PASSENGER_STATUS } from '../passenger/passenger.constant';
 import { Ride } from '../ride/ride.model';
 import { RIDE_TYPE } from '../ride/ride.constant';
+import { getIO } from '../../socket/socket.init';
+import { notifyNearbyDrivers, notifyNearbyDriversForSplitRide } from '../../utils/notifyDrivers.utils';
+import { sendNotification } from '../../utils/sentPushNotification';
+import { modeType } from '../notification/notification.interface';
 import { Setting } from '../settings/settings.model';
 import { getRedisClient } from '../../config/redis.config';
 import { recalculateSplitFares } from '../../utils/splitFare.utils';
-import { assertMinimumBookingLeadTime } from '../../utils/rideSchedule.utils';
+import { assertMinimumBookingLeadTime, getDepartureDateTime } from '../../utils/rideSchedule.utils';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-06-24.dahlia',
   typescript: true,
 });
+const isBookingPaymentReadyForMatching = (status: any): boolean =>
+  [PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid].includes(status);
+
+const startRideMatchingAfterPayment = async (bookingId: string): Promise<number> => {
+  const booking = await Booking.findById(bookingId).lean();
+  if (!booking || !isBookingPaymentReadyForMatching((booking as any).paymentStatus)) return 0;
+
+  const passenger = await Passenger.findById(booking.passengerId).lean();
+  if (!passenger || passenger.status !== PASSENGER_STATUS.pending) return 0;
+
+  const ride = await Ride.findById(booking.rideId).lean();
+  if (!ride) return 0;
+
+  const rider = await User.findById(booking.userId)
+    .select('_id name profileImage')
+    .lean();
+
+  const redis = getRedisClient();
+  const io = getIO();
+  const ridePayload: any = {
+    _id: passenger._id,
+    userId: {
+      _id: rider?._id || null,
+      name: rider?.name || '',
+      profileImage: rider?.profileImage || null,
+    },
+    rideId: {
+      _id: ride._id,
+      type: ride.type,
+      id: (ride as any).id || '',
+    },
+    bookingId: booking._id.toString(),
+    pickup: {
+      address: (passenger as any).pickup?.address || (ride as any).pickup?.address,
+      coordinates: (passenger as any).pickup?.coordinates || (ride as any).pickup?.coordinates,
+    },
+    destination: {
+      address: (passenger as any).destination?.address || (ride as any).destination?.address,
+      coordinates: (passenger as any).destination?.coordinates || (ride as any).destination?.coordinates,
+    },
+    departureDate: ride.departureDate,
+    departureTime: ride.departureTime,
+    rideType: ride.type,
+    requestedSeats: (passenger as any).requestedSeats || 1,
+    estimatedFare: (passenger as any).estimatedFare || booking.totalFare || 0,
+    estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,
+    estimatedDurationMinutes: (passenger as any).estimatedDurationMinutes || 0,
+    status: PASSENGER_STATUS.pending,
+    createdAt: (passenger as any).createdAt,
+  };
+
+  let notified = 0;
+  if (ride.type === RIDE_TYPE.split) {
+    const existingDriverId = (ride as any).driverId?.toString();
+    if (existingDriverId) {
+      io.to(`driver:${existingDriverId}`).emit('ride:new-request', ridePayload);
+      notified = 1;
+
+      const driverUser = await User.findById(existingDriverId).select('fcmToken').lean();
+      if (driverUser?.fcmToken) {
+        sendNotification([driverUser.fcmToken], {
+          receiver: existingDriverId,
+          message: 'New Split Ride Request!',
+          description: 'A passenger wants to join your split ride.',
+          reference: passenger._id.toString(),
+          modelType: modeType.Passenger,
+          data: {
+            type: 'SPLIT_RIDE_REQUEST',
+            rideId: ride._id.toString(),
+            passengerId: passenger._id.toString(),
+            bookingId: booking._id.toString(),
+            rideType: 'split',
+          },
+        }).catch(() => {});
+      }
+
+      await Ride.findByIdAndUpdate(ride._id, {
+        $addToSet: { notifiedDriverIds: existingDriverId },
+      });
+    } else {
+      const pickupCoords = (passenger as any).pickup?.coordinates || (ride as any).pickup?.coordinates;
+      notified = await notifyNearbyDriversForSplitRide(
+        ride._id.toString(),
+        (ride as any).routeGeometry,
+        { lat: pickupCoords[1], lng: pickupCoords[0] },
+        ridePayload,
+        redis,
+        io,
+        passenger._id.toString()
+      );
+    }
+  } else {
+    const pickupCoords = (ride as any).pickup.coordinates;
+    notified = await notifyNearbyDrivers(
+      ride._id.toString(),
+      { lat: pickupCoords[1], lng: pickupCoords[0] },
+      ridePayload,
+      redis,
+      io,
+      passenger._id.toString(),
+      10,
+      undefined,
+      { notifyMode: 'all_eligible' }
+    );
+  }
+
+  await redis.hset(`ride:request:${ride._id}`, {
+    bookingId: booking._id.toString(),
+    passengerId: passenger._id.toString(),
+    notifiedCount: notified.toString(),
+    matchingStatus: notified > 0 ? 'notified' : 'scheduled_pending',
+    lastNotifiedAt: notified > 0 ? Date.now().toString() : '',
+  });
+  await redis.zadd('ride:matching:queue', new Date(`${ride.departureDate}T${ride.departureTime}:00`).getTime(), ride._id.toString());
+
+  return notified;
+};
 
 /* =====================================================
    🔹 CREATE PAYMENT INTENT (IN-APP STRIPE SDK)
@@ -264,10 +386,12 @@ const confirmPayment = async (payload: Record<string, any>) => {
       );
 
       await session.commitTransaction();
+      const notifiedDrivers = await startRideMatchingAfterPayment(booking._id.toString());
       return {
         success: true,
         message: 'Payment authorized successfully. It will be captured at the correct ride payment capture point.',
         payment,
+        notifiedDrivers,
       };
     }
 
@@ -965,5 +1089,7 @@ export const PaymentService = {
   getAPaymentsFromDB,
   refundPayment,
 };
+
+
 
 

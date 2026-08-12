@@ -2,6 +2,11 @@
 import { Setting } from '../modules/settings/settings.model';
 import axios from 'axios';
 
+const PREORDER_MINIMUM_FARE = 20;
+const SPLIT_RIDE_SURCHARGE_PERCENT = 15;
+
+const roundMoney = (value: number): number => Math.round(value * 100) / 100;
+
 export interface FareBreakdown {
   initialCharge: number;
   perKmCharge: number;
@@ -13,6 +18,11 @@ export interface FareBreakdown {
   fivePassengerExtraCharge: number;
   sixPassengerExtraChargePercentage: number;
   vat: number;
+  minimumFareApplied: boolean;
+  minimumFareAmount: number;
+  minimumFareAdjustment: number;
+  splitSurchargePercent: number;
+  splitSurchargeAmount: number;
   totalFare: number;
 }
 
@@ -138,10 +148,10 @@ export async function calculateFareBreakdown(params: {
   const settings = await loadFareSettings();
   const rates = getDayNightRate(departureTime, settings);
 
-  let subTotal = rates.initialCharge + Math.round(distanceKm * rates.perKm * 100) / 100;
+  let subTotal = rates.initialCharge + roundMoney(distanceKm * rates.perKm);
 
   // Luggage
-  const luggageCharge = Math.round(luggageCount * settings.perLuggageCharge * 100) / 100;
+  const luggageCharge = roundMoney(luggageCount * settings.perLuggageCharge);
   subTotal += luggageCharge;
 
   // Passenger Extra (Private Ride)
@@ -150,7 +160,7 @@ export async function calculateFareBreakdown(params: {
     if (requestedSeats === 5) {
       passengerCountExtra = settings.fivePassengerExtraCharge;
     } else if (requestedSeats === 6) {
-      passengerCountExtra = Math.round(subTotal * (settings.sixPassengerExtraChargePercentage / 100) * 100) / 100;
+      passengerCountExtra = roundMoney(subTotal * (settings.sixPassengerExtraChargePercentage / 100));
     }
     subTotal += passengerCountExtra;
   }
@@ -160,24 +170,29 @@ export async function calculateFareBreakdown(params: {
   const isHoliday = await isPublicHoliday(departureDate);
 
   if (isHoliday) {
-    holidaySurcharge = Math.round(subTotal * (settings.holidayIncreasePercentage / 100) * 100) / 100;
+    holidaySurcharge = roundMoney(subTotal * (settings.holidayIncreasePercentage / 100));
     subTotal += holidaySurcharge;
   }
 
   // Waiting Charge
   let waitingCharge = 0;
   if (waitingMinutes > 0) {
-    waitingCharge = Math.round(((rates.waitingChargePerHour * waitingMinutes) / 60) * 100) / 100;
+    waitingCharge = roundMoney((rates.waitingChargePerHour * waitingMinutes) / 60);
     subTotal += waitingCharge;
   }
 
-  const vat = Math.round(subTotal * (settings.platformVat / 100) * 100) / 100;
-  const totalFare = Math.round(subTotal * 100) / 100;
+  const normalFare = roundMoney(subTotal);
+  const fareAfterMinimum = Math.max(normalFare, PREORDER_MINIMUM_FARE);
+  const minimumFareAdjustment = roundMoney(fareAfterMinimum - normalFare);
+  const splitSurchargePercent = rideType === 'split' ? SPLIT_RIDE_SURCHARGE_PERCENT : 0;
+  const splitSurchargeAmount = roundMoney(fareAfterMinimum * (splitSurchargePercent / 100));
+  const totalFare = roundMoney(fareAfterMinimum + splitSurchargeAmount);
+  const vat = roundMoney(totalFare * (settings.platformVat / 100));
 
   return {
     initialCharge: rates.initialCharge,
     perKmCharge: rates.perKm,
-    totalKmCharge: Math.round(distanceKm * rates.perKm * 100) / 100,
+    totalKmCharge: roundMoney(distanceKm * rates.perKm),
     luggageCharge,
     passengerCountExtra,
     holidaySurcharge,
@@ -185,6 +200,11 @@ export async function calculateFareBreakdown(params: {
     fivePassengerExtraCharge: passengerCountExtra,
     sixPassengerExtraChargePercentage: 0,
     vat,
+    minimumFareApplied: minimumFareAdjustment > 0,
+    minimumFareAmount: PREORDER_MINIMUM_FARE,
+    minimumFareAdjustment,
+    splitSurchargePercent,
+    splitSurchargeAmount,
     totalFare,
   };
 }
@@ -206,3 +226,4 @@ function getDayNightRate(departureTimeStr: string, settings: FareSettings): DayN
         waitingChargePerHour: settings.dayFareWaitingCharge,
       };
 }
+

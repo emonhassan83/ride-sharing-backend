@@ -19,14 +19,9 @@ import {
   REFUND_TYPE,
 } from '../modules/refund/refund.constant';
 
-// �\u20AC�\u20AC Surcharge based on total seats �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
-export const getSurchargeMultiplier = (
-  totalSeats: number
-): { multiplier: number; percent: number } => {
-  if (totalSeats >= 6) return { multiplier: 1.4, percent: 40 };
-  if (totalSeats >= 5) return { multiplier: 1.2, percent: 20 };
-  return { multiplier: 1.0, percent: 0 };
-};
+const PREORDER_MINIMUM_FARE = 20;
+const SPLIT_RIDE_SURCHARGE_PERCENT = 15;
+const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
 // �\u20AC�\u20AC Calculate single passenger fare for split ride �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
 export const calcSplitPassengerFare = async (
@@ -43,6 +38,11 @@ export const calcSplitPassengerFare = async (
   holidayTripCharge: number;
   surchargePercent: number;
   surchargeAmount: number;
+  minimumFareApplied: boolean;
+  minimumFareAmount: number;
+  minimumFareAdjustment: number;
+  splitSurchargePercent: number;
+  splitSurchargeAmount: number;
   estimatedFare: number;
 }> => {
   const s = await loadFareSettings();
@@ -52,36 +52,38 @@ export const calcSplitPassengerFare = async (
 
   const initial = isNight ? s.nightFareInitialCharge : s.dayFareInitialCharge;
   const perKm = isNight ? s.nightFarePerKMRate : s.dayFarePerKMRate;
-  const kmCharge = Math.round(distanceKm * perKm * 100) / 100;
-  const lugCharge = Math.round(luggageCount * s.perLuggageCharge * 100) / 100;
+  const kmCharge = roundMoney(distanceKm * perKm);
+  const lugCharge = roundMoney(luggageCount * s.perLuggageCharge);
   const holCharge = isHoliday
-    ? Math.round(
-        (initial + kmCharge + lugCharge) *
-          (s.holidayIncreasePercentage / 100) *
-          100
-      ) / 100
+    ? roundMoney((initial + kmCharge + lugCharge) * (s.holidayIncreasePercentage / 100))
     : 0;
 
-  const { multiplier, percent } = getSurchargeMultiplier(totalSeats);
-
-  const basePerSeat =
-    ((initial + kmCharge + lugCharge + holCharge) / totalSeats) *
-    requestedSeats;
-  const surchargeAmount =
-    Math.round(basePerSeat * (multiplier - 1) * 100) / 100;
-  const estimatedFare = Math.round(basePerSeat * multiplier * 100) / 100;
+  const safeTotalSeats = Math.max(totalSeats, requestedSeats, 1);
+  const basePerSeat = roundMoney(
+    ((initial + kmCharge + lugCharge + holCharge) / safeTotalSeats) *
+    requestedSeats
+  );
+  const fareAfterMinimum = Math.max(basePerSeat, PREORDER_MINIMUM_FARE);
+  const minimumFareAdjustment = roundMoney(fareAfterMinimum - basePerSeat);
+  const surchargeAmount = roundMoney(fareAfterMinimum * (SPLIT_RIDE_SURCHARGE_PERCENT / 100));
+  const estimatedFare = roundMoney(fareAfterMinimum + surchargeAmount);
 
   return {
     initialCharge:
-      Math.round((initial / totalSeats) * requestedSeats * 100) / 100,
+      roundMoney((initial / safeTotalSeats) * requestedSeats),
     totalKmCharge:
-      Math.round((kmCharge / totalSeats) * requestedSeats * 100) / 100,
+      roundMoney((kmCharge / safeTotalSeats) * requestedSeats),
     luggageCharge:
-      Math.round((lugCharge / totalSeats) * requestedSeats * 100) / 100,
+      roundMoney((lugCharge / safeTotalSeats) * requestedSeats),
     holidayTripCharge:
-      Math.round((holCharge / totalSeats) * requestedSeats * 100) / 100,
-    surchargePercent: percent,
+      roundMoney((holCharge / safeTotalSeats) * requestedSeats),
+    surchargePercent: SPLIT_RIDE_SURCHARGE_PERCENT,
     surchargeAmount,
+    minimumFareApplied: minimumFareAdjustment > 0,
+    minimumFareAmount: PREORDER_MINIMUM_FARE,
+    minimumFareAdjustment,
+    splitSurchargePercent: SPLIT_RIDE_SURCHARGE_PERCENT,
+    splitSurchargeAmount: surchargeAmount,
     estimatedFare,
   };
 };
@@ -279,7 +281,7 @@ export const recalculateSplitFares = async (
       (s, p) => s + (p.requestedSeats || 1),
       0
     );
-    const { percent: newSurchargePercent } = getSurchargeMultiplier(totalSeats);
+    const newSurchargePercent = SPLIT_RIDE_SURCHARGE_PERCENT;
 
     const ride = await Ride.findById(rideId).lean();
     if (!ride) return;
@@ -557,3 +559,5 @@ export const lockSplitRideFare = async (
 
   return Boolean(lockedRide || (ride as any).splitFareLocked);
 };
+
+

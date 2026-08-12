@@ -80,6 +80,19 @@ export const checkNoDriverFound = async () => {
 
       if (!passenger) continue;
 
+      const booking = await Booking.findOne({
+        passengerId: passenger._id,
+        rideId: ride._id,
+        paymentStatus: { $in: [PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid] },
+      }).lean();
+      if (!booking) {
+        await redis.hset(`ride:request:${ride._id}`, {
+          matchingStatus: 'awaiting_payment',
+          lastCheckedAt: now.getTime().toString(),
+        });
+        continue;
+      }
+
       const rider = await User.findById((ride as any).rideCreatedBy)
         .select('_id name profileImage')
         .lean();
@@ -112,6 +125,7 @@ export const checkNoDriverFound = async () => {
         estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,
         estimatedDurationMinutes: (passenger as any).estimatedDurationMinutes || 0,
         status: PASSENGER_STATUS.pending,
+        bookingId: booking._id.toString(),
         createdAt: (passenger as any).createdAt,
       };
 
@@ -132,6 +146,7 @@ export const checkNoDriverFound = async () => {
       });
 
       await redis.hset(`ride:request:${ride._id}`, {
+        bookingId: booking._id.toString(),
         notifiedCount: notified.toString(),
         matchingStatus: notified > 0 ? 'renotified' : 'renotify_no_driver',
         lastNotifiedAt: now.getTime().toString(),
@@ -317,6 +332,7 @@ export const checkNoDriverFound = async () => {
 
   console.log(`ðŸš« No driver found: cancelled ${cancelRideIds.length} ride(s)`);
 };
+
 
 
 

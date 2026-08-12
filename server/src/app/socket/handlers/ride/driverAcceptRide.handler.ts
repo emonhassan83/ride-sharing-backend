@@ -297,6 +297,13 @@ export const driverAcceptRideHandler = eventHandler<any>(
           message: 'No pending passenger found',
         });
 
+      const booking = await Booking.findOne({ passengerId: passenger._id, rideId: ride._id });
+      if (!booking || ![PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid].includes(booking.paymentStatus as any))
+        return callback?.({
+          success: false,
+          message: 'Passenger payment is not completed yet.',
+        });
+
       if (availableSeats < (passenger.requestedSeats || 1))
         return callback?.({
           success: false,
@@ -319,22 +326,11 @@ export const driverAcceptRideHandler = eventHandler<any>(
         ...(ride.totalSeats === 0 && { totalSeats: vehicleTotalSeats }),
       });
 
-      const booking = await Booking.findOneAndUpdate(
-        { passengerId: passenger._id, rideId: ride._id },
-        {
-          $set: {
-            userId: passenger.userId,
-            driverId,
-            totalFare: passenger.estimatedFare,
-            bookingStatus: BOOKING_STATUS.accepted,
-          },
-          $setOnInsert: {
-            amountPaid: 0,
-            paymentStatus: PAYMENT_STATUS.pending,
-          },
-        },
-        { upsert: true, new: true }
-      );
+      booking.userId = passenger.userId as any;
+      booking.driverId = driverId as any;
+      booking.totalFare = passenger.estimatedFare;
+      booking.bookingStatus = BOOKING_STATUS.accepted;
+      await booking.save();
 
       await PaymentService.captureAuthorizedBookingPayment(
         booking._id.toString(),
@@ -430,6 +426,13 @@ export const driverAcceptRideHandler = eventHandler<any>(
           message: 'Passenger not found or already processed',
         });
 
+      const booking = await Booking.findOne({ passengerId: passenger._id, rideId: ride._id });
+      if (!booking || ![PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid].includes(booking.paymentStatus as any))
+        return callback?.({
+          success: false,
+          message: 'Passenger payment is not completed yet.',
+        });
+
       const requestedSeats = passenger.requestedSeats || 1;
       if (availableSeats < requestedSeats)
         return callback?.({
@@ -465,22 +468,11 @@ export const driverAcceptRideHandler = eventHandler<any>(
         await Ride.findByIdAndUpdate(rideId, rideUpdate);
       }
 
-      const booking = await Booking.findOneAndUpdate(
-        { passengerId: passenger._id, rideId: ride._id },
-        {
-          $set: {
-            userId: passenger.userId,
-            driverId,
-            totalFare: passenger.estimatedFare,
-            bookingStatus: BOOKING_STATUS.accepted,
-          },
-          $setOnInsert: {
-            amountPaid: 0,
-            paymentStatus: PAYMENT_STATUS.pending,
-          },
-        },
-        { upsert: true, new: true }
-      );
+      booking.userId = passenger.userId as any;
+      booking.driverId = driverId as any;
+      booking.totalFare = passenger.estimatedFare;
+      booking.bookingStatus = BOOKING_STATUS.accepted;
+      await booking.save();
       await Ride.findByIdAndUpdate(ride._id, {
         $inc: {
           bookedSeats: passenger.requestedSeats || 1,
@@ -574,5 +566,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
     return callback?.({ success: false, message: 'Unknown ride type' });
   }
 );
+
+
 
 
