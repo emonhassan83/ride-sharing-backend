@@ -64,8 +64,8 @@ services:
       - ./server/.env
     environment:
       - NODE_ENV=development
-      - TZ=Asia/Nicosia
-      - TIME_ZONE=Asia/Nicosia
+      - TZ=Asia/Dhaka
+      - TIME_ZONE=Asia/Dhaka
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 30s
