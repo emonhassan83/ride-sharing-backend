@@ -370,7 +370,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
       payment.isPaid = false;
       payment.status = PAYMENT_STATUS.authorized;
       payment.paymentIntentId = paymentIntent.id;
-      payment.authorizedAmount = Math.round((paymentIntent.amount || payment.amount * 100) / 100) / 100;
+      payment.authorizedAmount = Math.round(((paymentIntent.amount || payment.amount * 100) / 100) * 100) / 100;
       payment.amountToCapture = payment.amountToCapture || payment.authorizedAmount;
       payment.authorizationExpiresAt = payment.authorizationExpiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       await payment.save({ session });

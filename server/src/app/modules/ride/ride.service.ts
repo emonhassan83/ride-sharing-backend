@@ -98,14 +98,14 @@ const getDriverRides = async (
     }
     const info = ridePassengerMap.get(rideIdStr)!;
     info.count += 1;
-    if (p.paymentStatus === PAYMENT_STATUS.paid) {
+    if ([PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid].includes(p.paymentStatus as any)) {
       info.hasPaid = true;
     }
   }
 
   // 4. Identify eligible rides:
   // - Show if passenger count > 1
-  // - Show if passenger count === 1 and that passenger has paid (paymentStatus is 'paid')
+  // - Show if passenger count === 1 and that passenger has authorized/paid payment
   const eligibleRideIds: string[] = [];
   for (const [rideIdStr, info] of ridePassengerMap.entries()) {
     if (info.count > 1 || (info.count === 1 && info.hasPaid)) {
