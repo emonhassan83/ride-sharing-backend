@@ -30,9 +30,10 @@ const stripe = new Stripe(config.pay?.secretKey as string, {
 // â”€â”€ Load settings with fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const getMatchingSettings = async (): Promise<{
   notifyHours: number; // re-notify X hours before departure
+  lastNotifyHours: number; // cancel if still no driver inside final X hours
 }> => {
   const settings = await Setting.find({
-    key: { $in: ['matchingNoDriverNotifyHours'] },
+    key: { $in: ['matchingNoDriverNotifyHours', 'matchingLastNotifyHours'] },
   }).lean();
 
   const map: Record<string, number> = {};
@@ -40,6 +41,7 @@ const getMatchingSettings = async (): Promise<{
 
   return {
     notifyHours: map.matchingNoDriverNotifyHours ?? 48, // fallback 48h
+    lastNotifyHours: map.matchingLastNotifyHours ?? 1, // fallback 1h
   };
 };
 
@@ -48,7 +50,7 @@ export const checkNoDriverFound = async () => {
   const io = getIO();
   const now = new Date();
 
-  const { notifyHours } = await getMatchingSettings();
+  const { notifyHours, lastNotifyHours } = await getMatchingSettings();
 
   // Phase 2: Re-notify drivers before pickup time. Do not cancel before pickup.
   const reNotifyBefore = new Date(now.getTime() + notifyHours * 3600000);
@@ -173,12 +175,13 @@ export const checkNoDriverFound = async () => {
     }
   }
 
-  // Phase 3: Cancel only after pickup time has passed and no driver accepted
-  const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  // Phase 3: Cancel inside the dynamic final no-driver window if no driver accepted.
+  const cancelBefore = new Date(now.getTime() + lastNotifyHours * 3600000);
+  const cancelBeforeLocal = `${cancelBefore.getFullYear()}-${String(cancelBefore.getMonth() + 1).padStart(2, '0')}-${String(cancelBefore.getDate()).padStart(2, '0')}`;
 
   const ridesForCancel = await Ride.find({
     status: RIDE_STATUS.pending,
-    departureDate: { $lte: todayLocal },
+    departureDate: { $lte: cancelBeforeLocal },
   })
     .limit(BATCH_SIZE)
     .lean();
@@ -191,7 +194,10 @@ export const checkNoDriverFound = async () => {
       ride.departureTime
     );
 
-    if (departureDateTime.getTime() <= now.getTime()) {
+    const hoursUntilDeparture =
+      (departureDateTime.getTime() - now.getTime()) / 3600000;
+
+    if (hoursUntilDeparture <= lastNotifyHours) {
       cancelRideIds.push(ride._id.toString());
     }
   }
