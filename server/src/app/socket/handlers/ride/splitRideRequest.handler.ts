@@ -210,10 +210,15 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     if (!passengerList.length)
       return callback?.({ success: false, message: 'You have already joined all nearby split rides.' });
 
+    const firstRequestedRide = requestedRides[0];
+
     return callback?.({
       success: true,
       message: `Split ride join request created for ${requestedRides.length} ride(s). Please complete payment to notify drivers.`,
       data: {
+        rideId: firstRequestedRide?.rideId,
+        passengerId: firstRequestedRide?.passengerId,
+        bookingId: firstRequestedRide?.bookingId,
         requestedRides,
         estimatedDistance: roundTo2(actualDistance),
         estimatedDuration: actualDuration,

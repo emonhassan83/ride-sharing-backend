@@ -226,8 +226,8 @@ export const rideRequestHandler = eventHandler<any>(
         ? `Ride request created. ${notifiedCount} nearby driver(s) notified.`
         : 'Ride request created. We will keep looking for a driver.',
       data: {
-        rideId:            ride._id,
-        passengerId:       passenger._id,
+        rideId:            ride._id.toString(),
+        passengerId:       passenger._id.toString(),
         bookingId:          booking._id.toString(),
         notifiedDrivers:   notifiedCount,
         matchingStatus:     'awaiting_payment',
@@ -242,6 +242,7 @@ export const rideRequestHandler = eventHandler<any>(
           destination: passenger.destination,
           rideType:    ride.type,
           totalSeats:  ride.totalSeats,
+          bookingId:   booking._id.toString(),
         },
       },
     });
