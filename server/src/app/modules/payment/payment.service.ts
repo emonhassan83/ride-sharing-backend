@@ -391,6 +391,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
         success: true,
         message: 'Payment authorized successfully. It will be captured at the correct ride payment capture point.',
         payment,
+        bookingShortId: (booking as any).id,
         notifiedDrivers,
       };
     }
