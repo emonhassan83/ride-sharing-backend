@@ -6,6 +6,10 @@ import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
+import { Payment } from '../../../modules/payment/payment.model';
+import { PAYMENT_STATUS } from '../../../modules/payment/payment.constant';
+import { Withdraw } from '../../../modules/withdraw/withdraw.model';
+import { WITHDRAW_STATUS } from '../../../modules/withdraw/withdraw.constant';
 import { User } from '../../../modules/user/user.model';
 import { saveLocationsToDatabase } from '../../../utils/location.db.utils';
 import { TSocket } from '../../interface/index.interface';
@@ -63,10 +67,38 @@ export const driverCompleteTripHandler = eventHandler<any>(
 
       await Passenger.findByIdAndUpdate(passenger._id, { status: PASSENGER_STATUS.completed });
 
-      await Booking.findOneAndUpdate(
+      const booking = await Booking.findOneAndUpdate(
         { passengerId: passenger._id },
         { totalFare, amountPaid: totalFare, bookingStatus: BOOKING_STATUS.completed },
+        { new: true }
       );
+
+      if (booking) {
+        const payment = await Payment.findOne({
+          booking: booking._id,
+          provider: driverId,
+          status: PAYMENT_STATUS.paid,
+          isPaid: true,
+        });
+
+        if (payment && (payment.providerEarning || 0) > 0) {
+          await Withdraw.findOneAndUpdate(
+            { payment: payment._id },
+            {
+              $setOnInsert: {
+                user: driverId,
+                ride: ride._id,
+                booking: booking._id,
+                payment: payment._id,
+                amount: Math.round((payment.providerEarning || 0) * 100) / 100,
+                status: WITHDRAW_STATUS.pending,
+                note: `Auto-created from completed ride ${booking.id}`,
+              },
+            },
+            { upsert: true, new: true }
+          );
+        }
+      }
 
       const riderUser = await User.findById(passenger.userId).select('fcmToken').lean();
       if (riderUser?.fcmToken) {

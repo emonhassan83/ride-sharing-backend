@@ -5,7 +5,9 @@ export type TWithdraw = {
   _id?: string
   id: string
   user: Types.ObjectId
-  booking: Types.ObjectId
+  ride?: Types.ObjectId
+  booking?: Types.ObjectId
+  payment?: Types.ObjectId
   amount: number
   ibanNumber?: string
   status: TWithdrawStatus

@@ -8,6 +8,11 @@ import { TWithdrawStatus, WITHDRAW_STATUS } from './withdraw.constant';
 import { sendWithdrawNotify } from './withdraw.utils';
 import { User } from '../user/user.model';
 import { Provider } from '../provider/provider.model';
+import { Payment } from '../payment/payment.model';
+import { PAYMENT_STATUS } from '../payment/payment.constant';
+import { Booking } from '../booking/booking.model';
+import { Ride } from '../ride/ride.model';
+import { RIDE_STATUS } from '../ride/ride.constant';
 import ApiError from '../../errors/ApiError';
 
 // â”\u20ACâ”\u20AC Create withdrawal request â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
@@ -133,6 +138,37 @@ const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
 };
 
 // â”\u20ACâ”\u20AC Get my withdrawals (provider) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+const getDateRange = (query: Record<string, unknown>) => {
+  const filter = String(query.filter || '').toLowerCase();
+  const now = new Date();
+  let start: Date | null = null;
+  let end: Date | null = null;
+
+  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+  const endOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+
+  if (filter === 'today') {
+    start = startOfDay(now);
+    end = endOfDay(now);
+  } else if (filter === 'specific_day' && query.date) {
+    const date = new Date(String(query.date));
+    start = startOfDay(date);
+    end = endOfDay(date);
+  } else if (filter === 'week') {
+    start = startOfDay(new Date(now));
+    start.setDate(start.getDate() - 6);
+    end = endOfDay(now);
+  } else if (filter === 'month') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    end = endOfDay(now);
+  } else if (filter === 'custom') {
+    if (query.dateFrom) start = startOfDay(new Date(String(query.dateFrom)));
+    if (query.dateTo) end = endOfDay(new Date(String(query.dateTo)));
+  }
+
+  return { start, end };
+};
+
 const getMyWithdrawsFromDB = async (
   query: Record<string, unknown>,
   userId: string,
@@ -141,25 +177,105 @@ const getMyWithdrawsFromDB = async (
   if (!user || user.isDeleted)
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
 
-  const withdrawQuery = new QueryBuilder(
-    Withdraw.find({ user: userId }),
-    query,
-  )
-    .filter()
-    .sort()
-    .paginate()
-    .fields();
+  const page = Math.max(Number(query.page) || 1, 1);
+  const limit = Math.max(Number(query.limit) || 10, 1);
+  const skip = (page - 1) * limit;
+  const { start, end } = getDateRange(query);
 
-  const [withdrawList, meta] = await Promise.all([
-    withdrawQuery.modelQuery,
-    withdrawQuery.countTotal(),
+  const payments = await Payment.find({
+    provider: userId,
+    status: PAYMENT_STATUS.paid,
+    isPaid: true,
+    providerEarning: { $gt: 0 },
+  })
+    .populate({
+      path: 'booking',
+      select: 'id rideId bookingStatus paymentStatus totalFare amountPaid',
+    })
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  const bookingIds = payments
+    .map((payment: any) => payment.booking?._id)
+    .filter(Boolean);
+  const rideIds = payments
+    .map((payment: any) => payment.booking?.rideId)
+    .filter(Boolean);
+  const paymentIds = payments.map((payment: any) => payment._id);
+
+  const [rides, withdraws] = await Promise.all([
+    Ride.find({ _id: { $in: rideIds }, status: RIDE_STATUS.completed })
+      .select('id pickup destination departureDate departureTime completedAt status')
+      .lean(),
+    Withdraw.find({
+      user: userId,
+      $or: [{ payment: { $in: paymentIds } }, { booking: { $in: bookingIds } }],
+    })
+      .select('id payment booking status amount completedAt')
+      .lean(),
   ]);
 
+  const rideMap = new Map(rides.map((ride: any) => [ride._id.toString(), ride]));
+  const withdrawByPayment = new Map(
+    withdraws
+      .filter((withdraw: any) => withdraw.payment)
+      .map((withdraw: any) => [withdraw.payment.toString(), withdraw])
+  );
+  const withdrawByBooking = new Map(
+    withdraws
+      .filter((withdraw: any) => withdraw.booking)
+      .map((withdraw: any) => [withdraw.booking.toString(), withdraw])
+  );
+
+  const earnings = payments
+    .map((payment: any) => {
+      const booking = payment.booking;
+      const ride = booking?.rideId ? rideMap.get(booking.rideId.toString()) : null;
+      if (!booking || !ride) return null;
+
+      const reportDate = ride.completedAt || payment.updatedAt;
+      if (start && reportDate < start) return null;
+      if (end && reportDate > end) return null;
+
+      const withdraw =
+        withdrawByPayment.get(payment._id.toString()) ||
+        withdrawByBooking.get(booking._id.toString());
+
+      return {
+        id: withdraw?.id || null,
+        rideId: ride._id.toString(),
+        bookingId: booking._id.toString(),
+        paymentId: payment._id.toString(),
+        bookingReference: booking.id,
+        rideDate: ride.departureDate,
+        rideTime: ride.departureTime,
+        pickup: ride.pickup,
+        destination: ride.destination,
+        amountEarned: Math.round((payment.providerEarning || 0) * 100) / 100,
+        status: withdraw?.status || null,
+      };
+    })
+    .filter(Boolean) as any[];
+
+  const total = earnings.length;
+  const totalEarnings = Math.round(
+    earnings.reduce((sum, item) => sum + (item.amountEarned || 0), 0) * 100
+  ) / 100;
+  const completedRideCount = new Set(earnings.map((item) => item.rideId)).size;
+  const earningsList = earnings.slice(skip, skip + limit);
+
   return {
-    meta,
+    meta: {
+      page,
+      limit,
+      total,
+      totalPage: Math.ceil(total / limit),
+    },
     result: {
       walletBalance: user.wallet ?? 0,
-      withdrawList,
+      totalEarnings,
+      completedRideCount,
+      earningsList,
     },
   };
 };

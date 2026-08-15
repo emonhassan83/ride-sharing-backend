@@ -52,6 +52,7 @@ export interface TRide {
   cancellationReason: string;
   cancelledAt: Date;
   arrivedAt: Date;
+  completedAt?: Date;
   cancelledBy: TCancelledBy;
   reNotifiedAt?: Date;
 

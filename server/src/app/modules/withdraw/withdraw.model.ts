@@ -11,6 +11,9 @@ const withdrawSchema = new Schema<TWithdraw>(
       default: () => generateCryptoString(10),
     },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    ride: { type: Schema.Types.ObjectId, ref: 'Ride', default: null },
+    booking: { type: Schema.Types.ObjectId, ref: 'Booking', default: null },
+    payment: { type: Schema.Types.ObjectId, ref: 'Payment', default: null },
     amount: { type: Number, required: true },
     ibanNumber: { type: String, trim: true, default: null },
     status: {
@@ -25,6 +28,9 @@ const withdrawSchema = new Schema<TWithdraw>(
     timestamps: true,
   },
 )
+
+withdrawSchema.index({ payment: 1 }, { unique: true, sparse: true });
+withdrawSchema.index({ user: 1, status: 1, createdAt: -1 });
 
 export const Withdraw = model<TWithdraw, TWithdrawModel>(
   'Withdraw',

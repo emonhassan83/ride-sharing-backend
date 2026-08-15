@@ -90,6 +90,7 @@ const rideSchema = new Schema<TRide>(
     cancellationReason: { type: String },
     cancelledAt: { type: Date },
     arrivedAt: { type: Date },
+    completedAt: { type: Date },
     cancelledBy: {
       type: String,
       enum: Object.values(CANCELLED_BY),
