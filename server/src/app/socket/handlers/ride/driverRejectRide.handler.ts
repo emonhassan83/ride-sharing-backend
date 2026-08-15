@@ -1,4 +1,4 @@
-﻿// handlers/driver/driverRejectRide.handler.ts
+// handlers/driver/driverRejectRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import {
   RIDE_STATUS,
@@ -31,7 +31,7 @@ export const driverRejectRideHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io = getIO();
 
-    // â”€â”€ Helper: add driver to rejected list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Helper: add driver to rejected list ───────────────────────────────────
     const markRejected = async () => {
       await redis.sadd(`ride:rejected:${rideId}`, driverId);
       const departureMs = new Date(`${ride.departureDate}T${ride.departureTime}:00`).getTime();
@@ -42,7 +42,7 @@ export const driverRejectRideHandler = eventHandler<any>(
       await redis.expire(`ride:rejected:${rideId}`, ttlSeconds);
     };
 
-    // â”€â”€ Helper: redis cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Helper: redis cleanup ─────────────────────────────────────────────────
     const redisCleanup = async () => {
       await Promise.all([
         redis.zrem('ride:matching:queue', rideId),
@@ -50,7 +50,7 @@ export const driverRejectRideHandler = eventHandler<any>(
       ]);
     };
 
-    // â”€â”€ PRIVATE RIDE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId
         ? await Passenger.findOne({
@@ -79,6 +79,7 @@ export const driverRejectRideHandler = eventHandler<any>(
       await markRejected();
 
       await Ride.findByIdAndUpdate(rideId, {
+        $pull: { notifiedDriverIds: driverId },
         $unset: {
           driverId: '',
           vehicleId: '',
@@ -98,7 +99,7 @@ export const driverRejectRideHandler = eventHandler<any>(
       });
     }
 
-    // â”€â”€ SPLIT RIDE â€” passengerId required â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── SPLIT RIDE — passengerId required ─────────────────────────────────────
     if (ride.type === RIDE_TYPE.split) {
       if (!passengerId)
         return callback?.({
@@ -132,7 +133,7 @@ export const driverRejectRideHandler = eventHandler<any>(
 
       await markRejected();
 
-      // âœ… Case 6: Recalculate remaining passengers' fares
+      // ✅ Case 6: Recalculate remaining passengers' fares
       if (ride.type === RIDE_TYPE.split) {
         await recalculateSplitFares(rideId, 'passenger_rejected', io);
       }
@@ -151,7 +152,7 @@ export const driverRejectRideHandler = eventHandler<any>(
           cancelledAt: new Date(),
         });
         await redisCleanup();
-        console.log(`Ride ${rideId} cancelled â€” no passengers left`);
+        console.log(`Ride ${rideId} cancelled — no passengers left`);
       }
 
       return callback?.({

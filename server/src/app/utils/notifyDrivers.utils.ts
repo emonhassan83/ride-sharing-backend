@@ -83,6 +83,21 @@ async function getDriverCurrentLocation(
   return null;
 }
 
+async function markDriverNotifiedOnce(
+  rideId: string,
+  driverId: string
+): Promise<boolean> {
+  const updatedRide = await Ride.findOneAndUpdate(
+    { _id: rideId, notifiedDriverIds: { $ne: driverId } },
+    { $addToSet: { notifiedDriverIds: driverId } },
+    { new: false }
+  )
+    .select('_id')
+    .lean();
+
+  return !!updatedRide;
+}
+
 // â”€â”€ Notify nearby drivers (private ride) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function notifyNearbyDrivers(
   rideId: string,
@@ -130,6 +145,9 @@ export async function notifyNearbyDrivers(
       );
       if (!availability.available) continue;
 
+      const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
+      if (!shouldNotify) continue;
+
       const isKnownOnline = await redis.sismember('users:online', driverId);
       if (isKnownOnline) {
         io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
@@ -148,6 +166,7 @@ export async function notifyNearbyDrivers(
               type: 'RIDE_REQUEST',
               rideId,
               passengerId: passengerId || '',
+              bookingId: ridePayload.bookingId || '',
               rideType,
             },
           });
@@ -217,6 +236,7 @@ export async function notifyNearbyDrivers(
           type: 'RIDE_REQUEST',
           rideId,
           passengerId: passengerId || '',
+          bookingId: ridePayload.bookingId || '',
           rideType,
         },
       }).catch((err: any) =>
@@ -286,6 +306,7 @@ export async function notifyNearbyDrivers(
             type: 'RIDE_REQUEST',
             rideId,
             passengerId: passengerId || '',
+            bookingId: ridePayload.bookingId || '',
             rideType,
           },
         });
@@ -393,6 +414,7 @@ export async function notifyNearbyDriversForSplitRide(
           type: 'SPLIT_RIDE_REQUEST',
           rideId,
           passengerId: passengerId || ridePayload.passengerId || '',
+          bookingId: ridePayload.bookingId || '',
           rideType: 'split',
         },
       }).catch((err: any) =>
@@ -443,6 +465,9 @@ export async function notifyNearbyDriversForSplitRide(
     const location = await getDriverCurrentLocation(redis, driverId, driver);
     if (location && !isNearRoute(location.lat, location.lng)) continue;
 
+    const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
+    if (!shouldNotify) continue;
+
     notifiedIds.push(driverId);
 
     const fcmToken = (driver as any).fcmToken;
@@ -458,6 +483,7 @@ export async function notifyNearbyDriversForSplitRide(
             type: 'SPLIT_RIDE_REQUEST',
             rideId,
             passengerId: passengerId || ridePayload.passengerId || '',
+            bookingId: ridePayload.bookingId || '',
             rideType: 'split',
           },
         });

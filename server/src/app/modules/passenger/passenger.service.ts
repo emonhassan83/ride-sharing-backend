@@ -5,6 +5,7 @@ import { Ride } from '../ride/ride.model';
 import { PASSENGER_STATUS } from './passenger.constant';
 import { RIDE_STATUS } from '../ride/ride.constant';
 import { Booking } from '../booking/booking.model';
+import { getRedisClient } from '../../config/redis.config';
 
 const getDriverRideRequest = async (driverUserId: string) => {
   // Find rides where the user is a passenger and the ride is pending
@@ -17,7 +18,19 @@ const getDriverRideRequest = async (driverUserId: string) => {
 
   if (!pendingRides.length) return [];
 
-  const rideIds = pendingRides.map((ride) => ride._id);
+  const redis = getRedisClient();
+  const visibleRides = [];
+  for (const ride of pendingRides) {
+    const rejected = await redis.sismember(
+      `ride:rejected:${ride._id}`,
+      driverUserId
+    );
+    if (!rejected) visibleRides.push(ride);
+  }
+
+  if (!visibleRides.length) return [];
+
+  const rideIds = visibleRides.map((ride) => ride._id);
   const passengerRides = await Passenger.find({
     rideId: { $in: rideIds },
     status: PASSENGER_STATUS.pending,
