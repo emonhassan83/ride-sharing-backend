@@ -146,6 +146,27 @@ const cancelOtherPendingRequests = async (
 };
 
 // â”€â”€ Helper: get driver available seats for a specific ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const notifyOtherNotifiedDriversRideTaken = async (
+  ride: any,
+  acceptedDriverId: string,
+  io: any,
+  passengerId?: string
+) => {
+  const notifiedDriverIds = (ride.notifiedDriverIds || [])
+    .map((id: any) => id.toString())
+    .filter((id: string) => id && id !== acceptedDriverId);
+
+  if (!notifiedDriverIds.length) return;
+
+  for (const otherDriverId of notifiedDriverIds) {
+    io.to(`driver:${otherDriverId}`).emit('ride:already-taken', {
+      rideId: ride._id.toString(),
+      passengerId,
+      acceptedDriverId,
+      message: 'This ride has been accepted by another driver.',
+    });
+  }
+};
 const getDriverAvailableSeats = async (
   driverId: string,
   targetRideId: string,
@@ -319,12 +340,29 @@ export const driverAcceptRideHandler = eventHandler<any>(
         pickupLng
       );
 
-      await Ride.findByIdAndUpdate(rideId, {
-        driverId,
-        vehicleId,
-        status: RIDE_STATUS.accepted,
-        ...(ride.totalSeats === 0 && { totalSeats: vehicleTotalSeats }),
-      });
+      const assignedRide = await Ride.findOneAndUpdate(
+        {
+          _id: rideId,
+          status: RIDE_STATUS.pending,
+          $or: [{ driverId: { $exists: false } }, { driverId: null }],
+        },
+        {
+          driverId,
+          vehicleId,
+          status: RIDE_STATUS.accepted,
+          notifiedDriverIds: [driverId],
+          ...(ride.totalSeats === 0 && { totalSeats: vehicleTotalSeats }),
+        },
+        { new: true }
+      );
+
+      if (!assignedRide)
+        return callback?.({
+          success: false,
+          message: 'This ride has already been accepted by another driver.',
+        });
+
+      await notifyOtherNotifiedDriversRideTaken(ride, driverId, io, passenger._id.toString());
 
       booking.userId = passenger.userId as any;
       booking.driverId = driverId as any;
@@ -356,24 +394,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       }
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
-
-      const onlineNearby = (await redis.georadius(
-        'drivers:location',
-        ride.pickup.coordinates[0],
-        ride.pickup.coordinates[1],
-        10,
-        'km'
-      )) as string[];
-
-      for (const otherDriverId of onlineNearby) {
-        if (otherDriverId === driverId) continue;
-        io.to(`driver:${otherDriverId}`).emit('ride:already-taken', {
-          rideId,
-          message: 'This ride has been accepted by another driver.',
-        });
-      }
-
-      await redis.hset(`ride:active:${rideId}`, {
+await redis.hset(`ride:active:${rideId}`, {
         driverId,
         status: RIDE_STATUS.accepted,
         startedAt: Date.now().toString(),
@@ -456,16 +477,46 @@ export const driverAcceptRideHandler = eventHandler<any>(
       });
       const isLastPassenger = remainingCount === 0;
 
+      if (ride.driverId && ride.driverId.toString() !== driverId)
+        return callback?.({
+          success: false,
+          message: 'This ride has already been assigned to another driver.',
+        });
+
       const rideUpdate: Record<string, any> = {};
+      let assignedThisRide = false;
       if (!ride.driverId) {
         rideUpdate.driverId = driverId;
         rideUpdate.vehicleId = vehicleId;
+        rideUpdate.notifiedDriverIds = [driverId];
         if (ride.totalSeats === 0) rideUpdate.totalSeats = vehicleTotalSeats;
+        assignedThisRide = true;
       }
       if (isLastPassenger) rideUpdate.status = RIDE_STATUS.accepted;
 
       if (Object.keys(rideUpdate).length) {
-        await Ride.findByIdAndUpdate(rideId, rideUpdate);
+        const assignedRide = await Ride.findOneAndUpdate(
+          {
+            _id: rideId,
+            $or: [
+              { driverId: driverId },
+              { driverId: { $exists: false } },
+              { driverId: null },
+            ],
+          },
+          rideUpdate,
+          { new: true }
+        );
+
+        if (!assignedRide)
+          return callback?.({
+            success: false,
+            message: 'This ride has already been assigned to another driver.',
+          });
+
+        if (assignedThisRide) {
+          await notifyOtherNotifiedDriversRideTaken(ride, driverId, io, passenger._id.toString());
+        }
       }
 
       booking.userId = passenger.userId as any;

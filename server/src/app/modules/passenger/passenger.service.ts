@@ -11,7 +11,10 @@ const getDriverRideRequest = async (driverUserId: string) => {
   // Find rides where the user is a passenger and the ride is pending
   const pendingRides = await Ride.find({
     notifiedDriverIds: driverUserId,
-    status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
+    $or: [
+      { status: RIDE_STATUS.pending },
+      { status: RIDE_STATUS.accepted, driverId: driverUserId },
+    ],
   })
     .select('_id')
     .lean();
