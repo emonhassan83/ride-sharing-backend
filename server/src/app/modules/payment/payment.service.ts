@@ -287,7 +287,9 @@ const createPaymentIntent = async (payload: {
     customer: customerId,
     payment_method_types: ['card'],
     capture_method: 'manual',
-    ...(paymentMethodId ? { payment_method: paymentMethodId } : {}),
+    ...(paymentMethodId
+      ? { payment_method: paymentMethodId, confirm: true }
+      : {}),
     metadata: {
       bookingId: bookingId.toString(),
       userId: userId.toString(),
@@ -305,9 +307,13 @@ const createPaymentIntent = async (payload: {
   return {
     clientSecret: paymentIntent.client_secret,
     paymentIntentId: paymentIntent.id,
+    paymentStatus: paymentIntent.status,
+    requiresAction: paymentIntent.status === 'requires_action',
     paymentId: payment._id,
     customerId,
     ephemeralKey: ephemeralKey.secret,
+    bookingShortId: (booking as any).id,
+    notifiedDrivers: 0,
   };
 };
 
