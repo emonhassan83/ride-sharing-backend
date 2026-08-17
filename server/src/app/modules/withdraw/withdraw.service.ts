@@ -227,16 +227,13 @@ const getMyWithdrawsFromDB = async (
       .map((withdraw: any) => [withdraw.booking.toString(), withdraw])
   );
 
-  const earnings = payments
+  const allEarnings = payments
     .map((payment: any) => {
       const booking = payment.booking;
       const ride = booking?.rideId ? rideMap.get(booking.rideId.toString()) : null;
       if (!booking || !ride) return null;
 
       const reportDate = ride.completedAt || payment.updatedAt;
-      if (start && reportDate < start) return null;
-      if (end && reportDate > end) return null;
-
       const withdraw =
         withdrawByPayment.get(payment._id.toString()) ||
         withdrawByBooking.get(booking._id.toString());
@@ -253,16 +250,26 @@ const getMyWithdrawsFromDB = async (
         destination: ride.destination,
         amountEarned: Math.round((payment.providerEarning || 0) * 100) / 100,
         status: withdraw?.status || null,
+        reportDate,
       };
     })
     .filter(Boolean) as any[];
 
+  const earnings = allEarnings.filter((item: any) => {
+    const reportDate = item.reportDate;
+    if (start && reportDate < start) return false;
+    if (end && reportDate > end) return false;
+    return true;
+  });
+
   const total = earnings.length;
   const totalEarnings = Math.round(
-    earnings.reduce((sum, item) => sum + (item.amountEarned || 0), 0) * 100
+    allEarnings.reduce((sum, item) => sum + (item.amountEarned || 0), 0) * 100
   ) / 100;
   const completedRideCount = new Set(earnings.map((item) => item.rideId)).size;
-  const earningsList = earnings.slice(skip, skip + limit);
+  const earningsList = earnings
+    .slice(skip, skip + limit)
+    .map(({ reportDate, ...item }) => item);
 
   return {
     meta: {
@@ -320,14 +327,6 @@ const updateWithdrawFromDB = async (
       const providerProfile = await Provider.findOne({ userId: withdraw.user })
         .select('ibanNumber')
         .session(session)
-
-      if (!providerProfile?.ibanNumber) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'Please add your IBAN number before completing this withdrawal.',
-        )
-      }
-
       const updatedProvider = await User.findOneAndUpdate(
         { _id: withdraw.user, wallet: { $gte: withdraw.amount } },
         { $inc: { wallet: -withdraw.amount } },
@@ -342,7 +341,7 @@ const updateWithdrawFromDB = async (
 
       withdraw.status      = WITHDRAW_STATUS.completed
       withdraw.completedAt = new Date()
-      withdraw.ibanNumber  = providerProfile.ibanNumber
+      withdraw.ibanNumber  = providerProfile?.ibanNumber || withdraw.ibanNumber
       if (note) withdraw.note = note
     }
     else if (status === WITHDRAW_STATUS.cancelled) {
