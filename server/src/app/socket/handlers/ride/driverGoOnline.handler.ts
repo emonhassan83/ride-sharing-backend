@@ -91,7 +91,7 @@ export const driverGoOnlineHandler = eventHandler<any>(
       };
 
       await redis.hset(`driver:${driverId}:details`, driverHash);
-      await redis.expire(`driver:${driverId}:details`, 7200); // 2 hours
+      await redis.expire(`driver:${driverId}:details`, 86400); // 24 hours
 
       await redis.set(
         `driver:${driverId}:current`,

@@ -228,13 +228,13 @@ export const driverAcceptRideHandler = eventHandler<any>(
     let driverDetails = await redis.hgetall(`driver:${driverId}:details`);
     if (!driverDetails || !Object.keys(driverDetails).length) {
       const driverUser = await User.findById(driverId)
-        .select('name email phone avgRating profileImage isOnline')
+        .select('name email phone avgRating profileImage status isDeleted')
         .lean();
 
-      if (!driverUser?.isOnline)
+      if (!driverUser || driverUser.isDeleted)
         return callback?.({
           success: false,
-          message: 'Driver data not found. Please go online first.',
+          message: 'Driver not found or unavailable.',
         });
 
       const driverVehicle = await Vehicle.findOne({
@@ -242,6 +242,12 @@ export const driverAcceptRideHandler = eventHandler<any>(
         isDefault: true,
         isDeleted: false,
       }).lean();
+
+      if (!driverVehicle)
+        return callback?.({
+          success: false,
+          message: 'No default vehicle set. Please set a default vehicle before accepting rides.',
+        });
 
       driverDetails = {
         name: driverUser.name || '',
@@ -251,14 +257,14 @@ export const driverAcceptRideHandler = eventHandler<any>(
         photo: driverUser.profileImage || '',
         vehicleModel: driverVehicle?.name || '',
         vehicleNumber: driverVehicle?.number || '',
-        seats: (driverVehicle?.seats || 4).toString(),
+        seats: driverVehicle.seats.toString(),
         bookedSeats: '0',
         status: 'online',
         lastUpdate: Date.now().toString(),
       };
 
       await redis.hset(`driver:${driverId}:details`, driverDetails);
-      await redis.expire(`driver:${driverId}:details`, 7200);
+      await redis.expire(`driver:${driverId}:details`, 86400);
     }
 
     // â”€â”€ Driver's default vehicle â€” DB à¦¥à§‡à¦•à§‡ (Redis stale à¦¹à¦¤à§‡ à¦ªà¦¾à¦°à§‡) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
