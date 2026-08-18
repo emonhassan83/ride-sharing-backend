@@ -19,7 +19,7 @@ import {
 } from '../modules/refund/refund.constant';
 
 const PREORDER_MINIMUM_FARE = 20;
-const SPLIT_RIDE_SURCHARGE_PERCENT = 15;
+const SPLIT_RIDE_SURCHARGE_PERCENT = 0;
 const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
 // �\u20AC�\u20AC Calculate single passenger fare for split ride �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
@@ -561,6 +561,7 @@ export const lockSplitRideFare = async (
 
   return Boolean(lockedRide || (ride as any).splitFareLocked);
 };
+
 
 
 

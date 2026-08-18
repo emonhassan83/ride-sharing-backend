@@ -3,7 +3,7 @@ import { Setting } from '../modules/settings/settings.model';
 import axios from 'axios';
 
 const PREORDER_MINIMUM_FARE = 20;
-const SPLIT_RIDE_SURCHARGE_PERCENT = 15;
+const SPLIT_RIDE_SURCHARGE_PERCENT = 0;
 
 const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
@@ -232,6 +232,7 @@ function getDayNightRate(departureTimeStr: string, settings: FareSettings): DayN
         waitingChargePerHour: settings.dayFareWaitingCharge,
       };
 }
+
 
 
 
