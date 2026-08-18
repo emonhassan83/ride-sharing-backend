@@ -9,7 +9,7 @@ import {
 export interface TPassenger {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
-  rideId: Types.ObjectId;
+  rideId?: Types.ObjectId | null;
 
   pickup: {
     address: string;
@@ -74,3 +74,4 @@ export interface TPassenger {
 }
 
 export type TPassengerModel = Model<TPassenger>;
+

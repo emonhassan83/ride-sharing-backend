@@ -5,7 +5,7 @@ export interface TBooking {
   _id: Types.ObjectId;
   id: string
   passengerId: Types.ObjectId; 
-  rideId: Types.ObjectId; 
+  rideId?: Types.ObjectId | null; 
   userId: Types.ObjectId;
   driverId?: Types.ObjectId | null;     // Set after driver accepts
 

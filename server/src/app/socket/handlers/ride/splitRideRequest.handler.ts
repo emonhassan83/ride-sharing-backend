@@ -55,7 +55,9 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         { totalSeats: 0 },
         { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },
       ],
-    }).lean();
+    })
+      .sort({ driverId: -1, createdAt: 1 })
+      .lean();
 
     const matchingRides = nearbySplitRides.filter((ride) => {
       if ((ride as any).splitFareLocked) return false;
@@ -86,9 +88,6 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       return destIdx > pickupIdx;
     });
 
-    if (!matchingRides.length)
-      return callback?.({ success: false, message: 'No nearby split rides found for your route.' });
-
     let actualDistance = 0;
     let actualDuration = 0;
     try {
@@ -108,22 +107,48 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
 
     const fareType = getFareType(departureDateTime);
     const redis = getRedisClient();
-    const passengerList: any[] = [];
-    const requestedRides: any[] = [];
+    let selectedRide: any = null;
+    let activeSeatsBeforeJoin = 0;
 
     for (const ride of matchingRides) {
       const alreadyJoined = await Passenger.findOne({
         rideId: ride._id,
         userId,
-        status: { $nin: [PASSENGER_STATUS.cancelled] },
-      });
+        status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
+      }).lean();
       if (alreadyJoined) continue;
 
-      const totalSeatsAfterJoin = (ride.bookedSeats || 0) + requestedSeats;
+      const existingActivePassengers = await Passenger.find({
+        rideId: ride._id,
+        status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
+      })
+        .select('requestedSeats')
+        .lean();
+
+      const usedSeats = existingActivePassengers.reduce(
+        (sum, passenger: any) => sum + (passenger.requestedSeats || 1),
+        0
+      );
+
+      if (ride.totalSeats && usedSeats + requestedSeats > ride.totalSeats) continue;
+
+      const hasPaidBooking = await Booking.exists({
+        rideId: ride._id,
+        paymentStatus: {
+          $in: [BOOKING_PAYMENT_STATUS.authorized, BOOKING_PAYMENT_STATUS.paid],
+        },
+      });
+      if (!hasPaidBooking) continue;
+
+      selectedRide = ride;
+      activeSeatsBeforeJoin = usedSeats;
+      break;
+    }
+    if (!selectedRide) {
       const fareBreakdown = await calcSplitPassengerFare(
         actualDistance,
         requestedSeats,
-        totalSeatsAfterJoin,
+        requestedSeats,
         luggageCounts || 0,
         departureTime,
         departureDateTime
@@ -131,7 +156,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
 
       const passenger = await Passenger.create({
         userId,
-        rideId: ride._id,
+        rideId: null,
         pickup: { address: pickup.address, coordinates: [pickup.lng, pickup.lat] },
         destination: { address: destination.address, coordinates: [destination.lng, destination.lat] },
         departureDate,
@@ -145,6 +170,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         totalKmCharge: fareBreakdown.totalKmCharge,
         luggageCharge: fareBreakdown.luggageCharge,
         holidayTripCharge: fareBreakdown.holidayTripCharge,
+        vat: fareBreakdown.platformCommissionAmount,
         surchargePercent: fareBreakdown.surchargePercent,
         surchargeAmount: fareBreakdown.surchargeAmount,
         estimatedFare: fareBreakdown.estimatedFare,
@@ -154,43 +180,41 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         estimatedDurationMinutes: actualDuration,
         luggageCounts: luggageCounts || 0,
         note: note ?? '',
-        status: PASSENGER_STATUS.pending,
+        status: PASSENGER_STATUS.split_matching,
       });
 
       const booking = await Booking.create({
         passengerId: passenger._id,
-        rideId: ride._id,
+        rideId: null,
         userId,
-        driverId: (ride as any).driverId || undefined,
+        driverId: null,
         totalFare: passenger.estimatedFare,
         amountPaid: 0,
         bookingStatus: BOOKING_STATUS.pending,
         paymentStatus: BOOKING_PAYMENT_STATUS.pending,
       });
 
-      passengerList.push(passenger);
-      socket.join(`ride:${ride._id}`);
       socket.join(`passenger:${passenger._id}`);
 
       const ttl = Math.max(
         3600,
         Math.floor((departureDateTime.getTime() - Date.now()) / 1000) + 7200
       );
-      await redis.hset(`ride:request:${ride._id}:${passenger._id}`, {
+      await redis.hset(`split:matching:passenger:${passenger._id}`, {
         userId,
         passengerId: passenger._id.toString(),
-        rideId: ride._id.toString(),
         bookingId: booking._id.toString(),
         estimatedFare: fareBreakdown.estimatedFare.toString(),
         matchingStatus: 'awaiting_payment',
         timestamp: Date.now().toString(),
       });
-      await redis.expire(`ride:request:${ride._id}:${passenger._id}`, ttl);
+      await redis.expire(`split:matching:passenger:${passenger._id}`, ttl);
 
-      requestedRides.push({
-        rideId: ride._id.toString(),
+      const requestedRide = {
+        rideId: null,
         passengerId: passenger._id.toString(),
         bookingId: booking._id.toString(),
+        matchingStatus: PASSENGER_STATUS.split_matching,
         estimatedFare: fareBreakdown.estimatedFare,
         surchargePercent: fareBreakdown.surchargePercent,
         surchargeAmount: fareBreakdown.surchargeAmount,
@@ -199,30 +223,133 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         minimumFareAdjustment: fareBreakdown.minimumFareAdjustment,
         splitSurchargePercent: fareBreakdown.splitSurchargePercent,
         splitSurchargeAmount: fareBreakdown.splitSurchargeAmount,
-        availableSeats: ride.totalSeats ? ride.totalSeats - (ride.bookedSeats || 0) - requestedSeats : 0,
-        departureDate: ride.departureDate,
-        departureTime: ride.departureTime,
-        pickup: { address: (ride as any).pickup.address },
-        destination: { address: (ride as any).destination.address },
+        availableSeats: 0,
+        departureDate,
+        departureTime,
+        pickup: { address: pickup.address },
+        destination: { address: destination.address },
+      };
+
+      return callback?.({
+        success: true,
+        message: 'No existing split ride found yet. Please complete payment; we will keep matching until the refund restriction window.',
+        data: {
+          rideId: null,
+          passengerId: passenger._id.toString(),
+          bookingId: booking._id.toString(),
+          matchingStatus: PASSENGER_STATUS.split_matching,
+          requestedRide,
+          requestedRides: [requestedRide],
+          estimatedDistance: roundTo2(actualDistance),
+          estimatedDuration: actualDuration,
+        },
       });
     }
 
-    if (!passengerList.length)
-      return callback?.({ success: false, message: 'You have already joined all nearby split rides.' });
+    const totalSeatsAfterJoin = activeSeatsBeforeJoin + requestedSeats;
+    const fareBreakdown = await calcSplitPassengerFare(
+      actualDistance,
+      requestedSeats,
+      totalSeatsAfterJoin,
+      luggageCounts || 0,
+      departureTime,
+      departureDateTime
+    );
 
-    const firstRequestedRide = requestedRides[0];
+    const passenger = await Passenger.create({
+      userId,
+      rideId: selectedRide._id,
+      pickup: { address: pickup.address, coordinates: [pickup.lng, pickup.lat] },
+      destination: { address: destination.address, coordinates: [destination.lng, destination.lat] },
+      departureDate,
+      departureTime,
+      requestedSeats,
+      malePassengers: malePassengerCount,
+      femalePassengers: femalePassengerCount,
+      fareType,
+      initialCharge: fareBreakdown.initialCharge,
+      perKmCharge: fareBreakdown.totalKmCharge / (actualDistance || 1),
+      totalKmCharge: fareBreakdown.totalKmCharge,
+      luggageCharge: fareBreakdown.luggageCharge,
+      holidayTripCharge: fareBreakdown.holidayTripCharge,
+      vat: fareBreakdown.platformCommissionAmount,
+      surchargePercent: fareBreakdown.surchargePercent,
+      surchargeAmount: fareBreakdown.surchargeAmount,
+      estimatedFare: fareBreakdown.estimatedFare,
+      totalFare: fareBreakdown.estimatedFare,
+      waitingCharge: 0,
+      estimatedDistanceKm: actualDistance,
+      estimatedDurationMinutes: actualDuration,
+      luggageCounts: luggageCounts || 0,
+      note: note ?? '',
+      status: PASSENGER_STATUS.pending,
+    });
+
+    const booking = await Booking.create({
+      passengerId: passenger._id,
+      rideId: selectedRide._id,
+      userId,
+      driverId: (selectedRide as any).driverId || undefined,
+      totalFare: passenger.estimatedFare,
+      amountPaid: 0,
+      bookingStatus: BOOKING_STATUS.pending,
+      paymentStatus: BOOKING_PAYMENT_STATUS.pending,
+    });
+
+    socket.join(`ride:${selectedRide._id}`);
+    socket.join(`passenger:${passenger._id}`);
+
+    const ttl = Math.max(
+      3600,
+      Math.floor((departureDateTime.getTime() - Date.now()) / 1000) + 7200
+    );
+    await redis.hset(`ride:request:${selectedRide._id}:${passenger._id}`, {
+      userId,
+      passengerId: passenger._id.toString(),
+      rideId: selectedRide._id.toString(),
+      bookingId: booking._id.toString(),
+      estimatedFare: fareBreakdown.estimatedFare.toString(),
+      matchingStatus: 'awaiting_payment',
+      timestamp: Date.now().toString(),
+    });
+    await redis.expire(`ride:request:${selectedRide._id}:${passenger._id}`, ttl);
+
+    const requestedRide = {
+      rideId: selectedRide._id.toString(),
+      passengerId: passenger._id.toString(),
+      bookingId: booking._id.toString(),
+      estimatedFare: fareBreakdown.estimatedFare,
+      surchargePercent: fareBreakdown.surchargePercent,
+      surchargeAmount: fareBreakdown.surchargeAmount,
+      minimumFareApplied: fareBreakdown.minimumFareApplied,
+      minimumFareAmount: fareBreakdown.minimumFareAmount,
+      minimumFareAdjustment: fareBreakdown.minimumFareAdjustment,
+      splitSurchargePercent: fareBreakdown.splitSurchargePercent,
+      splitSurchargeAmount: fareBreakdown.splitSurchargeAmount,
+      availableSeats: selectedRide.totalSeats
+        ? selectedRide.totalSeats - activeSeatsBeforeJoin - requestedSeats
+        : 0,
+      departureDate: selectedRide.departureDate,
+      departureTime: selectedRide.departureTime,
+      pickup: { address: (selectedRide as any).pickup.address },
+      destination: { address: (selectedRide as any).destination.address },
+    };
 
     return callback?.({
       success: true,
-      message: `Split ride join request created for ${requestedRides.length} ride(s). Please complete payment to notify drivers.`,
+      message: 'Split ride join request created for existing ride. Please complete payment to notify driver.',
       data: {
-        rideId: firstRequestedRide?.rideId,
-        passengerId: firstRequestedRide?.passengerId,
-        bookingId: firstRequestedRide?.bookingId,
-        requestedRides,
+        rideId: requestedRide.rideId,
+        passengerId: requestedRide.passengerId,
+        bookingId: requestedRide.bookingId,
+        requestedRide,
+        requestedRides: [requestedRide],
         estimatedDistance: roundTo2(actualDistance),
         estimatedDuration: actualDuration,
       },
     });
   }
 );
+
+
+

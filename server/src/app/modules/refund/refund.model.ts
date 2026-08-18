@@ -18,7 +18,7 @@ const refundSchema = new Schema<TRefund>(
     ride: {
       type: Schema.Types.ObjectId,
       ref: 'Ride',
-      required: true,
+      default: null,
     },
     type: {
       type: String,
@@ -41,3 +41,4 @@ const refundSchema = new Schema<TRefund>(
 );
 
 export const Refund = model<TRefund, TRefundModel>('Refund', refundSchema);
+

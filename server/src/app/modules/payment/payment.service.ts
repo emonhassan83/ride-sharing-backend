@@ -39,7 +39,21 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
   if (!booking || !isBookingPaymentReadyForMatching((booking as any).paymentStatus)) return 0;
 
   const passenger = await Passenger.findById(booking.passengerId).lean();
-  if (!passenger || passenger.status !== PASSENGER_STATUS.pending) return 0;
+  if (!passenger) return 0;
+
+  if (passenger.status === PASSENGER_STATUS.split_matching || !booking.rideId) {
+    const redis = getRedisClient();
+    await redis.hset(`split:matching:passenger:${passenger._id}`, {
+      bookingId: booking._id.toString(),
+      passengerId: passenger._id.toString(),
+      userId: booking.userId.toString(),
+      matchingStatus: 'split_matching_authorized',
+      lastCheckedAt: Date.now().toString(),
+    });
+    return 0;
+  }
+
+  if (passenger.status !== PASSENGER_STATUS.pending) return 0;
 
   const ride = await Ride.findById(booking.rideId).lean();
   if (!ride) return 0;
@@ -172,13 +186,20 @@ const createPaymentIntent = async (payload: {
       StatusCodes.BAD_REQUEST,
       'Payment already completed for this booking'
     );
-  const ride = await Ride.findById(booking.rideId).lean();
-  if (!ride) throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
+  const passenger = await Passenger.findById(booking.passengerId).lean();
+  if (!passenger) throw new ApiError(StatusCodes.NOT_FOUND, 'Passenger not found');
 
+  const ride = booking.rideId ? await Ride.findById(booking.rideId).lean() : null;
+  if (!ride && passenger.status !== PASSENGER_STATUS.split_matching) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
+  }
+
+  const scheduleSource: any = ride || passenger;
+  const rideTypeForSchedule = ride?.type || RIDE_TYPE.split;
   await assertMinimumBookingLeadTime(
-    ride.departureDate,
-    ride.departureTime,
-    ride.type
+    scheduleSource.departureDate,
+    scheduleSource.departureTime,
+    rideTypeForSchedule
   );
 
   // ── 2. Validate user ──────────────────────────────────────────────────────
@@ -223,17 +244,8 @@ const createPaymentIntent = async (payload: {
   );
 
   // ── 4. Get platform commission from settings ──────────────────────────────
-  const commissionSetting = await Setting.findOne({
-    key: 'platformCommissionPercent',
-  }).lean();
-
-  const commissionPercent = Number(commissionSetting?.value ?? 10);
-
   const totalFare = Math.round(booking.totalFare * 100) / 100;
-  const platformCommission =
-    Math.round(((totalFare * commissionPercent) / 100) * 100) / 100;
-  const providerEarning =
-    Math.round((totalFare - platformCommission) * 100) / 100;
+  const { platformCommission, providerEarning, commissionPercent } = await getCommissionBreakdown(totalFare);
 
   if (totalFare <= 0) {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid payment amount');
@@ -568,10 +580,10 @@ const getCommissionBreakdown = async (fare: number) => {
     key: 'platformCommissionPercent',
   }).lean();
   const commissionPercent = Number(commissionSetting?.value ?? 10);
-  const platformCommission =
-    Math.round(((fare * commissionPercent) / 100) * 100) / 100;
-  const providerEarning = Math.round((fare - platformCommission) * 100) / 100;
-  return { platformCommission, providerEarning };
+  const safePercent = commissionPercent > 0 ? commissionPercent : 0;
+  const providerEarning = Math.round((fare / (1 + safePercent / 100)) * 100) / 100;
+  const platformCommission = Math.round((fare - providerEarning) * 100) / 100;
+  return { platformCommission, providerEarning, commissionPercent: safePercent };
 };
 
 const captureAuthorizedBookingPayment = async (
@@ -807,15 +819,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
     }
 
     // â”€â”€ 3. Calculate Commission â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const commissionSetting = await Setting.findOne({
-      key: 'platformCommissionPercent',
-    }).lean();
-    const commissionPercent = Number(commissionSetting?.value ?? 10);
-
-    const platformCommission =
-      Math.round(((totalFare * commissionPercent) / 100) * 100) / 100;
-    const providerEarning =
-      Math.round((totalFare - platformCommission) * 100) / 100;
+    const { platformCommission, providerEarning } = await getCommissionBreakdown(totalFare);
 
     const transactionId = generateTransactionId();
 
@@ -1096,6 +1100,8 @@ export const PaymentService = {
   getAPaymentsFromDB,
   refundPayment,
 };
+
+
 
 
 

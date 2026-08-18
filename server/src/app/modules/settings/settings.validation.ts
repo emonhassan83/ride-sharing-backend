@@ -43,8 +43,6 @@ export const updateGeneralsZodSchema = z.object({
       perLuggageCharge: z.number().optional(),
       fourPassengerTaxiTax: z.number().optional(),
       sixPassengerTaxiTaxPercentage: z.number().optional(),
-      platformVat: z.number().optional(),
-
       // platform info
       supportContract: z.string().optional(),
       supportEmail: z.string().email({ message: 'Invalid email' }).optional(),
@@ -62,4 +60,5 @@ export const SettingValidation = {
   createOrUpdateSettingZodSchema,
   updateGeneralsZodSchema,
 };
+
 

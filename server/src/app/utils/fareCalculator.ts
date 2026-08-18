@@ -23,6 +23,9 @@ export interface FareBreakdown {
   minimumFareAdjustment: number;
   splitSurchargePercent: number;
   splitSurchargeAmount: number;
+  fareBeforePlatformCommission: number;
+  platformCommissionPercent: number;
+  platformCommissionAmount: number;
   totalFare: number;
 }
 
@@ -43,7 +46,6 @@ interface FareSettings {
   holidayIncreasePercentage: number;
   fivePassengerExtraCharge: number;
   sixPassengerExtraChargePercentage: number;
-  platformVat: number;
   platformCommissionPercent: number;
 }
 
@@ -59,7 +61,6 @@ const DEFAULTS: FareSettings = {
   holidayIncreasePercentage: 20,
   fivePassengerExtraCharge: 1.4,
   sixPassengerExtraChargePercentage: 40,
-  platformVat: 9,
   platformCommissionPercent: 10,
 };
 
@@ -120,7 +121,6 @@ export async function loadFareSettings(): Promise<FareSettings> {
     holidayIncreasePercentage: map.get('holidayIncreasePercentage') ?? DEFAULTS.holidayIncreasePercentage,
     fivePassengerExtraCharge: map.get('fivePassengerExtraCharge') ?? DEFAULTS.fivePassengerExtraCharge,
     sixPassengerExtraChargePercentage: map.get('sixPassengerExtraChargePercentage') ?? DEFAULTS.sixPassengerExtraChargePercentage,
-    platformVat: map.get('platformVat') ?? DEFAULTS.platformVat,
     platformCommissionPercent: map.get('platformCommissionPercent') ?? DEFAULTS.platformCommissionPercent,
   };
 }
@@ -186,8 +186,11 @@ export async function calculateFareBreakdown(params: {
   const minimumFareAdjustment = roundMoney(fareAfterMinimum - normalFare);
   const splitSurchargePercent = rideType === 'split' ? SPLIT_RIDE_SURCHARGE_PERCENT : 0;
   const splitSurchargeAmount = roundMoney(fareAfterMinimum * (splitSurchargePercent / 100));
-  const totalFare = roundMoney(fareAfterMinimum + splitSurchargeAmount);
-  const vat = roundMoney(totalFare * (settings.platformVat / 100));
+  const fareBeforePlatformCommission = roundMoney(fareAfterMinimum + splitSurchargeAmount);
+  const platformCommissionPercent = settings.platformCommissionPercent;
+  const platformCommissionAmount = roundMoney(fareBeforePlatformCommission * (platformCommissionPercent / 100));
+  const totalFare = roundMoney(fareBeforePlatformCommission + platformCommissionAmount);
+  const vat = platformCommissionAmount;
 
   return {
     initialCharge: rates.initialCharge,
@@ -205,6 +208,9 @@ export async function calculateFareBreakdown(params: {
     minimumFareAdjustment,
     splitSurchargePercent,
     splitSurchargeAmount,
+    fareBeforePlatformCommission,
+    platformCommissionPercent,
+    platformCommissionAmount,
     totalFare,
   };
 }
@@ -226,4 +232,7 @@ function getDayNightRate(departureTimeStr: string, settings: FareSettings): DayN
         waitingChargePerHour: settings.dayFareWaitingCharge,
       };
 }
+
+
+
 

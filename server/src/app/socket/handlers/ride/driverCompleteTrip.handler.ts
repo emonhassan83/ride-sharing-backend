@@ -70,7 +70,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
       const booking = await Booking.findOneAndUpdate(
         { passengerId: passenger._id },
         { totalFare, amountPaid: totalFare, bookingStatus: BOOKING_STATUS.completed },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (booking) {
@@ -95,7 +95,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
                 note: `Auto-created from completed ride ${booking.id}`,
               },
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
           );
         }
       }
@@ -151,4 +151,5 @@ export const driverCompleteTripHandler = eventHandler<any>(
     });
   },
 );
+
 

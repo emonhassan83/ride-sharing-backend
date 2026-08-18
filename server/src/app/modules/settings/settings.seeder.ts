@@ -26,7 +26,6 @@ const settingSeeder = async () => {
     { key: 'perLuggageCharge', value: 2 },
     { key: 'fivePassengerExtraCharge', value: 1.4 },
     { key: 'sixPassengerExtraChargePercentage', value: 40 },
-    { key: 'platformVat', value: 9 },
     { key: 'platformCommissionPercent', value: 10 },
 
     // platform info
@@ -57,4 +56,6 @@ const settingSeeder = async () => {
 };
 
 export default settingSeeder;
+
+
 

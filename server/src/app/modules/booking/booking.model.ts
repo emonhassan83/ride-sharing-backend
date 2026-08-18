@@ -18,7 +18,7 @@ const bookingSchema = new Schema<TBooking>(
     rideId: {
       type: Schema.Types.ObjectId,
       ref: 'Ride',
-      required: [true, 'Ride ID is required'],
+      default: null,
     },
     userId: {
       type: Schema.Types.ObjectId,
@@ -73,3 +73,4 @@ export const Booking = mongoose.model<TBooking, TBookingModel>(
   'Booking',
   bookingSchema
 );
+

@@ -24,6 +24,7 @@ export const checkNoShowPassengers = async (): Promise<void> => {
 
     const noShows = await Passenger.find({
       status: PASSENGER_STATUS.driver_arrived,
+      rideId: { $ne: null },
       arriveAt: { $lte: cutoff },
       isNoShow: { $ne: true },
       pickedUpAt: null,
@@ -34,6 +35,7 @@ export const checkNoShowPassengers = async (): Promise<void> => {
     if (!noShows.length) return;
 
     for (const passenger of noShows) {
+      if (!passenger.rideId) continue;
       // ── Mark as No-Show ─────────────────────────────────────────────
       await Passenger.findByIdAndUpdate(passenger._id, {
         status: PASSENGER_STATUS.cancelled,
@@ -142,3 +144,4 @@ export const checkNoShowPassengers = async (): Promise<void> => {
     console.error('❌ checkNoShowPassengers error:', error);
   }
 };
+

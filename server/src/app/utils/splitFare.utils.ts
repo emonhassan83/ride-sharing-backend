@@ -6,7 +6,6 @@ import { Booking } from '../modules/booking/booking.model';
 import { Payment } from '../modules/payment/payment.model';
 import { PAYMENT_STATUS as PAYMENT_RECORD_STATUS } from '../modules/payment/payment.constant';
 import { User } from '../modules/user/user.model';
-import { Setting } from '../modules/settings/settings.model';
 import StripeService from '../config/stripe.config';
 import { isPublicHoliday, loadFareSettings } from './fareCalculator';
 import { getDepartureDateTime, getRefundRestrictionHours } from './rideSchedule.utils';
@@ -43,6 +42,9 @@ export const calcSplitPassengerFare = async (
   minimumFareAdjustment: number;
   splitSurchargePercent: number;
   splitSurchargeAmount: number;
+  fareBeforePlatformCommission: number;
+  platformCommissionPercent: number;
+  platformCommissionAmount: number;
   estimatedFare: number;
 }> => {
   const s = await loadFareSettings();
@@ -66,7 +68,10 @@ export const calcSplitPassengerFare = async (
   const fareAfterMinimum = Math.max(basePerSeat, PREORDER_MINIMUM_FARE);
   const minimumFareAdjustment = roundMoney(fareAfterMinimum - basePerSeat);
   const surchargeAmount = roundMoney(fareAfterMinimum * (SPLIT_RIDE_SURCHARGE_PERCENT / 100));
-  const estimatedFare = roundMoney(fareAfterMinimum + surchargeAmount);
+  const fareBeforePlatformCommission = roundMoney(fareAfterMinimum + surchargeAmount);
+  const platformCommissionPercent = s.platformCommissionPercent;
+  const platformCommissionAmount = roundMoney(fareBeforePlatformCommission * (platformCommissionPercent / 100));
+  const estimatedFare = roundMoney(fareBeforePlatformCommission + platformCommissionAmount);
 
   return {
     initialCharge:
@@ -84,6 +89,9 @@ export const calcSplitPassengerFare = async (
     minimumFareAdjustment,
     splitSurchargePercent: SPLIT_RIDE_SURCHARGE_PERCENT,
     splitSurchargeAmount: surchargeAmount,
+    fareBeforePlatformCommission,
+    platformCommissionPercent,
+    platformCommissionAmount,
     estimatedFare,
   };
 };
@@ -317,16 +325,10 @@ export const recalculateSplitFares = async (
       const payment = booking
         ? await Payment.findOne({ booking: booking._id })
         : null;
-
-      const commissionSetting = await Setting.findOne({
-        key: 'platformCommissionPercent',
-      }).lean();
-      const commissionPercent = Number(commissionSetting?.value ?? 10);
       const nextPlatformCommission =
-        Math.round(((newFare.estimatedFare * commissionPercent) / 100) * 100) /
-        100;
+        Math.round((Number(newFare.platformCommissionAmount || 0)) * 100) / 100;
       const nextProviderEarning =
-        Math.round((newFare.estimatedFare - nextPlatformCommission) * 100) /
+        Math.round((Number(newFare.fareBeforePlatformCommission || (newFare.estimatedFare - nextPlatformCommission))) * 100) /
         100;
 
       if (
@@ -545,7 +547,7 @@ export const lockSplitRideFare = async (
       splitFareLockedAt: new Date(),
       splitFareLockReason: reason,
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (lockedRide && io) {
@@ -559,5 +561,8 @@ export const lockSplitRideFare = async (
 
   return Boolean(lockedRide || (ride as any).splitFareLocked);
 };
+
+
+
 
 

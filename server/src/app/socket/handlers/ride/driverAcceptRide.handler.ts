@@ -114,7 +114,7 @@ const cancelOtherPendingRequests = async (
 ) => {
   const otherPending = await Passenger.find({
     userId,
-    rideId: { $ne: acceptedRideId },
+    rideId: { $nin: [acceptedRideId, null] },
     status: PASSENGER_STATUS.pending,
   }).lean();
 
@@ -126,6 +126,7 @@ const cancelOtherPendingRequests = async (
       cancellationReason: 'accepted_another_ride',
     });
 
+    if (!other.rideId) continue;
     const otherRide = await Ride.findById(other.rideId)
       .select('driverId')
       .lean();
@@ -359,7 +360,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
           notifiedDriverIds: [driverId],
           ...(ride.totalSeats === 0 && { totalSeats: vehicleTotalSeats }),
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!assignedRide)
@@ -511,7 +512,7 @@ await redis.hset(`ride:active:${rideId}`, {
             ],
           },
           rideUpdate,
-          { new: true }
+          { returnDocument: 'after' }
         );
 
         if (!assignedRide)
@@ -623,6 +624,9 @@ await redis.hset(`ride:active:${rideId}`, {
     return callback?.({ success: false, message: 'Unknown ride type' });
   }
 );
+
+
+
 
 
 

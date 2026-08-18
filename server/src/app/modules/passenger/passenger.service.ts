@@ -6,6 +6,7 @@ import { PASSENGER_STATUS } from './passenger.constant';
 import { RIDE_STATUS } from '../ride/ride.constant';
 import { Booking } from '../booking/booking.model';
 import { getRedisClient } from '../../config/redis.config';
+import { Setting } from '../settings/settings.model';
 
 const getDriverRideRequest = async (driverUserId: string) => {
   // Find rides where the user is a passenger and the ride is pending
@@ -114,8 +115,13 @@ const getPassengerById = async (passengerId: string) => {
     .select('id paymentStatus bookingStatus totalFare amountPaid')
     .lean();
 
+  const commissionSetting = await Setting.findOne({ key: 'platformCommissionPercent' }).lean();
+  const vatPercentage = Number(commissionSetting?.value ?? 0);
+
   return {
     ...passenger,
+    vatPercentage,
+    vatAmount: (passenger as any).vat ?? 0,
     bookingId: booking?._id || null,
     bookingShortId: booking?.id || null,
   };
@@ -126,4 +132,7 @@ export const PassengerService = {
   getPassengersByRide,
   getPassengerById,
 };
+
+
+
 

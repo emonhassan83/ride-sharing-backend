@@ -33,6 +33,7 @@ export async function batchInsertLocationHistory() {
 
   const passengerMap = new Map<string, string[]>();
   for (const p of passengers) {
+    if (!p.rideId) continue;
     const rid = p.rideId.toString();
     if (!passengerMap.has(rid)) passengerMap.set(rid, []);
     passengerMap.get(rid)!.push(p.userId.toString());

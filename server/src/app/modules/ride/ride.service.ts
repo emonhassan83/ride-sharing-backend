@@ -85,6 +85,7 @@ const getDriverRides = async (
         PASSENGER_STATUS.pending,
         PASSENGER_STATUS.cancelled,
         PASSENGER_STATUS.rejected,
+        PASSENGER_STATUS.split_matching,
       ],
     },
   }).select('rideId paymentStatus');
@@ -92,6 +93,7 @@ const getDriverRides = async (
   // 3. Count passengers per ride and check payment status
   const ridePassengerMap = new Map<string, { count: number; hasPaid: boolean }>();
   for (const p of passengers) {
+    if (!p.rideId) continue;
     const rideIdStr = p.rideId.toString();
     if (!ridePassengerMap.has(rideIdStr)) {
       ridePassengerMap.set(rideIdStr, { count: 0, hasPaid: false });
@@ -159,6 +161,7 @@ const getDriverRides = async (
         PASSENGER_STATUS.pending,
         PASSENGER_STATUS.cancelled,
         PASSENGER_STATUS.rejected,
+        PASSENGER_STATUS.split_matching,
       ],
     },
   })
@@ -206,6 +209,7 @@ const getRiderRides = async (
         PASSENGER_STATUS.pending,
         PASSENGER_STATUS.cancelled,
         PASSENGER_STATUS.rejected,
+        PASSENGER_STATUS.split_matching,
       ],
     },
   })
@@ -216,7 +220,7 @@ const getRiderRides = async (
     return { meta: { page: 1, limit: 10, total: 0, totalPage: 0 }, result: [] };
 
   const passengerIds = passengerDocs.map(p => p._id);
-  const rideIds = passengerDocs.map(p => p.rideId);
+  const rideIds = passengerDocs.map(p => p.rideId).filter(Boolean) as any[];
 
   // ── Step 3: Find rides with status filter ─────────────────────────────────
   const rides = await Ride.find({
@@ -243,9 +247,9 @@ const getRiderRides = async (
 
   // ── Step 5: Merge ─────────────────────────────────────────────────────────
   const result = passengerDocs
-    .filter(p => rideMap.has(p.rideId.toString()))
+    .filter(p => p.rideId && rideMap.has(p.rideId.toString()))
     .map(p => {
-      const ride = rideMap.get(p.rideId.toString())!;
+      const ride = rideMap.get(p.rideId!.toString())!;
       const booking = bookingMap.get(p._id.toString());
 
       return {
@@ -323,3 +327,5 @@ export const RideService = {
   getRiderRides,
   getRideById,
 };
+
+

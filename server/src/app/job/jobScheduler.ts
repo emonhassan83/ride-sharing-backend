@@ -5,12 +5,14 @@ import { checkNoDriverFound } from './noDriverFound.job';
 import { checkNoShowPassengers } from './noShowPassengers.job';
 import { syncDriverLocationsToDb } from './driverLocationSync.job';
 import { checkSplitFareLock } from './splitFareLock.job';
+import { checkSplitRidePendingMatches } from './splitRidePendingMatch.job';
 
 let locationJobRunning = false;
 let noDriverJobRunning = false;
 let noShowJobRunning = false;
 let locationSyncJobRunning = false;
 let splitFareLockJobRunning = false;
+let splitRidePendingMatchJobRunning = false;
 
 export function startBackgroundJobs() {
   console.log('ðŸ•’ Starting background jobs...');
@@ -67,8 +69,20 @@ export function startBackgroundJobs() {
     }
   });
 
+  // 5. Split pending matching (every 5 min)
+  cron.schedule('*/5 * * * *', async () => {
+    if (splitRidePendingMatchJobRunning) return;
+    splitRidePendingMatchJobRunning = true;
+    try {
+      await checkSplitRidePendingMatches();
+    } catch (err) {
+      console.error('Split pending match job error:', err);
+    } finally {
+      splitRidePendingMatchJobRunning = false;
+    }
+  });
 
-  // 5. Driver location sync (every 5 min)
+  // 6. Driver location sync (every 5 min)
   cron.schedule('*/5 * * * *', async () => {
     if (locationSyncJobRunning) return;
     locationSyncJobRunning = true;
@@ -83,4 +97,6 @@ export function startBackgroundJobs() {
 
   console.log('âœ… Background jobs are now running');
 }
+
+
 

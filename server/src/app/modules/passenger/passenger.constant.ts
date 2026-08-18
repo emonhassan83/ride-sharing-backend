@@ -1,5 +1,6 @@
 export const PASSENGER_STATUS = {
     pending: 'pending',
+    split_matching: 'split_matching',
     rejected: 'rejected',
     confirmed: 'confirmed',
     driver_arrived: 'driver_arrived',
@@ -35,3 +36,4 @@ export type TPaymentStatus = keyof typeof PAYMENT_STATUS;
 export type TPassengerStatus = keyof typeof PASSENGER_STATUS;
 export type TFareType = keyof typeof FARE_TYPE;
 export type TCancelledBy = keyof typeof CANCELLED_BY;
+

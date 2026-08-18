@@ -30,7 +30,7 @@ const stripe = new Stripe(config.pay?.secretKey as string, {
 // â”€â”€ Load settings with fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const getMatchingSettings = async (): Promise<{
   notifyHours: number; // re-notify X hours before departure
-  lastNotifyHours: number; // cancel if still no driver inside final X hours
+  lastNotifyHours: number; // continuous re-match window before departure
 }> => {
   const settings = await Setting.find({
     key: { $in: ['matchingNoDriverNotifyHours', 'matchingLastNotifyHours'] },
@@ -41,7 +41,7 @@ const getMatchingSettings = async (): Promise<{
 
   return {
     notifyHours: map.matchingNoDriverNotifyHours ?? 48, // fallback 48h
-    lastNotifyHours: map.matchingLastNotifyHours ?? 1, // fallback 1h
+    lastNotifyHours: map.matchingLastNotifyHours ?? 24, // fallback 24h
   };
 };
 
@@ -51,160 +51,148 @@ export const checkNoDriverFound = async () => {
   const now = new Date();
 
   const { notifyHours, lastNotifyHours } = await getMatchingSettings();
-
-  // Phase 2: Re-notify drivers before pickup time. Do not cancel before pickup.
+  const finalRematchHours = Math.max(lastNotifyHours, 24);
+  const notifyThrottleSeconds = 5 * 60;
   const reNotifyBefore = new Date(now.getTime() + notifyHours * 3600000);
   const reNotifyBeforeLocal = `${reNotifyBefore.getFullYear()}-${String(reNotifyBefore.getMonth() + 1).padStart(2, '0')}-${String(reNotifyBefore.getDate()).padStart(2, '0')}`;
-  const gracePeriodCutoff = new Date(now.getTime() - 30 * 60 * 1000);
+  const gracePeriodCutoff = new Date(now.getTime() - 30 * 1000);
 
-  const ridesForRenotify = await Ride.find({
+  const pendingRides = await Ride.find({
     status: RIDE_STATUS.pending,
     departureDate: { $lte: reNotifyBeforeLocal },
-    reNotifiedAt: { $exists: false },
     createdAt: { $lte: gracePeriodCutoff },
-  })
-    .limit(BATCH_SIZE)
-    .lean();
-
-  for (const ride of ridesForRenotify) {
-    const departureDateTime = getDepartureDateTime(
-      ride.departureDate,
-      ride.departureTime
-    );
-    const hoursUntilDeparture =
-      (departureDateTime.getTime() - now.getTime()) / 3600000;
-
-    if (hoursUntilDeparture > 0 && hoursUntilDeparture <= notifyHours) {
-      const passenger = await Passenger.findOne({
-        rideId: ride._id,
-        status: PASSENGER_STATUS.pending,
-      }).lean();
-
-      if (!passenger) continue;
-
-      const booking = await Booking.findOne({
-        passengerId: passenger._id,
-        rideId: ride._id,
-        paymentStatus: { $in: [PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid] },
-      }).lean();
-      if (!booking) {
-        await redis.hset(`ride:request:${ride._id}`, {
-          matchingStatus: 'awaiting_payment',
-          lastCheckedAt: now.getTime().toString(),
-        });
-        continue;
-      }
-
-      const rider = await User.findById((ride as any).rideCreatedBy)
-        .select('_id name profileImage')
-        .lean();
-
-      const ridePayload = {
-        _id: passenger._id,
-        userId: {
-          _id: rider?._id || null,
-          name: rider?.name || '',
-          profileImage: rider?.profileImage || null,
-        },
-        rideId: {
-          _id: ride._id,
-          type: ride.type,
-          id: (ride as any).id || '',
-        },
-        pickup: {
-          address: ride.pickup.address,
-          coordinates: ride.pickup.coordinates,
-        },
-        destination: {
-          address: ride.destination.address,
-          coordinates: ride.destination.coordinates,
-        },
-        departureDate: ride.departureDate,
-        departureTime: ride.departureTime,
-        rideType: ride.type,
-        requestedSeats: (passenger as any).requestedSeats || 1,
-        estimatedFare: (passenger as any).estimatedFare || 0,
-        estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,
-        estimatedDurationMinutes: (passenger as any).estimatedDurationMinutes || 0,
-        status: PASSENGER_STATUS.pending,
-        bookingId: booking._id.toString(),
-        createdAt: (passenger as any).createdAt,
-      };
-
-      const notified = await notifyNearbyDrivers(
-        ride._id.toString(),
-        { lat: ride.pickup.coordinates[1], lng: ride.pickup.coordinates[0] },
-        ridePayload,
-        redis,
-        io,
-        passenger._id.toString(),
-        10,
-        undefined,
-        { notifyMode: 'all_eligible' }
-      );
-
-      await Ride.findByIdAndUpdate(ride._id, {
-        reNotifiedAt: now,
-      });
-
-      await redis.hset(`ride:request:${ride._id}`, {
-        bookingId: booking._id.toString(),
-        notifiedCount: notified.toString(),
-        matchingStatus: notified > 0 ? 'renotified' : 'renotify_no_driver',
-        lastNotifiedAt: now.getTime().toString(),
-      });
-
-      const riderUser = await User.findById((ride as any).rideCreatedBy)
-        .select('fcmToken')
-        .lean();
-
-      io.to(`user:${(ride as any).rideCreatedBy}`).emit('ride:re-matching', {
-        rideId: ride._id,
-        message: `We're still looking for a driver. ${notified} driver(s) notified.`,
-      });
-
-      if (riderUser?.fcmToken) {
-        sendNotification([riderUser.fcmToken], {
-          receiver: (ride as any).rideCreatedBy,
-          message: 'Still Searching for a Driver',
-          description: `We're still trying to find a driver for your ride. ${notified} driver(s) have been notified.`,
-          reference: ride._id.toString(),
-          modelType: modeType.Ride,
-        }).catch(() => {});
-      }
-    }
-  }
-
-  // Phase 3: Cancel inside the dynamic final no-driver window if no driver accepted.
-  const cancelBefore = new Date(now.getTime() + lastNotifyHours * 3600000);
-  const cancelBeforeLocal = `${cancelBefore.getFullYear()}-${String(cancelBefore.getMonth() + 1).padStart(2, '0')}-${String(cancelBefore.getDate()).padStart(2, '0')}`;
-
-  const ridesForCancel = await Ride.find({
-    status: RIDE_STATUS.pending,
-    departureDate: { $lte: cancelBeforeLocal },
   })
     .limit(BATCH_SIZE)
     .lean();
 
   const cancelRideIds: string[] = [];
 
-  for (const ride of ridesForCancel) {
-    const departureDateTime = getDepartureDateTime(
-      ride.departureDate,
-      ride.departureTime
+  for (const ride of pendingRides) {
+    const departureDateTime = getDepartureDateTime(ride.departureDate, ride.departureTime);
+    const hoursUntilDeparture = (departureDateTime.getTime() - now.getTime()) / 3600000;
+
+    if (hoursUntilDeparture <= 0) {
+      cancelRideIds.push(ride._id.toString());
+      continue;
+    }
+
+    if (hoursUntilDeparture > notifyHours) continue;
+
+    const isFinalContinuousWindow = hoursUntilDeparture <= finalRematchHours;
+    const alreadyInitialRenotified = !!(ride as any).reNotifiedAt;
+    if (!isFinalContinuousWindow && alreadyInitialRenotified) continue;
+
+    const throttleKey = `ride:matching:renotify:${ride._id}`;
+    if (isFinalContinuousWindow) {
+      const recentlyChecked = await redis.get(throttleKey);
+      if (recentlyChecked) continue;
+    }
+
+    const passenger = await Passenger.findOne({
+      rideId: ride._id,
+      status: PASSENGER_STATUS.pending,
+    }).lean();
+
+    if (!passenger) continue;
+
+    const booking = await Booking.findOne({
+      passengerId: passenger._id,
+      rideId: ride._id,
+      paymentStatus: { $in: [PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid] },
+    }).lean();
+    if (!booking) {
+      await redis.hset(`ride:request:${ride._id}`, {
+        matchingStatus: 'awaiting_payment',
+        lastCheckedAt: now.getTime().toString(),
+      });
+      continue;
+    }
+
+    const rider = await User.findById((ride as any).rideCreatedBy)
+      .select('_id name profileImage')
+      .lean();
+
+    const ridePayload = {
+      _id: passenger._id,
+      userId: {
+        _id: rider?._id || null,
+        name: rider?.name || '',
+        profileImage: rider?.profileImage || null,
+      },
+      rideId: {
+        _id: ride._id,
+        type: ride.type,
+        id: (ride as any).id || '',
+      },
+      pickup: {
+        address: ride.pickup.address,
+        coordinates: ride.pickup.coordinates,
+      },
+      destination: {
+        address: ride.destination.address,
+        coordinates: ride.destination.coordinates,
+      },
+      departureDate: ride.departureDate,
+      departureTime: ride.departureTime,
+      rideType: ride.type,
+      requestedSeats: (passenger as any).requestedSeats || 1,
+      estimatedFare: (passenger as any).estimatedFare || 0,
+      estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,
+      estimatedDurationMinutes: (passenger as any).estimatedDurationMinutes || 0,
+      status: PASSENGER_STATUS.pending,
+      bookingId: booking._id.toString(),
+      createdAt: (passenger as any).createdAt,
+    };
+
+    const notified = await notifyNearbyDrivers(
+      ride._id.toString(),
+      { lat: ride.pickup.coordinates[1], lng: ride.pickup.coordinates[0] },
+      ridePayload,
+      redis,
+      io,
+      passenger._id.toString(),
+      10,
+      undefined,
+      { notifyMode: 'all_eligible' }
     );
 
-    const hoursUntilDeparture =
-      (departureDateTime.getTime() - now.getTime()) / 3600000;
+    await Ride.findByIdAndUpdate(ride._id, {
+      reNotifiedAt: (ride as any).reNotifiedAt || now,
+    });
 
-    if (hoursUntilDeparture <= lastNotifyHours) {
-      cancelRideIds.push(ride._id.toString());
+    await redis.set(throttleKey, now.getTime().toString(), 'EX', notifyThrottleSeconds);
+    await redis.hset(`ride:request:${ride._id}`, {
+      bookingId: booking._id.toString(),
+      notifiedCount: notified.toString(),
+      matchingStatus: notified > 0
+        ? (isFinalContinuousWindow ? 'continuous_renotified' : 'renotified')
+        : (isFinalContinuousWindow ? 'continuous_matching_no_new_driver' : 'renotify_no_driver'),
+      lastNotifiedAt: now.getTime().toString(),
+    });
+
+    const riderUser = await User.findById((ride as any).rideCreatedBy)
+      .select('fcmToken')
+      .lean();
+
+    io.to(`user:${(ride as any).rideCreatedBy}`).emit('ride:re-matching', {
+      rideId: ride._id,
+      message: `We're still looking for a driver. ${notified} driver(s) notified.`,
+    });
+
+    if (riderUser?.fcmToken) {
+      sendNotification([riderUser.fcmToken], {
+        receiver: (ride as any).rideCreatedBy,
+        message: 'Still Searching for a Driver',
+        description: `We're still trying to find a driver for your ride. ${notified} driver(s) have been notified.`,
+        reference: ride._id.toString(),
+        modelType: modeType.Ride,
+      }).catch(() => {});
     }
   }
 
   if (!cancelRideIds.length) return;
 
-  // Bulk cancel rides
+  // Bulk cancel rides only after pickup time has passed and no driver accepted.
   await Ride.updateMany(
     { _id: { $in: cancelRideIds }, status: RIDE_STATUS.pending },
     {
@@ -215,7 +203,6 @@ export const checkNoDriverFound = async () => {
     }
   );
 
-  // Query and refund bookings first
   const bookingsToRefund = await Booking.find({
     rideId: { $in: cancelRideIds },
     bookingStatus: { $ne: BOOKING_STATUS.cancelled },
@@ -252,7 +239,6 @@ export const checkNoDriverFound = async () => {
         payment.isPaid = false;
         await payment.save();
 
-        // Deduct from driver's wallet if driver was somehow assigned and paid
         if (payment.providerEarning && payment.providerEarning > 0 && booking.driverId) {
           await User.findByIdAndUpdate(booking.driverId, {
             $inc: { wallet: -payment.providerEarning }
@@ -260,10 +246,9 @@ export const checkNoDriverFound = async () => {
         }
       }
 
-      // Create Refund record
       await Refund.create({
         user: booking.userId,
-        ride: booking.rideId,
+        ...(booking.rideId ? { ride: booking.rideId } : {}),
         type: REFUND_TYPE.cancel_ride,
         paymentIntentId: booking.transactionId || payment?.transactionId || '',
         amount: paidAmount,
@@ -272,13 +257,11 @@ export const checkNoDriverFound = async () => {
         status: REFUND_STATUS.confirmed,
       });
 
-      // Update Booking
       booking.bookingStatus = BOOKING_STATUS.cancelled;
       booking.paymentStatus = PAYMENT_STATUS.refunded as any;
       booking.refundAmount = paidAmount;
       await booking.save();
 
-      // Refund user
       await refundToWallet(
         booking.userId.toString(),
         paidAmount,
@@ -291,7 +274,6 @@ export const checkNoDriverFound = async () => {
     }
   }
 
-  // Bulk cancel passengers
   await Passenger.updateMany(
     { rideId: { $in: cancelRideIds }, status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.completed] } },
     {
@@ -301,44 +283,38 @@ export const checkNoDriverFound = async () => {
     }
   );
 
-  // Notify riders â€” cancelled
   const cancelledPassengers = await Passenger.find(
     { rideId: { $in: cancelRideIds }, cancellationReason: 'no_driver_found' },
     'userId rideId'
   ).lean();
 
   for (const p of cancelledPassengers) {
-    // Socket
     io.to(`user:${p.userId}`).emit('ride:no-driver-found', {
       rideId: p.rideId,
-      message: 'No driver accepted your ride. Booking has been cancelled.',
+      message: 'No driver accepted your ride before pickup time. Booking has been cancelled.',
       retryAfter: 5,
     });
 
-    // âœ… FCM push â€” no driver found, cancelled
     const riderUser = await User.findById(p.userId).select('fcmToken').lean();
     if (riderUser?.fcmToken) {
       sendNotification([riderUser.fcmToken], {
         receiver: p.userId,
-        message: 'Ride Cancelled â€” No Driver Found',
-        description: `No driver was available for your ride. Your booking has been cancelled.`,
-        reference: p.rideId.toString(),
+        message: 'Ride Cancelled � No Driver Found',
+        description: `No driver accepted your ride before pickup time. Your booking has been cancelled.`,
+        reference: p.rideId?.toString() || '',
         modelType: modeType.Ride,
       }).catch(() => {});
     }
   }
 
-  // Redis cleanup
   const multi = redis.multi();
   for (const rideId of cancelRideIds) {
     multi.zrem('ride:matching:queue', rideId);
     multi.del(`ride:request:${rideId}`);
+    multi.del(`ride:matching:renotify:${rideId}`);
   }
   await multi.exec();
 
-  console.log(`ðŸš« No driver found: cancelled ${cancelRideIds.length} ride(s)`);
+  console.log(`?? No driver found after pickup: cancelled ${cancelRideIds.length} ride(s)`);
 };
-
-
-
 

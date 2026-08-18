@@ -17,7 +17,7 @@ const passengerSchema = new Schema<TPassenger>(
     rideId: {
       type: Schema.Types.ObjectId,
       ref: 'Ride',
-      required: [true, 'Ride ID is required'],
+      default: null,
     },
 
     pickup: {
@@ -116,3 +116,4 @@ export const Passenger = mongoose.model<TPassenger, TPassengerModel>(
   'Passenger',
   passengerSchema
 );
+
