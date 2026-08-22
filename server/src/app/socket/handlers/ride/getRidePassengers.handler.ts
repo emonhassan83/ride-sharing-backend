@@ -42,6 +42,7 @@ export const getRidePassengersHandler = eventHandler<any>(
         PASSENGER_STATUS.driver_arrived,
         PASSENGER_STATUS.in_progress,
         PASSENGER_STATUS.picked_up,
+        PASSENGER_STATUS.dropped_off,
       ]},
     })
       .select('userId pickup destination status requestedSeats estimatedFare pickedUpAt arriveAt')
@@ -106,6 +107,7 @@ export const getRidePassengersHandler = eventHandler<any>(
         rideId,
         driverLocation: { lat, lng },
         passengers:     enriched,
+        totalCount:     enriched.length,
       },
     });
   },
