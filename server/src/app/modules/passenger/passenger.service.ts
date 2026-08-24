@@ -7,6 +7,7 @@ import { RIDE_STATUS } from '../ride/ride.constant';
 import { Booking } from '../booking/booking.model';
 import { getRedisClient } from '../../config/redis.config';
 import { Setting } from '../settings/settings.model';
+import { buildStoredFareBreakdown } from '../../utils/fareBreakdownResponse.utils';
 
 const getDriverRideRequest = async (driverUserId: string) => {
   // Find rides where the user is a passenger and the ride is pending
@@ -136,6 +137,7 @@ const getPassengerById = async (passengerId: string) => {
   const grossFare = Number((passenger as any).totalFare || (passenger as any).estimatedFare || booking?.totalFare || 0);
   const fareBeforeFees = Math.round((grossFare / (1 + (vatPercentage + platformCommissionPercentage) / 100)) * 100) / 100;
   const platformCommissionAmount = Math.round((fareBeforeFees * (platformCommissionPercentage / 100)) * 100) / 100;
+  const fareBreakdown = await buildStoredFareBreakdown(passenger, booking);
 
   return {
     ...passenger,
@@ -151,6 +153,7 @@ const getPassengerById = async (passengerId: string) => {
     sixPassengerExtraCharge: (passenger as any).sixPassengerCharge ?? 0,
     bookingId: booking?._id || null,
     bookingShortId: booking?.id || null,
+    fareBreakdown,
   };
 };
 
@@ -159,6 +162,7 @@ export const PassengerService = {
   getPassengersByRide,
   getPassengerById,
 };
+
 
 
 

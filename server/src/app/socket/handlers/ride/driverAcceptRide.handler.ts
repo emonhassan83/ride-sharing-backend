@@ -23,6 +23,7 @@ import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { recalculateSplitFares } from '../../../utils/splitFare.utils';
+import { buildStoredFareBreakdown } from '../../../utils/fareBreakdownResponse.utils';
 
 const ensureRiderInRoom = (userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
@@ -146,7 +147,7 @@ const cancelOtherPendingRequests = async (
   }
 };
 
-// â”€â”€ Helper: get driver available seats for a specific ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Helper: get driver available seats for a specific ride Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const notifyOtherNotifiedDriversRideTaken = async (
   ride: any,
   acceptedDriverId: string,
@@ -225,7 +226,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io = getIO();
 
-    // â”€â”€ Driver details from Redis (fallback to DB if TTL expired) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Driver details from Redis (fallback to DB if TTL expired) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     let driverDetails = await redis.hgetall(`driver:${driverId}:details`);
     if (!driverDetails || !Object.keys(driverDetails).length) {
       const driverUser = await User.findById(driverId)
@@ -268,7 +269,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
       await redis.expire(`driver:${driverId}:details`, 86400);
     }
 
-    // â”€â”€ Driver's default vehicle â€” DB à¦¥à§‡à¦•à§‡ (Redis stale à¦¹à¦¤à§‡ à¦ªà¦¾à¦°à§‡) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Driver's default vehicle Ã¢â‚¬â€ DB Ã Â¦Â¥Ã Â§â€¡Ã Â¦â€¢Ã Â§â€¡ (Redis stale Ã Â¦Â¹Ã Â¦Â¤Ã Â§â€¡ Ã Â¦ÂªÃ Â¦Â¾Ã Â¦Â°Ã Â§â€¡) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     const defaultVehicle = await Vehicle.findOne({
       userId: driverId,
       isDefault: true,
@@ -278,11 +279,11 @@ export const driverAcceptRideHandler = eventHandler<any>(
       .lean();
 
     const vehicleId = defaultVehicle?._id ?? null;
-    // âœ… DB à¦¥à§‡à¦•à§‡ vehicle seats à¦¨à¦¾à¦“
+    // Ã¢Å“â€¦ DB Ã Â¦Â¥Ã Â§â€¡Ã Â¦â€¢Ã Â§â€¡ vehicle seats Ã Â¦Â¨Ã Â¦Â¾Ã Â¦â€œ
     const vehicleTotalSeats =
       defaultVehicle?.seats || parseInt(driverDetails.seats) || 4;
 
-    // â”€â”€ Ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Ride Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     const ride = await Ride.findById(rideId);
     if (!ride) return callback?.({ success: false, message: 'Ride not found' });
 
@@ -295,7 +296,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
         message: 'This ride has already been accepted or cancelled.',
       });
 
-    // âœ… Available seats: same date + overlapping time à¦à¦° rides à¦¬à¦¾à¦¦ à¦¦à¦¿à¦¯à¦¼à§‡
+    // Ã¢Å“â€¦ Available seats: same date + overlapping time Ã Â¦ÂÃ Â¦Â° rides Ã Â¦Â¬Ã Â¦Â¾Ã Â¦Â¦ Ã Â¦Â¦Ã Â¦Â¿Ã Â¦Â¯Ã Â¦Â¼Ã Â§â€¡
     const availableSeats = await getDriverAvailableSeats(
       driverId,
       rideId,
@@ -307,7 +308,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
     socket.join(`ride:${rideId}`);
     socket.join(`driver:${driverId}`);
 
-    // â”€â”€ PRIVATE RIDE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬ PRIVATE RIDE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId
         ? await Passenger.findOne({
@@ -412,6 +413,8 @@ await redis.hset(`ride:active:${rideId}`, {
 
       ensureRiderInRoom(passenger.userId.toString(), rideId);
 
+      const fareBreakdown = await buildStoredFareBreakdown(passenger, booking);
+
       const payload = buildAcceptedPayload(
         rideId,
         passenger,
@@ -420,22 +423,22 @@ await redis.hset(`ride:active:${rideId}`, {
         driverDetails,
         socket,
         estimatedArrival,
-        { rideFullyAccepted: true }
+        { rideFullyAccepted: true, fareBreakdown }
       );
 
       io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
       console.log(
-        `âœ… Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`
+        `Ã¢Å“â€¦ Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`
       );
 
       return callback?.({
         success: true,
         message: 'Private ride accepted successfully',
-        data: { bookingId: booking._id, estimatedArrival },
+        data: { bookingId: booking._id, estimatedArrival, fareBreakdown },
       });
     }
 
-    // â”€â”€ SPLIT RIDE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬ SPLIT RIDE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (ride.type === RIDE_TYPE.split) {
       if (!passengerId)
         return callback?.({
@@ -588,9 +591,12 @@ await redis.hset(`ride:active:${rideId}`, {
 
       ensureRiderInRoom(passenger.userId.toString(), rideId);
 
+      const refreshedPassenger = await Passenger.findById(passenger._id).lean() || passenger;
+      const fareBreakdown = await buildStoredFareBreakdown(refreshedPassenger, booking);
+
       const payload = buildAcceptedPayload(
         rideId,
-        passenger,
+        refreshedPassenger,
         booking,
         driverId,
         driverDetails,
@@ -599,12 +605,13 @@ await redis.hset(`ride:active:${rideId}`, {
         {
           rideFullyAccepted: isLastPassenger,
           remainingPassengers: remainingCount,
+          fareBreakdown,
         }
       );
 
       io.to(`user:${passenger.userId.toString()}`).emit('ride:driver-accepted', payload);
       console.log(
-        `âœ… Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
+        `Ã¢Å“â€¦ Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
       );
 
       return callback?.({
@@ -617,6 +624,7 @@ await redis.hset(`ride:active:${rideId}`, {
           estimatedArrival,
           rideFullyAccepted: isLastPassenger,
           remainingPassengers: remainingCount,
+          fareBreakdown,
         },
       });
     }
@@ -624,6 +632,8 @@ await redis.hset(`ride:active:${rideId}`, {
     return callback?.({ success: false, message: 'Unknown ride type' });
   }
 );
+
+
 
 
 

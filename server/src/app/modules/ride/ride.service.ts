@@ -6,9 +6,10 @@ import { RIDE_STATUS } from './ride.constant';
 import { Passenger } from '../passenger/passenger.model';
 import { PASSENGER_STATUS, PAYMENT_STATUS } from '../passenger/passenger.constant';
 import { Booking } from '../booking/booking.model';
+import { buildStoredFareBreakdown } from '../../utils/fareBreakdownResponse.utils';
 
 const getAllIntoDB = async (query: Record<string, unknown>) => {
-  // ── Filter type: scheduled | completed | all (default) ───────────────────
+  // â”€â”€ Filter type: scheduled | completed | all (default) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const status = query.status as string | undefined;
   delete query.status;
 
@@ -23,7 +24,7 @@ const getAllIntoDB = async (query: Record<string, unknown>) => {
       status: RIDE_STATUS.completed,
     };
   } else {
-    // default — exclude pending, cancelled, rejected
+    // default â€” exclude pending, cancelled, rejected
     statusFilter = {
       status: {
         $nin: [
@@ -195,13 +196,13 @@ const getRiderRides = async (
   userId: string,
   query: Record<string, unknown>,
 ) => {
-  // ── Step 1: Ride status filter ────────────────────────────────────────────
+  // â”€â”€ Step 1: Ride status filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const rideStatusFilter: Record<string, any> = {};
   if (query.status) {
     rideStatusFilter.status = query.status;
   }
 
-  // ── Step 2: Find passengers (non-cancelled/rejected/pending) ─────────────
+  // â”€â”€ Step 2: Find passengers (non-cancelled/rejected/pending) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const passengerDocs = await Passenger.find({
     userId,
     status: {
@@ -222,7 +223,7 @@ const getRiderRides = async (
   const passengerIds = passengerDocs.map(p => p._id);
   const rideIds = passengerDocs.map(p => p.rideId).filter(Boolean) as any[];
 
-  // ── Step 3: Find rides with status filter ─────────────────────────────────
+  // â”€â”€ Step 3: Find rides with status filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const rides = await Ride.find({
     _id: { $in: rideIds },
     ...rideStatusFilter,
@@ -233,7 +234,7 @@ const getRiderRides = async (
 
   const rideMap = new Map(rides.map(r => [r._id.toString(), r]));
 
-  // ── Step 4: Find bookings for these passengers ────────────────────────────
+  // â”€â”€ Step 4: Find bookings for these passengers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const bookings = await Booking.find({
     passengerId: { $in: passengerIds },
   })
@@ -245,7 +246,7 @@ const getRiderRides = async (
     bookings.map(b => [b.passengerId.toString(), b]),
   );
 
-  // ── Step 5: Merge ─────────────────────────────────────────────────────────
+  // â”€â”€ Step 5: Merge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const result = passengerDocs
     .filter(p => p.rideId && rideMap.has(p.rideId.toString()))
     .map(p => {
@@ -278,7 +279,7 @@ const getRiderRides = async (
       };
     });
 
-  // ── Step 6: Pagination ────────────────────────────────────────────────────
+  // â”€â”€ Step 6: Pagination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const page = parseInt(String(query.page || 1));
   const limit = parseInt(String(query.limit || 10));
   const skip = (page - 1) * limit;
@@ -315,9 +316,30 @@ const getRideById = async (rideId: string) => {
     .populate('userId', 'name email phone profileImage')
     .lean();
 
+  const bookings = await Booking.find({ rideId })
+    .select('_id id passengerId paymentStatus bookingStatus totalFare amountPaid')
+    .lean();
+  const bookingByPassengerId = new Map(
+    bookings.map((booking: any) => [booking.passengerId?.toString(), booking])
+  );
+
+  const passengersWithFareBreakdown = await Promise.all(
+    passengers.map(async (passenger: any) => {
+      const booking = bookingByPassengerId.get(passenger._id.toString());
+      return {
+        ...passenger,
+        bookingId: booking?._id || null,
+        bookingShortId: booking?.id || null,
+        paymentStatus: booking?.paymentStatus || passenger.paymentStatus,
+        bookingStatus: booking?.bookingStatus || null,
+        fareBreakdown: await buildStoredFareBreakdown(passenger, booking),
+      };
+    })
+  );
+
   return {
     ...ride,
-    passengers,
+    passengers: passengersWithFareBreakdown,
   };
 };
 
@@ -327,5 +349,6 @@ export const RideService = {
   getRiderRides,
   getRideById,
 };
+
 
 
