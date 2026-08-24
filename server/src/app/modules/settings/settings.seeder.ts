@@ -1,40 +1,12 @@
 import { Setting } from './settings.model';
+import { DEFAULT_GENERAL_SETTINGS } from './settings.constant';
 
 const settingSeeder = async () => {
-  const settingsData = [
-      // Access & validation ride
-    { key: 'bookingMaxDaysAhead', value: 30 },
-    { key: 'splitRideMinBookingHours', value: 24 },
-    { key: 'splitRideRefundRestrictionHours', value: 24 },
-    { key: 'privateRideMinBookingHours', value: 1 },
-    { key: 'privateRideRefundRestrictionHours', value: 1 },
-    { key: 'matchingNoDriverNotifyHours', value: 48 },
-    { key: 'matchingLastNotifyHours', value: 1 },
-    { key: 'cancellationFreeWindowHours', value: 24 },
-    { key: 'cancellationPercentage50Hours', value: 3 },
-    { key: 'waitingReminderIntervals', value: 5 },
-    { key: 'waitingTimeMinutes', value: 60 },
-
-    // ride & charge
-    { key: 'dayFareInitialCharge', value: 3.8 },
-    { key: 'dayFarePerKMRate', value: 0.95 },
-    { key: 'dayFareWaitingCharge', value: 17 },
-    { key: 'nightFareInitialCharge', value: 4.80 },
-    { key: 'nightFarePerKMRate', value: 1.1 },
-    { key: 'nightFareWaitingCharge', value: 19 },
-    { key: 'holidayIncreasePercentage', value: 20 },
-    { key: 'perLuggageCharge', value: 2 },
-    { key: 'fivePassengerExtraChargePercentage', value: 20 },
-    { key: 'sixPassengerExtraChargePercentage', value: 40 },
-    { key: 'baseFare', value: 20 },
-    { key: 'platformVat', value: 9 },
-    { key: 'platformCommissionPercent', value: 10 },
-
-    // platform info
-    { key: 'supportContract', value: '+357XXXXXXXX' },
-    { key: 'supportEmail', value: 'support@yourapp.com' },
-
-    // Trams & Condition
+  const settingsData: { key: string; value: unknown }[] = [
+    ...Object.entries(DEFAULT_GENERAL_SETTINGS).map(([key, value]) => ({
+      key,
+      value,
+    })),
     {
       key: 'userTramsAndCondition',
       value: 'Full trams and condition content goes here...',
@@ -58,8 +30,3 @@ const settingSeeder = async () => {
 };
 
 export default settingSeeder;
-
-
-
-
-

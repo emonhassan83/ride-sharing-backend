@@ -1,17 +1,46 @@
+export const DEFAULT_GENERAL_SETTINGS = {
+  bookingMaxDaysAhead: 30,
+  splitRideMinBookingHours: 24,
+  splitRideRefundRestrictionHours: 24,
+  privateRideMinBookingHours: 1,
+  privateRideRefundRestrictionHours: 1,
+  matchingNoDriverNotifyHours: 48,
+  matchingLastNotifyHours: 1,
+  cancellationFreeWindowHours: 24,
+  cancellationPercentage50Hours: 3,
+  waitingReminderIntervals: 5,
+  waitingTimeMinutes: 60,
+
+  dayFareInitialCharge: 3.8,
+  dayFarePerKMRate: 0.95,
+  dayFareWaitingCharge: 17,
+  nightFareInitialCharge: 4.8,
+  nightFarePerKMRate: 1.1,
+  nightFareWaitingCharge: 19,
+  holidayIncreasePercentage: 20,
+  perLuggageCharge: 2,
+  fivePassengerExtraChargePercentage: 20,
+  sixPassengerExtraChargePercentage: 40,
+  baseFare: 20,
+  platformVat: 9,
+  platformCommissionPercent: 10,
+
+  supportContract: '+357XXXXXXXX',
+  supportEmail: 'support@yourapp.com',
+} as const;
+
 export const GENERAL_KEYS = [
   'bookingMaxDaysAhead',
-  "splitRideMinBookingHours",
-  "splitRideRefundRestrictionHours",
-  "privateRideMinBookingHours",
-  "privateRideRefundRestrictionHours",
-  "matchingNoDriverNotifyHours",
-  "matchingLastNotifyHours",
-  "cancellationFreeWindowHours",
-  "cancellationPercentage50Hours",
-  "waitingReminderIntervals",
-  "waitingTimeMinutes",
-
-  // ride charge keys
+  'splitRideMinBookingHours',
+  'splitRideRefundRestrictionHours',
+  'privateRideMinBookingHours',
+  'privateRideRefundRestrictionHours',
+  'matchingNoDriverNotifyHours',
+  'matchingLastNotifyHours',
+  'cancellationFreeWindowHours',
+  'cancellationPercentage50Hours',
+  'waitingReminderIntervals',
+  'waitingTimeMinutes',
   'dayFareInitialCharge',
   'dayFarePerKMRate',
   'dayFareWaitingCharge',
@@ -25,8 +54,6 @@ export const GENERAL_KEYS = [
   'baseFare',
   'platformVat',
   'platformCommissionPercent',
-
-  // platform info
   'supportContract',
   'supportEmail',
 ] as const;
@@ -36,8 +63,3 @@ export const ALLOWED_KEYS = [
   'userTramsAndCondition',
   'providerTramsAndCondition',
 ] as const;
-
-
-
-
-

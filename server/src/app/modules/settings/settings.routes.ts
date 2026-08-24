@@ -7,20 +7,19 @@ import { SettingValidation } from './settings.validation';
 
 const router = Router();
 
+router.get('/generals', SettingController.getSettingGenerals);
 router.post(
   '/generals',
   validateRequest(SettingValidation.updateGeneralsZodSchema),
   SettingController.updateGenerals,
 );
 
+router.get('/', SettingController.getSetting);
 router.post(
   '/:key',
   auth(USER_ROLE.admin),
   validateRequest(SettingValidation.createOrUpdateSettingZodSchema),
   SettingController.createOrUpdate,
 );
-
-router.get('/', SettingController.getSetting);
-router.get('/generals', SettingController.getSettingGenerals);
 
 export const SettingsRoutes = router;

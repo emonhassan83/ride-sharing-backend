@@ -31,6 +31,7 @@ export const updateGeneralsZodSchema = z.object({
       cancellationFreeWindowHours: z.number().optional(),
       cancellationPercentage50Hours: z.number().optional(),
       waitingReminderIntervals: z.number().optional(),
+      waitingTimeMinutes: z.number().optional(),
 
       // ride charge keys
       dayFareInitialCharge: z.number().optional(),

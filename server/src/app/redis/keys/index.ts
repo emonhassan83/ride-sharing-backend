@@ -8,9 +8,6 @@ export const REDIS_KEYS = {
   REGISTER_OTP: (email: string) => `register:otp:${email}`,
   RESET_OTP: (email: string) => `reset:otp:${email}`,
 
-  SETTINGS_SINGLE: (key: string) => `setting:${key}`,
-  SETTINGS_GENERALS: 'setting:generals',
-
   FAQ_ALL: 'faq:all',
   
   FAQ_BY_AUDIENCE: (audience: string) => `faq:audience:${audience}`,
