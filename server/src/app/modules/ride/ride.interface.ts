@@ -44,6 +44,11 @@ export interface TRide {
   };
 
   currentSurchargePercent: number
+  driverEarningCredited: boolean
+  driverEarningCreditedAt?: Date
+  driverEarningAmount: number
+  platformCommissionAmount: number
+  totalCollectedAmount: number
   splitFareLocked: boolean
   splitFareLockedAt?: Date
   splitFareLockReason?: 'departure_time' | 'trip_start'
@@ -61,3 +66,4 @@ export interface TRide {
 }
 
 export type TRideModel = Model<TRide>;
+

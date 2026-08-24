@@ -12,7 +12,7 @@ import { Payment } from '../payment/payment.model';
 import { PAYMENT_STATUS } from '../payment/payment.constant';
 import { Booking } from '../booking/booking.model';
 import { Ride } from '../ride/ride.model';
-import { RIDE_STATUS } from '../ride/ride.constant';
+import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
 import ApiError from '../../errors/ApiError';
 
 // â”\u20ACâ”\u20AC Create withdrawal request â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
@@ -203,15 +203,21 @@ const getMyWithdrawsFromDB = async (
     .filter(Boolean);
   const paymentIds = payments.map((payment: any) => payment._id);
 
-  const [rides, withdraws] = await Promise.all([
+  const [rides, splitRides, withdraws] = await Promise.all([
     Ride.find({ _id: { $in: rideIds }, status: RIDE_STATUS.completed })
-      .select('id pickup destination departureDate departureTime completedAt status')
+      .select('id type pickup destination departureDate departureTime completedAt status')
       .lean(),
-    Withdraw.find({
-      user: userId,
-      $or: [{ payment: { $in: paymentIds } }, { booking: { $in: bookingIds } }],
+    Ride.find({
+      driverId: userId,
+      type: RIDE_TYPE.split,
+      status: RIDE_STATUS.completed,
+      driverEarningCredited: true,
+      driverEarningAmount: { $gt: 0 },
     })
-      .select('id payment booking status amount completedAt')
+      .select('id pickup destination departureDate departureTime completedAt status driverEarningAmount')
+      .lean(),
+    Withdraw.find({ user: userId })
+      .select('id ride payment booking status amount completedAt')
       .lean(),
   ]);
 
@@ -226,12 +232,17 @@ const getMyWithdrawsFromDB = async (
       .filter((withdraw: any) => withdraw.booking)
       .map((withdraw: any) => [withdraw.booking.toString(), withdraw])
   );
+  const withdrawByRide = new Map(
+    withdraws
+      .filter((withdraw: any) => withdraw.ride)
+      .map((withdraw: any) => [withdraw.ride.toString(), withdraw])
+  );
 
-  const allEarnings = payments
+  const privateEarnings = payments
     .map((payment: any) => {
       const booking = payment.booking;
       const ride = booking?.rideId ? rideMap.get(booking.rideId.toString()) : null;
-      if (!booking || !ride) return null;
+      if (!booking || !ride || ride.type === RIDE_TYPE.split) return null;
 
       const reportDate = ride.completedAt || payment.updatedAt;
       const withdraw =
@@ -254,6 +265,27 @@ const getMyWithdrawsFromDB = async (
       };
     })
     .filter(Boolean) as any[];
+
+  const splitEarnings = splitRides.map((ride: any) => {
+    const withdraw = withdrawByRide.get(ride._id.toString());
+    return {
+      id: withdraw?.id || null,
+      rideId: ride._id.toString(),
+      bookingId: withdraw?.booking?.toString() || null,
+      paymentId: null,
+      bookingReference: ride.id,
+      rideDate: ride.departureDate,
+      rideTime: ride.departureTime,
+      pickup: ride.pickup,
+      destination: ride.destination,
+      amountEarned: Math.round((ride.driverEarningAmount || 0) * 100) / 100,
+      status: withdraw?.status || null,
+      reportDate: ride.completedAt,
+    };
+  });
+
+  const allEarnings = [...privateEarnings, ...splitEarnings]
+    .sort((a: any, b: any) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime());
 
   const earnings = allEarnings.filter((item: any) => {
     const reportDate = item.reportDate;
@@ -375,4 +407,6 @@ export const WithdrawService = {
   getAWithdrawFromDB,
   updateWithdrawFromDB
 };
+
+
 

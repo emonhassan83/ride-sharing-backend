@@ -43,6 +43,7 @@ export const getRidePassengersHandler = eventHandler<any>(
         PASSENGER_STATUS.in_progress,
         PASSENGER_STATUS.picked_up,
         PASSENGER_STATUS.dropped_off,
+        PASSENGER_STATUS.completed,
       ]},
     })
       .select('userId pickup destination status requestedSeats estimatedFare pickedUpAt arriveAt')
@@ -51,7 +52,7 @@ export const getRidePassengersHandler = eventHandler<any>(
     if (!passengers.length) {
       return callback?.({
         success: true,
-        message: 'No active passengers found',
+        message: 'No passengers found for this ride',
         data:    { passengers: [], totalCount: 0 },
       });
     }
@@ -102,7 +103,7 @@ export const getRidePassengersHandler = eventHandler<any>(
 
     return callback?.({
       success: true,
-      message: `${enriched.length} active passenger(s) found`,
+      message: `${enriched.length} passenger(s) found`,
       data: {
         rideId,
         driverLocation: { lat, lng },
@@ -112,3 +113,4 @@ export const getRidePassengersHandler = eventHandler<any>(
     });
   },
 );
+

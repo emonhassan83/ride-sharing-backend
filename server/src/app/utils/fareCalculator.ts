@@ -2,7 +2,6 @@
 import { Setting } from '../modules/settings/settings.model';
 import axios from 'axios';
 
-const PREORDER_MINIMUM_FARE = 20;
 const SPLIT_RIDE_SURCHARGE_PERCENT = 0;
 
 const roundMoney = (value: number): number => Math.round(value * 100) / 100;
@@ -16,7 +15,10 @@ export interface FareBreakdown {
   holidaySurcharge: number;
   waitingCharge: number;
   fivePassengerExtraCharge: number;
+  sixPassengerExtraCharge: number;
+  fivePassengerExtraChargePercentage: number;
   sixPassengerExtraChargePercentage: number;
+  baseFare: number;
   vat: number;
   minimumFareApplied: boolean;
   minimumFareAmount: number;
@@ -24,7 +26,10 @@ export interface FareBreakdown {
   splitSurchargePercent: number;
   splitSurchargeAmount: number;
   fareBeforePlatformCommission: number;
+  platformVatPercent: number;
+  vatAmount: number;
   platformCommissionPercent: number;
+  platformCommission: number;
   platformCommissionAmount: number;
   totalFare: number;
 }
@@ -44,8 +49,10 @@ interface FareSettings {
   nightFareWaitingCharge: number;
   perLuggageCharge: number;
   holidayIncreasePercentage: number;
-  fivePassengerExtraCharge: number;
+  fivePassengerExtraChargePercentage: number;
   sixPassengerExtraChargePercentage: number;
+  baseFare: number;
+  platformVat: number;
   platformCommissionPercent: number;
 }
 
@@ -59,8 +66,10 @@ const DEFAULTS: FareSettings = {
   nightFareWaitingCharge: 19.0,
   perLuggageCharge: 2.0,
   holidayIncreasePercentage: 20,
-  fivePassengerExtraCharge: 1.4,
+  fivePassengerExtraChargePercentage: 20,
   sixPassengerExtraChargePercentage: 40,
+  baseFare: 20,
+  platformVat: 9,
   platformCommissionPercent: 10,
 };
 
@@ -119,8 +128,10 @@ export async function loadFareSettings(): Promise<FareSettings> {
     nightFareWaitingCharge: map.get('nightFareWaitingCharge') ?? DEFAULTS.nightFareWaitingCharge,
     perLuggageCharge: map.get('perLuggageCharge') ?? DEFAULTS.perLuggageCharge,
     holidayIncreasePercentage: map.get('holidayIncreasePercentage') ?? DEFAULTS.holidayIncreasePercentage,
-    fivePassengerExtraCharge: map.get('fivePassengerExtraCharge') ?? DEFAULTS.fivePassengerExtraCharge,
+    fivePassengerExtraChargePercentage: map.get('fivePassengerExtraChargePercentage') ?? DEFAULTS.fivePassengerExtraChargePercentage,
     sixPassengerExtraChargePercentage: map.get('sixPassengerExtraChargePercentage') ?? DEFAULTS.sixPassengerExtraChargePercentage,
+    baseFare: map.get('baseFare') ?? DEFAULTS.baseFare,
+    platformVat: map.get('platformVat') ?? DEFAULTS.platformVat,
     platformCommissionPercent: map.get('platformCommissionPercent') ?? DEFAULTS.platformCommissionPercent,
   };
 }
@@ -158,7 +169,7 @@ export async function calculateFareBreakdown(params: {
   let passengerCountExtra = 0;
   if (rideType === 'private') {
     if (requestedSeats === 5) {
-      passengerCountExtra = settings.fivePassengerExtraCharge;
+      passengerCountExtra = roundMoney(subTotal * (settings.fivePassengerExtraChargePercentage / 100));
     } else if (requestedSeats === 6) {
       passengerCountExtra = roundMoney(subTotal * (settings.sixPassengerExtraChargePercentage / 100));
     }
@@ -182,15 +193,17 @@ export async function calculateFareBreakdown(params: {
   }
 
   const normalFare = roundMoney(subTotal);
-  const fareAfterMinimum = Math.max(normalFare, PREORDER_MINIMUM_FARE);
+  const fareAfterMinimum = Math.max(normalFare, settings.baseFare);
   const minimumFareAdjustment = roundMoney(fareAfterMinimum - normalFare);
   const splitSurchargePercent = rideType === 'split' ? SPLIT_RIDE_SURCHARGE_PERCENT : 0;
   const splitSurchargeAmount = roundMoney(fareAfterMinimum * (splitSurchargePercent / 100));
   const fareBeforePlatformCommission = roundMoney(fareAfterMinimum + splitSurchargeAmount);
+  const platformVatPercent = settings.platformVat;
+  const vatAmount = roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
   const platformCommissionPercent = settings.platformCommissionPercent;
   const platformCommissionAmount = roundMoney(fareBeforePlatformCommission * (platformCommissionPercent / 100));
-  const totalFare = roundMoney(fareBeforePlatformCommission + platformCommissionAmount);
-  const vat = platformCommissionAmount;
+  const totalFare = roundMoney(fareBeforePlatformCommission + vatAmount + platformCommissionAmount);
+  const vat = vatAmount;
 
   return {
     initialCharge: rates.initialCharge,
@@ -200,16 +213,22 @@ export async function calculateFareBreakdown(params: {
     passengerCountExtra,
     holidaySurcharge,
     waitingCharge,
-    fivePassengerExtraCharge: passengerCountExtra,
-    sixPassengerExtraChargePercentage: 0,
+    fivePassengerExtraCharge: requestedSeats === 5 ? passengerCountExtra : 0,
+    sixPassengerExtraCharge: requestedSeats === 6 ? passengerCountExtra : 0,
+    fivePassengerExtraChargePercentage: requestedSeats === 5 ? settings.fivePassengerExtraChargePercentage : 0,
+    sixPassengerExtraChargePercentage: requestedSeats === 6 ? settings.sixPassengerExtraChargePercentage : 0,
+    baseFare: settings.baseFare,
     vat,
     minimumFareApplied: minimumFareAdjustment > 0,
-    minimumFareAmount: PREORDER_MINIMUM_FARE,
+    minimumFareAmount: settings.baseFare,
     minimumFareAdjustment,
     splitSurchargePercent,
     splitSurchargeAmount,
     fareBeforePlatformCommission,
+    platformVatPercent,
+    vatAmount,
     platformCommissionPercent,
+    platformCommission: platformCommissionAmount,
     platformCommissionAmount,
     totalFare,
   };
@@ -232,6 +251,13 @@ function getDayNightRate(departureTimeStr: string, settings: FareSettings): DayN
         waitingChargePerHour: settings.dayFareWaitingCharge,
       };
 }
+
+
+
+
+
+
+
 
 
 

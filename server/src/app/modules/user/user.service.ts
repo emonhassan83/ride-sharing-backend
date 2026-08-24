@@ -20,7 +20,7 @@ import { createToken, TExpiresIn } from '../auth/auth.utils';
 import { config } from '../../config/env.config';
 import { Vehicle } from '../vehicle/vehicle.model';
 import { Ride } from '../ride/ride.model';
-import { RIDE_STATUS } from '../ride/ride.constant';
+import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
 import { Payment } from '../payment/payment.model';
 import { BOOKING_STATUS } from '../booking/booking.constant';
 import StripeService from '../../config/stripe.config';
@@ -71,24 +71,43 @@ const getAllUsersFromDB = async (query: Record<string, unknown>) => {
       completedRidesMap[r._id.toString()] = r.count;
     });
 
-    // Total earning per provider — একটা aggregation এ সব
-    const totalEarningResult = await Payment.aggregate([
-      {
-        $match: {
-          provider: { $in: providerIds },
-          isPaid: true,
+    // Total earning per provider: private payments + split ride-level credited earning
+    const [totalEarningResult, splitRideEarningResult] = await Promise.all([
+      Payment.aggregate([
+        {
+          $match: {
+            provider: { $in: providerIds },
+            isPaid: true,
+            providerEarning: { $gt: 0 },
+          },
         },
-      },
-      {
-        $group: {
-          _id: '$provider',
-          total: { $sum: '$providerEarning' },
+        { $lookup: { from: 'bookings', localField: 'booking', foreignField: '_id', as: 'bookingDoc' } },
+        { $unwind: { path: '$bookingDoc', preserveNullAndEmptyArrays: true } },
+        { $lookup: { from: 'rides', localField: 'bookingDoc.rideId', foreignField: '_id', as: 'rideDoc' } },
+        { $unwind: { path: '$rideDoc', preserveNullAndEmptyArrays: true } },
+        { $match: { $or: [{ 'rideDoc.type': { $ne: RIDE_TYPE.split }, 'rideDoc.status': RIDE_STATUS.completed }, { rideDoc: null }] } },
+        { $group: { _id: '$provider', total: { $sum: '$providerEarning' } } },
+      ]),
+      Ride.aggregate([
+        {
+          $match: {
+            driverId: { $in: providerIds },
+            type: RIDE_TYPE.split,
+            status: RIDE_STATUS.completed,
+            driverEarningCredited: true,
+            driverEarningAmount: { $gt: 0 },
+          },
         },
-      },
+        { $group: { _id: '$driverId', total: { $sum: '$driverEarningAmount' } } },
+      ]),
     ]);
 
     totalEarningResult.forEach((r) => {
       totalEarningMap[r._id.toString()] = r.total;
+    });
+    splitRideEarningResult.forEach((r) => {
+      const uid = r._id.toString();
+      totalEarningMap[uid] = (totalEarningMap[uid] ?? 0) + r.total;
     });
   }
 
@@ -133,6 +152,7 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
   let vehicles: any[] = [];
   let completedRides = 0;
   let todayEarning = 0;
+  let totalEarning = 0;
 
   if (result.role === USER_ROLE.provider) {
     const userObjectId = new mongoose.Types.ObjectId(userId);
@@ -143,8 +163,15 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
     todayEnd.setHours(23, 59, 59, 999);
 
     // ── Run all queries in parallel ───────────────────────────────────────
-    const [provider, vehicleList, completedRideCount, earningResult] =
-      await Promise.all([
+    const [
+      provider,
+      vehicleList,
+      completedRideCount,
+      earningResult,
+      splitTodayEarningResult,
+      totalEarningResult,
+      splitTotalEarningResult,
+    ] = await Promise.all([
         // KYC / provider doc
         Provider.findOne({ userId })
           .select(
@@ -163,21 +190,65 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
           status: RIDE_STATUS.completed,
         }),
 
-        // Today's earnings from Payment
+        // Today's private earnings from Payment
         Payment.aggregate([
           {
             $match: {
               provider: userObjectId,
               isPaid: true,
+              providerEarning: { $gt: 0 },
               createdAt: { $gte: todayStart, $lte: todayEnd },
             },
           },
+          { $lookup: { from: 'bookings', localField: 'booking', foreignField: '_id', as: 'bookingDoc' } },
+          { $unwind: { path: '$bookingDoc', preserveNullAndEmptyArrays: true } },
+          { $lookup: { from: 'rides', localField: 'bookingDoc.rideId', foreignField: '_id', as: 'rideDoc' } },
+          { $unwind: { path: '$rideDoc', preserveNullAndEmptyArrays: true } },
+          { $match: { $or: [{ 'rideDoc.type': { $ne: RIDE_TYPE.split }, 'rideDoc.status': RIDE_STATUS.completed }, { rideDoc: null }] } },
+          { $group: { _id: null, total: { $sum: '$providerEarning' } } },
+        ]),
+
+        Ride.aggregate([
           {
-            $group: {
-              _id: null,
-              total: { $sum: '$providerEarning' },
+            $match: {
+              driverId: userObjectId,
+              type: RIDE_TYPE.split,
+              status: RIDE_STATUS.completed,
+              driverEarningCredited: true,
+              driverEarningAmount: { $gt: 0 },
+              completedAt: { $gte: todayStart, $lte: todayEnd },
             },
           },
+          { $group: { _id: null, total: { $sum: '$driverEarningAmount' } } },
+        ]),
+
+        Payment.aggregate([
+          {
+            $match: {
+              provider: userObjectId,
+              isPaid: true,
+              providerEarning: { $gt: 0 },
+            },
+          },
+          { $lookup: { from: 'bookings', localField: 'booking', foreignField: '_id', as: 'bookingDoc' } },
+          { $unwind: { path: '$bookingDoc', preserveNullAndEmptyArrays: true } },
+          { $lookup: { from: 'rides', localField: 'bookingDoc.rideId', foreignField: '_id', as: 'rideDoc' } },
+          { $unwind: { path: '$rideDoc', preserveNullAndEmptyArrays: true } },
+          { $match: { $or: [{ 'rideDoc.type': { $ne: RIDE_TYPE.split }, 'rideDoc.status': RIDE_STATUS.completed }, { rideDoc: null }] } },
+          { $group: { _id: null, total: { $sum: '$providerEarning' } } },
+        ]),
+
+        Ride.aggregate([
+          {
+            $match: {
+              driverId: userObjectId,
+              type: RIDE_TYPE.split,
+              status: RIDE_STATUS.completed,
+              driverEarningCredited: true,
+              driverEarningAmount: { $gt: 0 },
+            },
+          },
+          { $group: { _id: null, total: { $sum: '$driverEarningAmount' } } },
         ]),
       ]);
 
@@ -186,7 +257,8 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
     hasVehicle = vehicleList.length > 0;
     vehicles = vehicleList;
     completedRides = completedRideCount;
-    todayEarning = earningResult[0]?.total ?? 0;
+    todayEarning = Math.round(((earningResult[0]?.total ?? 0) + (splitTodayEarningResult[0]?.total ?? 0)) * 100) / 100;
+    totalEarning = Math.round(((totalEarningResult[0]?.total ?? 0) + (splitTotalEarningResult[0]?.total ?? 0)) * 100) / 100;
   }
 
   let hasDefaultCard = false;
@@ -211,6 +283,7 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
       vehicles,
       completedRides,
       todayEarning,
+      totalEarning,
     }),
     isKycSubmitted,
     hasVehicle,
@@ -492,4 +565,7 @@ export const UserService = {
   updateLocationFromDB,
   deleteUserProfile,
 };
+
+
+
 

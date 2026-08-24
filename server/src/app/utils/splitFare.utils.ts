@@ -18,7 +18,6 @@ import {
   REFUND_TYPE,
 } from '../modules/refund/refund.constant';
 
-const PREORDER_MINIMUM_FARE = 20;
 const SPLIT_RIDE_SURCHARGE_PERCENT = 0;
 const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
@@ -43,6 +42,8 @@ export const calcSplitPassengerFare = async (
   splitSurchargePercent: number;
   splitSurchargeAmount: number;
   fareBeforePlatformCommission: number;
+  platformVatPercent: number;
+  vatAmount: number;
   platformCommissionPercent: number;
   platformCommissionAmount: number;
   estimatedFare: number;
@@ -65,13 +66,15 @@ export const calcSplitPassengerFare = async (
     ((initial + kmCharge + lugCharge + holCharge) / safeTotalSeats) *
     requestedSeats
   );
-  const fareAfterMinimum = Math.max(basePerSeat, PREORDER_MINIMUM_FARE);
+  const fareAfterMinimum = Math.max(basePerSeat, s.baseFare);
   const minimumFareAdjustment = roundMoney(fareAfterMinimum - basePerSeat);
   const surchargeAmount = roundMoney(fareAfterMinimum * (SPLIT_RIDE_SURCHARGE_PERCENT / 100));
   const fareBeforePlatformCommission = roundMoney(fareAfterMinimum + surchargeAmount);
+  const platformVatPercent = s.platformVat;
+  const vatAmount = roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
   const platformCommissionPercent = s.platformCommissionPercent;
   const platformCommissionAmount = roundMoney(fareBeforePlatformCommission * (platformCommissionPercent / 100));
-  const estimatedFare = roundMoney(fareBeforePlatformCommission + platformCommissionAmount);
+  const estimatedFare = roundMoney(fareBeforePlatformCommission + vatAmount + platformCommissionAmount);
 
   return {
     initialCharge:
@@ -85,11 +88,13 @@ export const calcSplitPassengerFare = async (
     surchargePercent: SPLIT_RIDE_SURCHARGE_PERCENT,
     surchargeAmount,
     minimumFareApplied: minimumFareAdjustment > 0,
-    minimumFareAmount: PREORDER_MINIMUM_FARE,
+    minimumFareAmount: s.baseFare,
     minimumFareAdjustment,
     splitSurchargePercent: SPLIT_RIDE_SURCHARGE_PERCENT,
     splitSurchargeAmount: surchargeAmount,
     fareBeforePlatformCommission,
+    platformVatPercent,
+    vatAmount,
     platformCommissionPercent,
     platformCommissionAmount,
     estimatedFare,
@@ -327,6 +332,7 @@ export const recalculateSplitFares = async (
         : null;
       const nextPlatformCommission =
         Math.round((Number(newFare.platformCommissionAmount || 0)) * 100) / 100;
+      const nextVatAmount = Math.round((Number(newFare.vatAmount || 0)) * 100) / 100;
       const nextProviderEarning =
         Math.round((Number(newFare.fareBeforePlatformCommission || (newFare.estimatedFare - nextPlatformCommission))) * 100) /
         100;
@@ -561,6 +567,9 @@ export const lockSplitRideFare = async (
 
   return Boolean(lockedRide || (ride as any).splitFareLocked);
 };
+
+
+
 
 
 

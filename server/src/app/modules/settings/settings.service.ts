@@ -107,12 +107,12 @@ const updateGenerals = async (payload: Record<string, any>) => {
   const updates = validKeys.map(key =>
     Setting.findOneAndUpdate(
       { key },
-      { value: payload[key] },
+      { key, value: payload[key] },
       { upsert: true, returnDocument: 'after' },
     ).select('-__v'),
   );
 
-  await Promise.all(updates);
+  const updatedSettings = await Promise.all(updates);
 
   // 2. Invalidate caches
   await deleteCache(REDIS_KEYS.SETTINGS_GENERALS);              // Delete generals cache
@@ -126,6 +126,8 @@ const updateGenerals = async (payload: Record<string, any>) => {
   await deleteCachePattern('setting:*');
 
   console.log(`🗑️ Cache invalidated for ${validKeys.length} general settings`);
+
+  return updatedSettings;
 };
 
 
@@ -135,3 +137,5 @@ export const SettingService = {
   createOrUpdate,
   updateGenerals
 };
+
+

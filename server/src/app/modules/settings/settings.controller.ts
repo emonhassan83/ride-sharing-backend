@@ -30,10 +30,11 @@ const createOrUpdate = catchAsync(async (req, res) => {
 });
 
 const updateGenerals = catchAsync(async (req, res) => {
-  await SettingService.updateGenerals(req.body);
+  const result = await SettingService.updateGenerals(req.body);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'General settings updated successfully',
+    data: result,
   });
 });
 
@@ -43,3 +44,4 @@ export const SettingController = {
   createOrUpdate,
   updateGenerals,
 };
+

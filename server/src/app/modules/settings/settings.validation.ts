@@ -39,10 +39,13 @@ export const updateGeneralsZodSchema = z.object({
       nightFareInitialCharge: z.number().optional(),
       nightFarePerKMRate: z.number().optional(),
       nightFareWaitingCharge: z.number().optional(),
-      publicHolidayIncrease: z.number().optional(),
+      holidayIncreasePercentage: z.number().optional(),
       perLuggageCharge: z.number().optional(),
-      fourPassengerTaxiTax: z.number().optional(),
-      sixPassengerTaxiTaxPercentage: z.number().optional(),
+      fivePassengerExtraChargePercentage: z.number().optional(),
+      sixPassengerExtraChargePercentage: z.number().optional(),
+      baseFare: z.number().optional(),
+      platformVat: z.number().optional(),
+      platformCommissionPercent: z.number().optional(),
       // platform info
       supportContract: z.string().optional(),
       supportEmail: z.string().email({ message: 'Invalid email' }).optional(),
@@ -60,5 +63,7 @@ export const SettingValidation = {
   createOrUpdateSettingZodSchema,
   updateGeneralsZodSchema,
 };
+
+
 
 

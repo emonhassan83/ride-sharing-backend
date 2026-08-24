@@ -24,8 +24,10 @@ const settingSeeder = async () => {
     { key: 'nightFareWaitingCharge', value: 19 },
     { key: 'holidayIncreasePercentage', value: 20 },
     { key: 'perLuggageCharge', value: 2 },
-    { key: 'fivePassengerExtraCharge', value: 1.4 },
+    { key: 'fivePassengerExtraChargePercentage', value: 20 },
     { key: 'sixPassengerExtraChargePercentage', value: 40 },
+    { key: 'baseFare', value: 20 },
+    { key: 'platformVat', value: 9 },
     { key: 'platformCommissionPercent', value: 10 },
 
     // platform info
@@ -56,6 +58,8 @@ const settingSeeder = async () => {
 };
 
 export default settingSeeder;
+
+
 
 
 

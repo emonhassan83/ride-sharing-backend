@@ -134,6 +134,8 @@ export const rideRequestHandler = eventHandler<any>(
       estimatedFare:            roundTo2(fareBreakdown.totalFare),
       totalFare:                roundTo2(fareBreakdown.totalFare),
       waitingCharge:            fareBreakdown.waitingCharge || 0,
+      fivePassengerCharge:      requestedSeats === 5 ? fareBreakdown.passengerCountExtra || 0 : 0,
+      sixPassengerCharge:       requestedSeats === 6 ? fareBreakdown.passengerCountExtra || 0 : 0,
       estimatedDistanceKm:      actualDistance,
       estimatedDurationMinutes: actualDuration,
       luggageCounts:            luggageCounts || 0,
@@ -248,6 +250,7 @@ export const rideRequestHandler = eventHandler<any>(
     });
   },
 );
+
 
 
 

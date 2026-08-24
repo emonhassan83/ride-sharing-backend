@@ -20,8 +20,10 @@ export const GENERAL_KEYS = [
   'nightFareWaitingCharge',
   'holidayIncreasePercentage',
   'perLuggageCharge',
-  'fivePassengerExtraCharge',
+  'fivePassengerExtraChargePercentage',
   'sixPassengerExtraChargePercentage',
+  'baseFare',
+  'platformVat',
   'platformCommissionPercent',
 
   // platform info
@@ -34,6 +36,8 @@ export const ALLOWED_KEYS = [
   'userTramsAndCondition',
   'providerTramsAndCondition',
 ] as const;
+
+
 
 
 

@@ -170,7 +170,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         totalKmCharge: fareBreakdown.totalKmCharge,
         luggageCharge: fareBreakdown.luggageCharge,
         holidayTripCharge: fareBreakdown.holidayTripCharge,
-        vat: fareBreakdown.platformCommissionAmount,
+        vat: fareBreakdown.vatAmount,
         surchargePercent: fareBreakdown.surchargePercent,
         surchargeAmount: fareBreakdown.surchargeAmount,
         estimatedFare: fareBreakdown.estimatedFare,
@@ -272,7 +272,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       totalKmCharge: fareBreakdown.totalKmCharge,
       luggageCharge: fareBreakdown.luggageCharge,
       holidayTripCharge: fareBreakdown.holidayTripCharge,
-      vat: fareBreakdown.platformCommissionAmount,
+      vat: fareBreakdown.vatAmount,
       surchargePercent: fareBreakdown.surchargePercent,
       surchargeAmount: fareBreakdown.surchargeAmount,
       estimatedFare: fareBreakdown.estimatedFare,
@@ -350,6 +350,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     });
   }
 );
+
 
 
 

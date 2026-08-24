@@ -30,10 +30,12 @@ const withdrawSchema = new Schema<TWithdraw>(
 )
 
 withdrawSchema.index({ payment: 1 }, { unique: true, sparse: true });
+withdrawSchema.index({ user: 1, ride: 1 });
 withdrawSchema.index({ user: 1, status: 1, createdAt: -1 });
 
 export const Withdraw = model<TWithdraw, TWithdrawModel>(
   'Withdraw',
   withdrawSchema,
 )
+
 

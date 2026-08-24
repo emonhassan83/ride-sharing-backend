@@ -463,6 +463,8 @@ const confirmPayment = async (payload: Record<string, any>) => {
 
     if (ride.type === RIDE_TYPE.split) {
       recalcRideId = ride._id.toString();
+      payment.providerEarning = 0;
+      await payment.save({ session });
     }
 
     // âœ… Seat availability check
@@ -503,13 +505,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
     // Only increment wallet if providerEarning > 0 and not already credited
     // We use paymentIntentId as the idempotency key stored on payment doc
     // Since payment.isPaid was false above, this is guaranteed to run once only
-    if (payment.providerEarning && payment.providerEarning > 0) {
-      await User.findByIdAndUpdate(
-        payment.provider,
-        { $inc: { wallet: payment.providerEarning } },
-        { session, returnDocument: 'after' }
-      );
-    }
+    // Provider wallet is credited only after ride completion.
 
     // â”€â”€ 7. Create chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const existingChat = await Chat.findOne({ booking: booking._id }).session(
@@ -576,14 +572,17 @@ type TCaptureAuthorizedOptions = {
 };
 
 const getCommissionBreakdown = async (fare: number) => {
-  const commissionSetting = await Setting.findOne({
-    key: 'platformCommissionPercent',
-  }).lean();
+  const [commissionSetting, vatSetting] = await Promise.all([
+    Setting.findOne({ key: 'platformCommissionPercent' }).lean(),
+    Setting.findOne({ key: 'platformVat' }).lean(),
+  ]);
   const commissionPercent = Number(commissionSetting?.value ?? 10);
-  const safePercent = commissionPercent > 0 ? commissionPercent : 0;
-  const providerEarning = Math.round((fare / (1 + safePercent / 100)) * 100) / 100;
-  const platformCommission = Math.round((fare - providerEarning) * 100) / 100;
-  return { platformCommission, providerEarning, commissionPercent: safePercent };
+  const vatPercent = Number(vatSetting?.value ?? 0);
+  const safeCommissionPercent = commissionPercent > 0 ? commissionPercent : 0;
+  const safeVatPercent = vatPercent > 0 ? vatPercent : 0;
+  const providerEarning = Math.round((fare / (1 + (safeCommissionPercent + safeVatPercent) / 100)) * 100) / 100;
+  const platformCommission = Math.round((providerEarning * (safeCommissionPercent / 100)) * 100) / 100;
+  return { platformCommission, providerEarning, commissionPercent: safeCommissionPercent, vatPercent: safeVatPercent };
 };
 
 const captureAuthorizedBookingPayment = async (
@@ -682,6 +681,10 @@ const captureAuthorizedBookingPayment = async (
 
     const ride = await Ride.findById(booking.rideId).session(session);
     if (ride) {
+      if (ride.type === RIDE_TYPE.split) {
+        payment.providerEarning = 0;
+        await payment.save({ session });
+      }
       if (ride.type === RIDE_TYPE.split && recalculateSplit) recalcRideId = ride._id.toString();
       if (incrementRideSeats) {
         await Ride.findByIdAndUpdate(
@@ -697,14 +700,7 @@ const captureAuthorizedBookingPayment = async (
         );
       }
     }
-
-    if (providerEarning > 0) {
-      await User.findByIdAndUpdate(
-        driverId,
-        { $inc: { wallet: providerEarning } },
-        { session }
-      );
-    }
+    // Provider wallet is credited only after ride completion.
 
     if (createChat) {
       const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
@@ -857,13 +853,14 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
     await booking.save({ session });
 
     // â”€â”€ 7. Credit Provider Wallet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if (providerEarning > 0) {
-      await User.findByIdAndUpdate(
-        booking.driverId,
-        { $inc: { wallet: providerEarning } },
-        { session }
-      );
+    const walletPaymentRide = booking.rideId
+      ? await Ride.findById(booking.rideId).session(session)
+      : null;
+    if (walletPaymentRide?.type === RIDE_TYPE.split) {
+      payment[0].providerEarning = 0;
+      await payment[0].save({ session });
     }
+    // Provider wallet is credited only after ride completion.
 
     // â”€â”€ 8. Update Ride & Passenger (if needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const passenger = await Passenger.findById(booking.passengerId).session(
@@ -1100,6 +1097,11 @@ export const PaymentService = {
   getAPaymentsFromDB,
   refundPayment,
 };
+
+
+
+
+
 
 
 
