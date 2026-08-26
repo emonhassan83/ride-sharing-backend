@@ -1,4 +1,4 @@
-// handlers/ride/splitRideRequest.handler.ts
+﻿// handlers/ride/splitRideRequest.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Passenger } from '../../../modules/passenger/passenger.model';
@@ -109,6 +109,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     const redis = getRedisClient();
     let selectedRide: any = null;
     let activeSeatsBeforeJoin = 0;
+    let activeRidersBeforeJoin = 0;
 
     for (const ride of matchingRides) {
       const alreadyJoined = await Passenger.findOne({
@@ -142,13 +143,14 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
 
       selectedRide = ride;
       activeSeatsBeforeJoin = usedSeats;
+      activeRidersBeforeJoin = existingActivePassengers.length;
       break;
     }
     if (!selectedRide) {
       const fareBreakdown = await calcSplitPassengerFare(
         actualDistance,
         requestedSeats,
-        requestedSeats,
+        1,
         luggageCounts || 0,
         departureTime,
         departureDateTime
@@ -246,11 +248,11 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       });
     }
 
-    const totalSeatsAfterJoin = activeSeatsBeforeJoin + requestedSeats;
+    const activeRidersAfterJoin = activeRidersBeforeJoin + 1;
     const fareBreakdown = await calcSplitPassengerFare(
       actualDistance,
       requestedSeats,
-      totalSeatsAfterJoin,
+      activeRidersAfterJoin,
       luggageCounts || 0,
       departureTime,
       departureDateTime
@@ -350,6 +352,9 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     });
   }
 );
+
+
+
 
 
 

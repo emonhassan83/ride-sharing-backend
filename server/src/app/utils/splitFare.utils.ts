@@ -1,4 +1,4 @@
-// utils/splitFare.utils.ts
+﻿// utils/splitFare.utils.ts
 import { getRedisClient } from '../config/redis.config';
 import { Passenger } from '../modules/passenger/passenger.model';
 import { Ride } from '../modules/ride/ride.model';
@@ -18,14 +18,14 @@ import {
   REFUND_TYPE,
 } from '../modules/refund/refund.constant';
 
-const SPLIT_RIDE_SURCHARGE_PERCENT = 0;
+const DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT = 30;
 const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
-// �\u20AC�\u20AC Calculate single passenger fare for split ride �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+// ï¿½\u20ACï¿½\u20AC Calculate single passenger fare for split ride ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
 export const calcSplitPassengerFare = async (
   distanceKm: number,
   requestedSeats: number,
-  totalSeats: number,
+  activeRiderCount: number,
   luggageCount: number,
   departureTime: string,
   departureDate: Date
@@ -46,62 +46,58 @@ export const calcSplitPassengerFare = async (
   vatAmount: number;
   platformCommissionPercent: number;
   platformCommissionAmount: number;
+  activeSplitPassengerCount: number;
   estimatedFare: number;
 }> => {
   const s = await loadFareSettings();
-  const [hour] = departureTime.split(':').map(Number);
-  const isNight = hour >= 20 || hour < 6;
-  const isHoliday = await isPublicHoliday(departureDate);
-
-  const initial = isNight ? s.nightFareInitialCharge : s.dayFareInitialCharge;
-  const perKm = isNight ? s.nightFarePerKMRate : s.dayFarePerKMRate;
-  const kmCharge = roundMoney(distanceKm * perKm);
-  const lugCharge = roundMoney(luggageCount * s.perLuggageCharge);
-  const holCharge = isHoliday
-    ? roundMoney((initial + kmCharge + lugCharge) * (s.holidayIncreasePercentage / 100))
+  const riderCount = Math.max(Number(activeRiderCount) || 1, 1);
+  const matchedSurchargePercent = riderCount >= 2
+    ? Number((s as any).splitRideMatchedSurchargePercent ?? DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT)
     : 0;
 
-  const safeTotalSeats = Math.max(totalSeats, requestedSeats, 1);
-  const basePerSeat = roundMoney(
-    ((initial + kmCharge + lugCharge + holCharge) / safeTotalSeats) *
-    requestedSeats
-  );
-  const fareAfterMinimum = Math.max(basePerSeat, s.baseFare);
-  const minimumFareAdjustment = roundMoney(fareAfterMinimum - basePerSeat);
-  const surchargeAmount = roundMoney(fareAfterMinimum * (SPLIT_RIDE_SURCHARGE_PERCENT / 100));
-  const fareBeforePlatformCommission = roundMoney(fareAfterMinimum + surchargeAmount);
-  const platformVatPercent = s.platformVat;
-  const vatAmount = roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
-  const platformCommissionPercent = s.platformCommissionPercent;
-  const platformCommissionAmount = roundMoney(fareBeforePlatformCommission * (platformCommissionPercent / 100));
-  const estimatedFare = roundMoney(fareBeforePlatformCommission + vatAmount + platformCommissionAmount);
+  const baseFare = roundMoney(Number(s.baseFare || 20));
+  const splitPool = roundMoney(baseFare * (1 + matchedSurchargePercent / 100));
+  const estimatedFare = riderCount >= 2
+    ? roundMoney(splitPool / riderCount)
+    : baseFare;
+
+  const splitSurchargeAmount = riderCount >= 2
+    ? roundMoney((baseFare * (matchedSurchargePercent / 100)) / riderCount)
+    : 0;
+  const platformCommissionPercent = Number(s.platformCommissionPercent || 0);
+  const platformCommissionAmount = roundMoney(estimatedFare * (platformCommissionPercent / 100));
+
+  void distanceKm;
+  void requestedSeats;
+  void luggageCount;
+  void departureTime;
+  void departureDate;
 
   return {
-    initialCharge:
-      roundMoney((initial / safeTotalSeats) * requestedSeats),
-    totalKmCharge:
-      roundMoney((kmCharge / safeTotalSeats) * requestedSeats),
-    luggageCharge:
-      roundMoney((lugCharge / safeTotalSeats) * requestedSeats),
-    holidayTripCharge:
-      roundMoney((holCharge / safeTotalSeats) * requestedSeats),
-    surchargePercent: SPLIT_RIDE_SURCHARGE_PERCENT,
-    surchargeAmount,
-    minimumFareApplied: minimumFareAdjustment > 0,
-    minimumFareAmount: s.baseFare,
-    minimumFareAdjustment,
-    splitSurchargePercent: SPLIT_RIDE_SURCHARGE_PERCENT,
-    splitSurchargeAmount: surchargeAmount,
-    fareBeforePlatformCommission,
-    platformVatPercent,
-    vatAmount,
+    // Split pricing is fixed pool based. Distance/luggage/seats are kept on the
+    // passenger record for trip details, but they do not affect split fare.
+    initialCharge: riderCount >= 2 ? roundMoney(baseFare / riderCount) : baseFare,
+    totalKmCharge: 0,
+    luggageCharge: 0,
+    holidayTripCharge: 0,
+    surchargePercent: matchedSurchargePercent,
+    surchargeAmount: splitSurchargeAmount,
+    minimumFareApplied: true,
+    minimumFareAmount: baseFare,
+    minimumFareAdjustment: 0,
+    splitSurchargePercent: matchedSurchargePercent,
+    splitSurchargeAmount,
+    fareBeforePlatformCommission: estimatedFare,
+    platformVatPercent: Number(s.platformVat || 0),
+    vatAmount: 0,
     platformCommissionPercent,
     platformCommissionAmount,
+    activeSplitPassengerCount: riderCount,
     estimatedFare,
   };
 };
 
-// �\u20AC�\u20AC Redis distributed lock (Case 31) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+// Split fare recalculation lock
 export const acquireRecalculateLock = async (
   rideId: string,
   ttl = 15
@@ -123,7 +119,7 @@ export const releaseRecalculateLock = async (rideId: string): Promise<void> => {
   await getRedisClient().del(`ride:recalculate:lock:${rideId}`);
 };
 
-// �\u20AC�\u20AC Refund to wallet (Case 26 �\u20AC� always wallet, never card) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+// ï¿½\u20ACï¿½\u20AC Refund to wallet (Case 26 ï¿½\u20ACï¿½ always wallet, never card) ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
 export const refundToWallet = async (
   userId: string,
   amount: number,
@@ -134,14 +130,14 @@ export const refundToWallet = async (
   const rounded = Math.round(amount * 100) / 100;
 
   await User.findByIdAndUpdate(userId, { $inc: { wallet: rounded } });
-  console.log(`💰 Wallet refund €${rounded} → ${userId} (${reason})`);
+  console.log(`ðŸ’° Wallet refund â‚¬${rounded} â†’ ${userId} (${reason})`);
 
   const user = await User.findById(userId);
   if (user && user?.fcmToken) {
     sendNotification([user.fcmToken], {
       receiver: userId,
       message: 'Ride refund amount transfer',
-      description: `€${rounded.toFixed(2)} refunded to your wallet.`,
+      description: `â‚¬${rounded.toFixed(2)} refunded to your wallet.`,
       // reference:   rideId,
       modelType: modeType.Refund,
     }).catch((err: any) =>
@@ -150,7 +146,7 @@ export const refundToWallet = async (
   }
 };
 
-// �\u20AC�\u20AC Charge user �\u20AC� wallet first, card fallback (Case 11) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+// ï¿½\u20ACï¿½\u20AC Charge user ï¿½\u20ACï¿½ wallet first, card fallback (Case 11) ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
 export const chargeUser = async (
   userId: string,
   amount: number,
@@ -162,7 +158,7 @@ export const chargeUser = async (
 
   const rounded = Math.round(amount * 100) / 100;
 
-  // �\u20AC�\u20AC Idempotency check (Case 33) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+  // ï¿½\u20ACï¿½\u20AC Idempotency check (Case 33) ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
   const redis = getRedisClient();
   const idemKey = `payment:charged:${rideId}:${userId}:${Math.round(
     rounded * 100
@@ -176,7 +172,7 @@ export const chargeUser = async (
 
   const wallet = user.wallet ?? 0;
 
-  // �\u20AC�\u20AC Full wallet �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+  // ï¿½\u20ACï¿½\u20AC Full wallet ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
   if (wallet >= rounded) {
     await User.findByIdAndUpdate(userId, { $inc: { wallet: -rounded } });
     await redis.set(idemKey, 'wallet', 'EX', 86400);
@@ -188,7 +184,7 @@ export const chargeUser = async (
     return { success: true, method: 'wallet' };
   }
 
-  // �\u20AC�\u20AC Partial wallet + card �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+  // ï¿½\u20ACï¿½\u20AC Partial wallet + card ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
   const walletPortion = wallet;
   const cardPortion = Math.round((rounded - walletPortion) * 100) / 100;
 
@@ -225,13 +221,13 @@ export const chargeUser = async (
       });
       return { success: true, method };
     } catch (err: any) {
-      // �\u20AC�\u20AC Rollback wallet (Case 11) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+      // ï¿½\u20ACï¿½\u20AC Rollback wallet (Case 11) ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
       if (walletPortion > 0) {
         await User.findByIdAndUpdate(userId, {
           $inc: { wallet: walletPortion },
         });
       }
-      console.error(`❌ Payment failed for ${userId}:`, err.message);
+      console.error(`âŒ Payment failed for ${userId}:`, err.message);
       io?.to(`user:${userId}`).emit('ride:payment-failed', {
         amount: rounded,
         reason,
@@ -253,7 +249,7 @@ export const chargeUser = async (
   return { success: false, method: 'failed', failReason: 'no_payment_method' };
 };
 
-// �\u20AC�\u20AC Main recalculate (Cases 6, 29, 30, 31) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+// ï¿½\u20ACï¿½\u20AC Main recalculate (Cases 6, 29, 30, 31) ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
 export const recalculateSplitFares = async (
   rideId: string,
   reason:
@@ -263,7 +259,7 @@ export const recalculateSplitFares = async (
     | 'passenger_rejected',
   io?: any
 ): Promise<void> => {
-  // �\u20AC�\u20AC Acquire lock (Case 31) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+  // ï¿½\u20ACï¿½\u20AC Acquire lock (Case 31) ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
   let locked = false;
   for (let i = 0; i < 3; i++) {
     locked = await acquireRecalculateLock(rideId);
@@ -271,7 +267,7 @@ export const recalculateSplitFares = async (
     await new Promise((r) => setTimeout(r, 600));
   }
   if (!locked) {
-    console.warn(`⚠️ Could not acquire recalculate lock for ride ${rideId}`);
+    console.warn(`âš ï¸ Could not acquire recalculate lock for ride ${rideId}`);
     return;
   }
 
@@ -290,11 +286,11 @@ export const recalculateSplitFares = async (
 
     if (!activePassengers.length) return;
 
-    const totalSeats = activePassengers.reduce(
-      (s, p) => s + (p.requestedSeats || 1),
-      0
-    );
-    const newSurchargePercent = SPLIT_RIDE_SURCHARGE_PERCENT;
+    const activeRiderCount = activePassengers.length;
+    const fareSettings = await loadFareSettings();
+    const newSurchargePercent = activeRiderCount >= 2
+      ? Number((fareSettings as any).splitRideMatchedSurchargePercent ?? DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT)
+      : 0;
 
     const ride = await Ride.findById(rideId).lean();
     if (!ride) return;
@@ -312,7 +308,7 @@ export const recalculateSplitFares = async (
       const newFare = await calcSplitPassengerFare(
         passenger.estimatedDistanceKm || 0,
         passenger.requestedSeats || 1,
-        totalSeats,
+        activeRiderCount,
         passenger.luggageCounts || 0,
         (ride as any).departureTime,
         depDate
@@ -321,7 +317,7 @@ export const recalculateSplitFares = async (
       const oldFare = passenger.estimatedFare || 0;
       const diff = Math.round((newFare.estimatedFare - oldFare) * 100) / 100;
 
-      if (Math.abs(diff) < 0.01) continue; // Case 13 �\u20AC� ignore rounding noise
+      if (Math.abs(diff) < 0.01) continue; // Case 13 ï¿½\u20ACï¿½ ignore rounding noise
 
       const booking = await Booking.findOne({
         passengerId: passenger._id,
@@ -334,7 +330,7 @@ export const recalculateSplitFares = async (
         Math.round((Number(newFare.platformCommissionAmount || 0)) * 100) / 100;
       const nextVatAmount = Math.round((Number(newFare.vatAmount || 0)) * 100) / 100;
       const nextProviderEarning =
-        Math.round((Number(newFare.fareBeforePlatformCommission || (newFare.estimatedFare - nextPlatformCommission))) * 100) /
+        Math.round((Number(newFare.estimatedFare || 0) - nextPlatformCommission) * 100) /
         100;
 
       if (
@@ -435,8 +431,8 @@ export const recalculateSplitFares = async (
           reason,
           message:
             diff > 0
-              ? `Your fare increased by €${diff.toFixed(2)}.`
-              : `You saved €${Math.abs(diff).toFixed(2)}!`,
+              ? `Your fare increased by â‚¬${diff.toFixed(2)}.`
+              : `You saved â‚¬${Math.abs(diff).toFixed(2)}!`,
         });
       }
     }
@@ -446,14 +442,14 @@ export const recalculateSplitFares = async (
       currentSurchargePercent: newSurchargePercent,
     });
     console.log(
-      `✅ Recalculated | ride: ${rideId} | reason: ${reason} | seats: ${totalSeats} | surcharge: ${newSurchargePercent}%`
+      `✅ Recalculated | ride: ${rideId} | reason: ${reason} | riders: ${activeRiderCount} | surcharge: ${newSurchargePercent}%`
     );
   } finally {
     await releaseRecalculateLock(rideId);
   }
 };
 
-// �\u20AC�\u20AC Cancellation refund (Cases 20, 21) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+// ï¿½\u20ACï¿½\u20AC Cancellation refund (Cases 20, 21) ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
 export const calculateCancellationRefund = async (
   paidAmount: number,
   departureTime: Date,
@@ -526,11 +522,11 @@ export const transferRideOwnership = async (
       rideId,
       newPickup: newOwner.pickup,
       newDestination: newOwner.destination,
-      message: 'Pickup updated �\u20AC� original creator cancelled.',
+      message: 'Pickup updated ï¿½\u20ACï¿½ original creator cancelled.',
     });
   }
 
-  console.log(`✅ Ride ${rideId} ownership → user ${newOwner.userId}`);
+  console.log(`âœ… Ride ${rideId} ownership â†’ user ${newOwner.userId}`);
   return true;
 };
 
@@ -567,6 +563,10 @@ export const lockSplitRideFare = async (
 
   return Boolean(lockedRide || (ride as any).splitFareLocked);
 };
+
+
+
+
 
 
 

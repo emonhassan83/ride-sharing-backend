@@ -1,4 +1,4 @@
-export const DEFAULT_GENERAL_SETTINGS = {
+﻿export const DEFAULT_GENERAL_SETTINGS = {
   bookingMaxDaysAhead: 30,
   splitRideMinBookingHours: 24,
   splitRideRefundRestrictionHours: 24,
@@ -22,6 +22,7 @@ export const DEFAULT_GENERAL_SETTINGS = {
   fivePassengerExtraChargePercentage: 20,
   sixPassengerExtraChargePercentage: 40,
   baseFare: 20,
+  splitRideMatchedSurchargePercent: 30,
   platformVat: 9,
   platformCommissionPercent: 10,
 
@@ -52,6 +53,7 @@ export const GENERAL_KEYS = [
   'fivePassengerExtraChargePercentage',
   'sixPassengerExtraChargePercentage',
   'baseFare',
+  'splitRideMatchedSurchargePercent',
   'platformVat',
   'platformCommissionPercent',
   'supportContract',
@@ -63,3 +65,4 @@ export const ALLOWED_KEYS = [
   'userTramsAndCondition',
   'providerTramsAndCondition',
 ] as const;
+

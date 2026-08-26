@@ -1,4 +1,4 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 import { ALLOWED_KEYS, GENERAL_KEYS } from './settings.constant';
 
 export type TGeneralKey = (typeof GENERAL_KEYS)[number];
@@ -45,6 +45,7 @@ export const updateGeneralsZodSchema = z.object({
       fivePassengerExtraChargePercentage: z.number().optional(),
       sixPassengerExtraChargePercentage: z.number().optional(),
       baseFare: z.number().optional(),
+      splitRideMatchedSurchargePercent: z.number().optional(),
       platformVat: z.number().optional(),
       platformCommissionPercent: z.number().optional(),
       // platform info
@@ -64,6 +65,7 @@ export const SettingValidation = {
   createOrUpdateSettingZodSchema,
   updateGeneralsZodSchema,
 };
+
 
 
 

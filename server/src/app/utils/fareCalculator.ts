@@ -1,4 +1,4 @@
-// utils/fareCalculator.ts
+﻿// utils/fareCalculator.ts
 import { Setting } from '../modules/settings/settings.model';
 import axios from 'axios';
 
@@ -54,6 +54,7 @@ interface FareSettings {
   baseFare: number;
   platformVat: number;
   platformCommissionPercent: number;
+  splitRideMatchedSurchargePercent: number;
 }
 
 // Default fallback values
@@ -71,6 +72,7 @@ const DEFAULTS: FareSettings = {
   baseFare: 20,
   platformVat: 9,
   platformCommissionPercent: 10,
+  splitRideMatchedSurchargePercent: 30,
 };
 
 // Cache holidays for the year (in-memory cache)
@@ -112,7 +114,7 @@ export async function isPublicHoliday(date: Date): Promise<boolean> {
   return holidays.includes(dateStr);
 }
 
-// ── Load Fare Settings from DB ─────────────────────────────────────
+// â”€â”€ Load Fare Settings from DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function loadFareSettings(): Promise<FareSettings> {
   const keys = Object.keys(DEFAULTS);
   const docs = await Setting.find({ key: { $in: keys } }).select('key value').lean();
@@ -133,10 +135,11 @@ export async function loadFareSettings(): Promise<FareSettings> {
     baseFare: map.get('baseFare') ?? DEFAULTS.baseFare,
     platformVat: map.get('platformVat') ?? DEFAULTS.platformVat,
     platformCommissionPercent: map.get('platformCommissionPercent') ?? DEFAULTS.platformCommissionPercent,
+    splitRideMatchedSurchargePercent: map.get('splitRideMatchedSurchargePercent') ?? DEFAULTS.splitRideMatchedSurchargePercent,
   };
 }
 
-// ── Main Fare Calculator (Async) ───────────────────────────────────
+// â”€â”€ Main Fare Calculator (Async) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function calculateFareBreakdown(params: {
   distanceKm: number;
   departureDate: Date;
@@ -176,7 +179,7 @@ export async function calculateFareBreakdown(params: {
     subTotal += passengerCountExtra;
   }
 
-  // 🔥 Dynamic Holiday Surcharge
+  // ðŸ”¥ Dynamic Holiday Surcharge
   let holidaySurcharge = 0;
   const isHoliday = await isPublicHoliday(departureDate);
 
@@ -192,17 +195,19 @@ export async function calculateFareBreakdown(params: {
     subTotal += waitingCharge;
   }
 
-  const normalFare = roundMoney(subTotal);
-  const fareAfterMinimum = Math.max(normalFare, settings.baseFare);
-  const minimumFareAdjustment = roundMoney(fareAfterMinimum - normalFare);
-  const splitSurchargePercent = rideType === 'split' ? SPLIT_RIDE_SURCHARGE_PERCENT : 0;
-  const splitSurchargeAmount = roundMoney(fareAfterMinimum * (splitSurchargePercent / 100));
+  const normalFare = rideType === 'split' ? settings.baseFare : roundMoney(subTotal);
+  const fareAfterMinimum = rideType === 'split' ? settings.baseFare : Math.max(normalFare, settings.baseFare);
+  const minimumFareAdjustment = rideType === 'split' ? 0 : roundMoney(fareAfterMinimum - normalFare);
+  const splitSurchargePercent = 0;
+  const splitSurchargeAmount = 0;
   const fareBeforePlatformCommission = roundMoney(fareAfterMinimum + splitSurchargeAmount);
   const platformVatPercent = settings.platformVat;
-  const vatAmount = roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
+  const vatAmount = rideType === 'split' ? 0 : roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
   const platformCommissionPercent = settings.platformCommissionPercent;
   const platformCommissionAmount = roundMoney(fareBeforePlatformCommission * (platformCommissionPercent / 100));
-  const totalFare = roundMoney(fareBeforePlatformCommission + vatAmount + platformCommissionAmount);
+  const totalFare = rideType === 'split'
+    ? fareBeforePlatformCommission
+    : roundMoney(fareBeforePlatformCommission + vatAmount + platformCommissionAmount);
   const vat = vatAmount;
 
   return {
@@ -251,6 +256,8 @@ function getDayNightRate(departureTimeStr: string, settings: FareSettings): DayN
         waitingChargePerHour: settings.dayFareWaitingCharge,
       };
 }
+
+
 
 
 
