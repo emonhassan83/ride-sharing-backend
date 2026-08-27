@@ -1,4 +1,4 @@
-﻿// utils/fareCalculator.ts
+// utils/fareCalculator.ts
 import { Setting } from '../modules/settings/settings.model';
 import axios from 'axios';
 
@@ -19,6 +19,8 @@ export interface FareBreakdown {
   fivePassengerExtraChargePercentage: number;
   sixPassengerExtraChargePercentage: number;
   baseFare: number;
+  actualFare: number;
+  fareBeforeFees: number;
   vat: number;
   minimumFareApplied: boolean;
   minimumFareAmount: number;
@@ -209,6 +211,8 @@ export async function calculateFareBreakdown(params: {
     ? fareBeforePlatformCommission
     : roundMoney(fareBeforePlatformCommission + vatAmount + platformCommissionAmount);
   const vat = vatAmount;
+  const actualFare = roundMoney(normalFare + splitSurchargeAmount);
+  const fareBeforeFees = fareBeforePlatformCommission;
 
   return {
     initialCharge: rates.initialCharge,
@@ -223,6 +227,8 @@ export async function calculateFareBreakdown(params: {
     fivePassengerExtraChargePercentage: requestedSeats === 5 ? settings.fivePassengerExtraChargePercentage : 0,
     sixPassengerExtraChargePercentage: requestedSeats === 6 ? settings.sixPassengerExtraChargePercentage : 0,
     baseFare: settings.baseFare,
+    actualFare,
+    fareBeforeFees,
     vat,
     minimumFareApplied: minimumFareAdjustment > 0,
     minimumFareAmount: settings.baseFare,

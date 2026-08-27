@@ -31,7 +31,7 @@ export const fareBreakdownHandler = eventHandler<any>(
     // -- Departure datetime -----------------------------------------------------
     const departureDateTime = departureDate ? new Date(departureDate) : new Date();
 
-    // ── Real distance & ETA (Google Maps) ─────────────────────────────────────
+    // â”€â”€ Real distance & ETA (Google Maps) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let actualDistance = 0;
     let actualDuration = 0;
     try {
@@ -47,10 +47,10 @@ export const fareBreakdownHandler = eventHandler<any>(
         { lat: destination.lat, lng: destination.lng },
       );
       actualDuration = Math.ceil((actualDistance / 30) * 60);
-      console.warn('⚠️ Google Maps failed — using Haversine fallback');
+      console.warn('âš ï¸ Google Maps failed â€” using Haversine fallback');
     }
 
-    // ── Fare breakdown ────────────────────────────────────────────────────────
+    // â”€â”€ Fare breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const fareBreakdown = await calculateFareBreakdown({
       distanceKm:     actualDistance,
       departureDate:  departureDateTime,
@@ -62,15 +62,24 @@ export const fareBreakdownHandler = eventHandler<any>(
     });
 
     const roundedBreakdown = roundObjectNumbers(fareBreakdown);
+    const {
+      fareBeforePlatformCommission,
+      minimumFareAmount,
+      platformVatPercent,
+      vatAmount,
+      platformCommissionPercent,
+      platformCommission,
+      ...publicFareBreakdown
+    } = roundedBreakdown;
 
     return callback?.({
       success: true,
       message: 'Fare breakdown calculated successfully.',
       data: {
-        estimatedFare:     roundedBreakdown.totalFare,
+        estimatedFare:     publicFareBreakdown.totalFare,
         estimatedDistance: roundTo2(actualDistance),
         estimatedDuration: actualDuration,
-        fareBreakdown:     roundedBreakdown,
+        fareBreakdown:     publicFareBreakdown,
         rideDetails: {
           bookingDate:      departureDate  || new Date().toISOString().split('T')[0],
           bookingTime:      departureTime  || new Date().toLocaleTimeString(),
