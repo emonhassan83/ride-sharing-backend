@@ -36,7 +36,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
     if (ride.driverId?.toString() !== driverId)
       return callback?.({ success: false, message: 'You are not assigned to this ride' });
     if (ride.status !== RIDE_STATUS.started)
-      return callback?.({ success: false, message: `Cannot complete �\u20AC� status: ${ride.status}` });
+      return callback?.({ success: false, message: `Cannot complete â\u20AC” status: ${ride.status}` });
 
     const locationKey = `ride:${rideId}:live`;
     const locations = await redis.lrange(locationKey, 0, -1);
@@ -50,16 +50,16 @@ export const driverCompleteTripHandler = eventHandler<any>(
       PASSENGER_STATUS.dropped_off,
     ];
 
-    // �\u20AC�\u20AC Determine which passengers to complete �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+    // â”\u20ACâ”\u20AC Determine which passengers to complete â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     let passengers: any[];
 
     if (ride.type === RIDE_TYPE.private) {
-      // ✅ passengerId optional for private
+      // âœ… passengerId optional for private
       passengers = passengerId
         ? await Passenger.find({ _id: passengerId, rideId, status: { $in: [PASSENGER_STATUS.dropped_off, PASSENGER_STATUS.completed] } })
         : await Passenger.find({ rideId, status: { $in: [PASSENGER_STATUS.dropped_off, PASSENGER_STATUS.completed] } });
     } else {
-      // ✅ Split: passengerId optional �\u20AC� complete all dropped_off if not specified
+      // âœ… Split: passengerId optional â\u20AC” complete all dropped_off if not specified
       passengers = passengerId
         ? await Passenger.find({ _id: passengerId, rideId, status: { $in: [PASSENGER_STATUS.dropped_off, PASSENGER_STATUS.completed] } })
         : await Passenger.find({ rideId, status: { $in: [PASSENGER_STATUS.dropped_off, PASSENGER_STATUS.completed] } });
@@ -117,7 +117,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
       if (riderUser?.fcmToken) {
         sendNotification([riderUser.fcmToken], {
           receiver: passenger.userId, message: 'Trip Completed!',
-          description: `Total fare: �\u20AC${totalFare}. Thank you for riding with us!`,
+          description: `Total fare: Â\u20AC${totalFare}. Thank you for riding with us!`,
           reference: rideId, modelType: modeType.Ride,
         }).catch(() => { });
       }
@@ -130,7 +130,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
       io.to(`user:${passenger.userId}`).emit('ride:request-rating', { rideId, driverId });
     }
 
-    // �\u20AC�\u20AC Check if all passengers done (for split ride partial complete) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+    // â”\u20ACâ”\u20AC Check if all passengers done (for split ride partial complete) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     const remainingActiveTripPassengers = await Passenger.countDocuments({
       rideId,
       status: { $in: activeTripPassengerStatuses },
@@ -187,12 +187,18 @@ export const driverCompleteTripHandler = eventHandler<any>(
         ]);
         const commissionPercent = Math.max(Number(commissionSetting?.value ?? 0), 0);
         const vatPercent = Math.max(Number(vatSetting?.value ?? 0), 0);
-        const driverEarningAmount = Math.max(
+        const fareBeforeFees = Math.max(
           Math.round((totalCollectedAmount / (1 + (commissionPercent + vatPercent) / 100)) * 100) / 100,
           0,
         );
         const platformCommissionAmount = Math.round(
-          driverEarningAmount * (commissionPercent / 100) * 100,
+          fareBeforeFees * (commissionPercent / 100) * 100,
+        ) / 100;
+        const vatAmount = Math.round(
+          fareBeforeFees * (vatPercent / 100) * 100,
+        ) / 100;
+        const driverEarningAmount = Math.round(
+          (fareBeforeFees + vatAmount) * 100,
         ) / 100;
 
         const creditedRide = await Ride.findOneAndUpdate(
@@ -254,12 +260,18 @@ export const driverCompleteTripHandler = eventHandler<any>(
         ]);
         const commissionPercent = Math.max(Number(commissionSetting?.value ?? 0), 0);
         const vatPercent = Math.max(Number(vatSetting?.value ?? 0), 0);
-        const driverEarningAmount = Math.max(
+        const fareBeforeFees = Math.max(
           Math.round((totalCollectedAmount / (1 + (commissionPercent + vatPercent) / 100)) * 100) / 100,
           0,
         );
         const platformCommissionAmount = Math.round(
-          driverEarningAmount * (commissionPercent / 100) * 100,
+          fareBeforeFees * (commissionPercent / 100) * 100,
+        ) / 100;
+        const vatAmount = Math.round(
+          fareBeforeFees * (vatPercent / 100) * 100,
+        ) / 100;
+        const driverEarningAmount = Math.round(
+          (fareBeforeFees + vatAmount) * 100,
         ) / 100;
 
         const creditedRide = await Ride.findOneAndUpdate(
@@ -302,7 +314,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
       }
 
       try { await saveLocationsToDatabase(rideId, parsedLocations, driverId); } catch (err) {
-        console.error(`❌ Location history save failed:`, err);
+        console.error(`âŒ Location history save failed:`, err);
       }
 
       await Promise.all([
