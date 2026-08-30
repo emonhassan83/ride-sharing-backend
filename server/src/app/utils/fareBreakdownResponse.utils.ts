@@ -64,13 +64,16 @@ export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ri
       sixPassengerExtraCharge,
   );
 
-  const actualFare = rawComponentFare;
-  const fareBeforeFees = round2(Math.max(rawComponentFare, baseFare));
+  const baseAdjustedFare = round2(Math.max(rawComponentFare, baseFare));
   const splitRideMatchedSurchargeAmount = isSplitRide
     ? storedSplitSurchargeAmount > 0
       ? storedSplitSurchargeAmount
-      : round2(fareBeforeFees * (splitRideMatchedSurchargePercent / 100))
+      : round2(baseAdjustedFare * (splitRideMatchedSurchargePercent / 100))
     : 0;
+
+  const actualFare = round2(rawComponentFare + splitRideMatchedSurchargeAmount);
+  const fareBeforeFees = round2(Math.max(actualFare, baseFare));
+  const minimumFareAdjustment = round2(fareBeforeFees - actualFare);
 
   const vatAmount = round2(fareBeforeFees * (vatPercentage / 100));
   const platformCommissionAmount = round2(
@@ -79,7 +82,6 @@ export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ri
   const totalFare = round2(
     fareBeforeFees + vatAmount + platformCommissionAmount,
   );
-  const minimumFareAdjustment = round2(Math.max(baseFare - actualFare, 0));
 
   return {
     initialCharge,

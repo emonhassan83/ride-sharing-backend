@@ -214,16 +214,17 @@ export async function calculateFareBreakdown(params: {
       fivePassengerExtraCharge +
       sixPassengerExtraCharge,
   );
-  const actualFare = rawComponentFare;
-  const fareAfterMinimum = Math.max(rawComponentFare, settings.baseFare);
+  const baseAdjustedFare = Math.max(rawComponentFare, settings.baseFare);
   const splitRideMatchedSurchargePercent =
     rideType === 'split' ? settings.splitRideMatchedSurchargePercent : 0;
   const splitRideMatchedSurchargeAmount =
     rideType === 'split'
-      ? roundMoney(fareAfterMinimum * (splitRideMatchedSurchargePercent / 100))
+      ? roundMoney(baseAdjustedFare * (splitRideMatchedSurchargePercent / 100))
       : 0;
   const splitSurchargePercent = splitRideMatchedSurchargePercent;
   const splitSurchargeAmount = splitRideMatchedSurchargeAmount;
+  const actualFare = roundMoney(rawComponentFare + splitRideMatchedSurchargeAmount);
+  const fareAfterMinimum = Math.max(actualFare, settings.baseFare);
   const minimumFareAdjustment = roundMoney(fareAfterMinimum - actualFare);
   const fareBeforePlatformCommission = roundMoney(fareAfterMinimum);
   const platformVatPercent = settings.platformVat;
