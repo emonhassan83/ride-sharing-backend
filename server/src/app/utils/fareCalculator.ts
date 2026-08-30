@@ -27,6 +27,8 @@ export interface FareBreakdown {
   minimumFareAdjustment: number;
   splitSurchargePercent: number;
   splitSurchargeAmount: number;
+  splitRideMatchedSurchargePercent: number;
+  splitRideMatchedSurchargeAmount: number;
   fareBeforePlatformCommission: number;
   platformVatPercent: number;
   vatAmount: number;
@@ -202,20 +204,26 @@ export async function calculateFareBreakdown(params: {
     rideType === 'private' && requestedSeats === 5 ? passengerCountExtra : 0;
   const sixPassengerExtraCharge =
     rideType === 'private' && requestedSeats === 6 ? passengerCountExtra : 0;
-  const splitSurchargePercent = 0;
-  const splitSurchargeAmount = 0;
 
-  const actualFare = roundMoney(
+  const rawComponentFare = roundMoney(
     rates.initialCharge +
       totalKmCharge +
       luggageCharge +
       holidaySurcharge +
       waitingCharge +
       fivePassengerExtraCharge +
-      sixPassengerExtraCharge +
-      splitSurchargeAmount,
+      sixPassengerExtraCharge,
   );
-  const fareAfterMinimum = Math.max(actualFare, settings.baseFare);
+  const actualFare = rawComponentFare;
+  const fareAfterMinimum = Math.max(rawComponentFare, settings.baseFare);
+  const splitRideMatchedSurchargePercent =
+    rideType === 'split' ? settings.splitRideMatchedSurchargePercent : 0;
+  const splitRideMatchedSurchargeAmount =
+    rideType === 'split'
+      ? roundMoney(fareAfterMinimum * (splitRideMatchedSurchargePercent / 100))
+      : 0;
+  const splitSurchargePercent = splitRideMatchedSurchargePercent;
+  const splitSurchargeAmount = splitRideMatchedSurchargeAmount;
   const minimumFareAdjustment = roundMoney(fareAfterMinimum - actualFare);
   const fareBeforePlatformCommission = roundMoney(fareAfterMinimum);
   const platformVatPercent = settings.platformVat;
@@ -251,6 +259,8 @@ export async function calculateFareBreakdown(params: {
     minimumFareAdjustment,
     splitSurchargePercent,
     splitSurchargeAmount,
+    splitRideMatchedSurchargePercent,
+    splitRideMatchedSurchargeAmount,
     fareBeforePlatformCommission,
     platformVatPercent,
     vatAmount,

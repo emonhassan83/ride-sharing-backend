@@ -137,7 +137,11 @@ const getPassengerById = async (passengerId: string) => {
   const grossFare = Number((passenger as any).totalFare || (passenger as any).estimatedFare || booking?.totalFare || 0);
   const fareBeforeFees = Math.round((grossFare / (1 + (vatPercentage + platformCommissionPercentage) / 100)) * 100) / 100;
   const platformCommissionAmount = Math.round((fareBeforeFees * (platformCommissionPercentage / 100)) * 100) / 100;
-  const fareBreakdown = await buildStoredFareBreakdown(passenger, booking, (passenger as any).rideId);
+  const fareBreakdown = await buildStoredFareBreakdown(
+    passenger,
+    booking,
+    (passenger as any).rideId,
+  );
 
   return {
     ...passenger,

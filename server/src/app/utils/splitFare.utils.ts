@@ -41,6 +41,8 @@ export const calcSplitPassengerFare = async (
   minimumFareAdjustment: number;
   splitSurchargePercent: number;
   splitSurchargeAmount: number;
+  splitRideMatchedSurchargePercent: number;
+  splitRideMatchedSurchargeAmount: number;
   fareBeforePlatformCommission: number;
   platformVatPercent: number;
   vatAmount: number;
@@ -95,6 +97,8 @@ export const calcSplitPassengerFare = async (
     minimumFareAdjustment: 0,
     splitSurchargePercent: matchedSurchargePercent,
     splitSurchargeAmount,
+    splitRideMatchedSurchargePercent: matchedSurchargePercent,
+    splitRideMatchedSurchargeAmount: splitSurchargeAmount,
     fareBeforePlatformCommission: estimatedFare,
     platformVatPercent,
     vatAmount,
