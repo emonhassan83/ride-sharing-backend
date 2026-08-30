@@ -63,7 +63,7 @@ const createOrUpdate = async (key: string, payload: any) => {
   return Setting.findOneAndUpdate(
     { key },
     { $set: { key, value: payload.value ?? payload, name: payload.name } },
-    { new: true, upsert: true },
+    { returnDocument: 'after', upsert: true },
   ).select('-__v');
 };
 

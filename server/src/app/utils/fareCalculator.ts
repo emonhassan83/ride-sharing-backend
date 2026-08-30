@@ -197,12 +197,27 @@ export async function calculateFareBreakdown(params: {
     subTotal += waitingCharge;
   }
 
-  const normalFare = rideType === 'split' ? settings.baseFare : roundMoney(subTotal);
-  const fareAfterMinimum = rideType === 'split' ? settings.baseFare : Math.max(normalFare, settings.baseFare);
-  const minimumFareAdjustment = rideType === 'split' ? 0 : roundMoney(fareAfterMinimum - normalFare);
+  const totalKmCharge = roundMoney(distanceKm * rates.perKm);
+  const fivePassengerExtraCharge =
+    rideType === 'private' && requestedSeats === 5 ? passengerCountExtra : 0;
+  const sixPassengerExtraCharge =
+    rideType === 'private' && requestedSeats === 6 ? passengerCountExtra : 0;
   const splitSurchargePercent = 0;
   const splitSurchargeAmount = 0;
-  const fareBeforePlatformCommission = roundMoney(fareAfterMinimum + splitSurchargeAmount);
+
+  const actualFare = roundMoney(
+    rates.initialCharge +
+      totalKmCharge +
+      luggageCharge +
+      holidaySurcharge +
+      waitingCharge +
+      fivePassengerExtraCharge +
+      sixPassengerExtraCharge +
+      splitSurchargeAmount,
+  );
+  const fareAfterMinimum = Math.max(actualFare, settings.baseFare);
+  const minimumFareAdjustment = roundMoney(fareAfterMinimum - actualFare);
+  const fareBeforePlatformCommission = roundMoney(fareAfterMinimum);
   const platformVatPercent = settings.platformVat;
   const vatAmount = rideType === 'split' ? 0 : roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
   const platformCommissionPercent = settings.platformCommissionPercent;
@@ -211,19 +226,18 @@ export async function calculateFareBreakdown(params: {
     ? fareBeforePlatformCommission
     : roundMoney(fareBeforePlatformCommission + vatAmount + platformCommissionAmount);
   const vat = vatAmount;
-  const actualFare = roundMoney(normalFare + splitSurchargeAmount);
-  const fareBeforeFees = fareBeforePlatformCommission;
+  const fareBeforeFees = fareAfterMinimum;
 
   return {
     initialCharge: rates.initialCharge,
     perKmCharge: rates.perKm,
-    totalKmCharge: roundMoney(distanceKm * rates.perKm),
+    totalKmCharge,
     luggageCharge,
     passengerCountExtra,
     holidaySurcharge,
     waitingCharge,
-    fivePassengerExtraCharge: requestedSeats === 5 ? passengerCountExtra : 0,
-    sixPassengerExtraCharge: requestedSeats === 6 ? passengerCountExtra : 0,
+    fivePassengerExtraCharge,
+    sixPassengerExtraCharge,
     fivePassengerExtraChargePercentage: requestedSeats === 5 ? settings.fivePassengerExtraChargePercentage : 0,
     sixPassengerExtraChargePercentage: requestedSeats === 6 ? settings.sixPassengerExtraChargePercentage : 0,
     baseFare: settings.baseFare,

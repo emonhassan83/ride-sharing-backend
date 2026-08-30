@@ -90,7 +90,7 @@ async function markDriverNotifiedOnce(
   const updatedRide = await Ride.findOneAndUpdate(
     { _id: rideId, notifiedDriverIds: { $ne: driverId } },
     { $addToSet: { notifiedDriverIds: driverId } },
-    { new: false }
+    { returnDocument: 'before' }
   )
     .select('_id')
     .lean();
