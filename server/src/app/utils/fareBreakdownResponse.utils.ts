@@ -52,28 +52,16 @@ export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ri
       splitSurchargeAmount
   );
 
-  const isSplitRide = ride?.type === 'split' || splitSurchargePercent > 0;
-  const storedFare = round2(
-    passenger?.totalFare || passenger?.estimatedFare || booking?.totalFare || 0
-  );
+  const fareBeforeFees = round2(Math.max(actualFare, baseFare));
 
-  // Private ride: minimum base fare applies before VAT/platform commission.
-  // Split ride: stored fare is already the per-rider split amount after matched
-  // surcharge, so do not apply the private minimum again per passenger.
-  const fareBeforeFees = isSplitRide
-    ? round2(storedFare || actualFare)
-    : round2(Math.max(actualFare, baseFare));
-
-  const vatAmount = isSplitRide
-    ? round2(passenger?.vat || 0)
-    : round2(fareBeforeFees * (vatPercentage / 100));
+  const vatAmount = round2(fareBeforeFees * (vatPercentage / 100));
   const platformCommissionAmount = round2(
-    fareBeforeFees * (platformCommissionPercentage / 100)
+    fareBeforeFees * (platformCommissionPercentage / 100),
   );
-  const totalFare = isSplitRide
-    ? round2(storedFare || fareBeforeFees + vatAmount)
-    : round2(fareBeforeFees + vatAmount + platformCommissionAmount);
-  const minimumFareAdjustment = isSplitRide ? 0 : round2(Math.max(baseFare - actualFare, 0));
+  const totalFare = round2(
+    fareBeforeFees + vatAmount + platformCommissionAmount,
+  );
+  const minimumFareAdjustment = round2(Math.max(baseFare - actualFare, 0));
 
   return {
     initialCharge,

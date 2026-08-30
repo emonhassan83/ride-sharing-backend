@@ -30,8 +30,8 @@ export function startBackgroundJobs() {
     }
   });
 
-  // 2. No driver job (every 15 sec)
-  cron.schedule('*/15 * * * * *', async () => {
+  // 2. No driver job (poll every 1 min; re-notify interval comes from settings)
+  cron.schedule('* * * * *', async () => {
     if (noDriverJobRunning) return;
     noDriverJobRunning = true;
     try {

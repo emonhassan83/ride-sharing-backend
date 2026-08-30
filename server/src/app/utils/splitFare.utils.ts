@@ -64,8 +64,16 @@ export const calcSplitPassengerFare = async (
   const splitSurchargeAmount = riderCount >= 2
     ? roundMoney((baseFare * (matchedSurchargePercent / 100)) / riderCount)
     : 0;
+  const fareBeforePlatformCommission = estimatedFare;
   const platformCommissionPercent = Number(s.platformCommissionPercent || 0);
-  const platformCommissionAmount = roundMoney(estimatedFare * (platformCommissionPercent / 100));
+  const platformVatPercent = Number(s.platformVat || 0);
+  const vatAmount = roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
+  const platformCommissionAmount = roundMoney(
+    fareBeforePlatformCommission * (platformCommissionPercent / 100),
+  );
+  const totalFare = roundMoney(
+    fareBeforePlatformCommission + vatAmount + platformCommissionAmount,
+  );
 
   void distanceKm;
   void requestedSeats;
@@ -88,12 +96,12 @@ export const calcSplitPassengerFare = async (
     splitSurchargePercent: matchedSurchargePercent,
     splitSurchargeAmount,
     fareBeforePlatformCommission: estimatedFare,
-    platformVatPercent: Number(s.platformVat || 0),
-    vatAmount: 0,
+    platformVatPercent,
+    vatAmount,
     platformCommissionPercent,
     platformCommissionAmount,
     activeSplitPassengerCount: riderCount,
-    estimatedFare,
+    estimatedFare: totalFare,
   };
 };
 

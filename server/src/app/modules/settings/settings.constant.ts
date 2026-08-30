@@ -8,7 +8,7 @@
   matchingLastNotifyHours: 1,
   cancellationFreeWindowHours: 24,
   cancellationPercentage50Hours: 3,
-  waitingReminderIntervals: 5,
+  waitingReminderIntervals: 10,
   waitingTimeMinutes: 60,
 
   dayFareInitialCharge: 3.8,

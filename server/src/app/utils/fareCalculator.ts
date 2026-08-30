@@ -219,12 +219,14 @@ export async function calculateFareBreakdown(params: {
   const minimumFareAdjustment = roundMoney(fareAfterMinimum - actualFare);
   const fareBeforePlatformCommission = roundMoney(fareAfterMinimum);
   const platformVatPercent = settings.platformVat;
-  const vatAmount = rideType === 'split' ? 0 : roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
+  const vatAmount = roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
   const platformCommissionPercent = settings.platformCommissionPercent;
-  const platformCommissionAmount = roundMoney(fareBeforePlatformCommission * (platformCommissionPercent / 100));
-  const totalFare = rideType === 'split'
-    ? fareBeforePlatformCommission
-    : roundMoney(fareBeforePlatformCommission + vatAmount + platformCommissionAmount);
+  const platformCommissionAmount = roundMoney(
+    fareBeforePlatformCommission * (platformCommissionPercent / 100),
+  );
+  const totalFare = roundMoney(
+    fareBeforePlatformCommission + vatAmount + platformCommissionAmount,
+  );
   const vat = vatAmount;
   const fareBeforeFees = fareAfterMinimum;
 

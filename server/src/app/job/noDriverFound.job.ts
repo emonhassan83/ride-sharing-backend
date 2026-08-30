@@ -27,21 +27,29 @@ const stripe = new Stripe(config.pay?.secretKey as string, {
   typescript: true,
 });
 
-// â”€â”€ Load settings with fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢ââ¬Ã¢ââ¬ Load settings with fallback Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬
 const getMatchingSettings = async (): Promise<{
-  notifyHours: number; // re-notify X hours before departure
-  lastNotifyHours: number; // continuous re-match window before departure
+  notifyHours: number;
+  lastNotifyHours: number;
+  renotifyIntervalMinutes: number;
 }> => {
   const settings = await Setting.find({
-    key: { $in: ['matchingNoDriverNotifyHours', 'matchingLastNotifyHours'] },
+    key: {
+      $in: [
+        'matchingNoDriverNotifyHours',
+        'matchingLastNotifyHours',
+        'waitingReminderIntervals',
+      ],
+    },
   }).lean();
 
   const map: Record<string, number> = {};
   for (const s of settings) map[s.key] = Number(s.value);
 
   return {
-    notifyHours: map.matchingNoDriverNotifyHours ?? 48, // fallback 48h
-    lastNotifyHours: map.matchingLastNotifyHours ?? 24, // fallback 24h
+    notifyHours: map.matchingNoDriverNotifyHours ?? 48,
+    lastNotifyHours: map.matchingLastNotifyHours ?? 24,
+    renotifyIntervalMinutes: map.waitingReminderIntervals ?? 10,
   };
 };
 
@@ -50,9 +58,10 @@ export const checkNoDriverFound = async () => {
   const io = getIO();
   const now = new Date();
 
-  const { notifyHours, lastNotifyHours } = await getMatchingSettings();
-  const finalRematchHours = Math.max(lastNotifyHours, 24);
-  const notifyThrottleSeconds = 5 * 60;
+  const { notifyHours, lastNotifyHours, renotifyIntervalMinutes } =
+    await getMatchingSettings();
+  const finalRematchHours = lastNotifyHours;
+  const notifyThrottleSeconds = Math.max(renotifyIntervalMinutes, 1) * 60;
   const reNotifyBefore = new Date(now.getTime() + notifyHours * 3600000);
   const reNotifyBeforeLocal = `${reNotifyBefore.getFullYear()}-${String(reNotifyBefore.getMonth() + 1).padStart(2, '0')}-${String(reNotifyBefore.getDate()).padStart(2, '0')}`;
   const gracePeriodCutoff = new Date(now.getTime() - 30 * 1000);
@@ -83,10 +92,8 @@ export const checkNoDriverFound = async () => {
     if (!isFinalContinuousWindow && alreadyInitialRenotified) continue;
 
     const throttleKey = `ride:matching:renotify:${ride._id}`;
-    if (isFinalContinuousWindow) {
-      const recentlyChecked = await redis.get(throttleKey);
-      if (recentlyChecked) continue;
-    }
+    const recentlyChecked = await redis.get(throttleKey);
+    if (recentlyChecked) continue;
 
     const passenger = await Passenger.findOne({
       rideId: ride._id,
@@ -179,7 +186,7 @@ export const checkNoDriverFound = async () => {
       message: `We're still looking for a driver. ${notified} driver(s) notified.`,
     });
 
-    if (riderUser?.fcmToken) {
+    if (riderUser?.fcmToken && notified > 0) {
       sendNotification([riderUser.fcmToken], {
         receiver: (ride as any).rideCreatedBy,
         message: 'Still Searching for a Driver',
@@ -299,7 +306,7 @@ export const checkNoDriverFound = async () => {
     if (riderUser?.fcmToken) {
       sendNotification([riderUser.fcmToken], {
         receiver: p.userId,
-        message: 'Ride Cancelled � No Driver Found',
+        message: 'Ride Cancelled  No Driver Found',
         description: `No driver accepted your ride before pickup time. Your booking has been cancelled.`,
         reference: p.rideId?.toString() || '',
         modelType: modeType.Ride,
