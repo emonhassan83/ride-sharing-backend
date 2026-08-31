@@ -152,6 +152,7 @@ export async function calculateFareBreakdown(params: {
   requestedSeats: number;
   rideType: 'private' | 'split';
   waitingMinutes?: number;
+  activeRiderCount?: number;
 }): Promise<FareBreakdown> {
   const {
     distanceKm,
@@ -161,6 +162,7 @@ export async function calculateFareBreakdown(params: {
     requestedSeats,
     rideType,
     waitingMinutes = 0,
+    activeRiderCount = 1,
   } = params;
 
   const settings = await loadFareSettings();
@@ -215,12 +217,13 @@ export async function calculateFareBreakdown(params: {
       sixPassengerExtraCharge,
   );
   const baseAdjustedFare = Math.max(rawComponentFare, settings.baseFare);
+  const riderCount = Math.max(Number(activeRiderCount) || 1, 1);
+  const isMatchedSplitRide = rideType === 'split' && riderCount >= 2;
   const splitRideMatchedSurchargePercent =
     rideType === 'split' ? settings.splitRideMatchedSurchargePercent : 0;
-  const splitRideMatchedSurchargeAmount =
-    rideType === 'split'
-      ? roundMoney(baseAdjustedFare * (splitRideMatchedSurchargePercent / 100))
-      : 0;
+  const splitRideMatchedSurchargeAmount = isMatchedSplitRide
+    ? roundMoney(baseAdjustedFare * (splitRideMatchedSurchargePercent / 100))
+    : 0;
   const splitSurchargePercent = splitRideMatchedSurchargePercent;
   const splitSurchargeAmount = splitRideMatchedSurchargeAmount;
   const actualFare = roundMoney(rawComponentFare + splitRideMatchedSurchargeAmount);

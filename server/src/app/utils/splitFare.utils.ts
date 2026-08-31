@@ -53,9 +53,11 @@ export const calcSplitPassengerFare = async (
 }> => {
   const s = await loadFareSettings();
   const riderCount = Math.max(Number(activeRiderCount) || 1, 1);
-  const matchedSurchargePercent = riderCount >= 2
-    ? Number((s as any).splitRideMatchedSurchargePercent ?? DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT)
-    : 0;
+  const configuredSurchargePercent = Number(
+    (s as any).splitRideMatchedSurchargePercent ?? DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT,
+  );
+  const matchedSurchargePercent = configuredSurchargePercent;
+  const isMatchedSplitRide = riderCount >= 2;
 
   const baseFare = roundMoney(Number(s.baseFare || 20));
   const splitPool = roundMoney(baseFare * (1 + matchedSurchargePercent / 100));
@@ -63,7 +65,7 @@ export const calcSplitPassengerFare = async (
     ? roundMoney(splitPool / riderCount)
     : baseFare;
 
-  const splitSurchargeAmount = riderCount >= 2
+  const splitSurchargeAmount = isMatchedSplitRide
     ? roundMoney((baseFare * (matchedSurchargePercent / 100)) / riderCount)
     : 0;
   const fareBeforePlatformCommission = estimatedFare;

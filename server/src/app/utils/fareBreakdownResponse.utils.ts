@@ -43,13 +43,16 @@ export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ri
   const sixPassengerExtraCharge = round2(passenger?.sixPassengerCharge || 0);
   const isSplitRide = resolvedRide?.type === 'split';
 
-  const storedSplitSurchargePercent = round2(
-    passenger?.surchargePercent || resolvedRide?.currentSurchargePercent || 0,
-  );
-  const storedSplitSurchargeAmount = round2(passenger?.surchargeAmount || 0);
-
+  // Show configured split surcharge % for split rides; amount only after 2+ riders match.
   const splitRideMatchedSurchargePercent = isSplitRide
-    ? storedSplitSurchargePercent || defaultSplitRideMatchedSurchargePercent
+    ? round2(
+        passenger?.surchargePercent ||
+          resolvedRide?.currentSurchargePercent ||
+          defaultSplitRideMatchedSurchargePercent,
+      )
+    : 0;
+  const splitRideMatchedSurchargeAmount = isSplitRide
+    ? round2(passenger?.surchargeAmount || 0)
     : 0;
 
   const passengerCountExtra = round2(fivePassengerExtraCharge + sixPassengerExtraCharge);
@@ -63,13 +66,6 @@ export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ri
       fivePassengerExtraCharge +
       sixPassengerExtraCharge,
   );
-
-  const baseAdjustedFare = round2(Math.max(rawComponentFare, baseFare));
-  const splitRideMatchedSurchargeAmount = isSplitRide
-    ? storedSplitSurchargeAmount > 0
-      ? storedSplitSurchargeAmount
-      : round2(baseAdjustedFare * (splitRideMatchedSurchargePercent / 100))
-    : 0;
 
   const actualFare = round2(rawComponentFare + splitRideMatchedSurchargeAmount);
   const fareBeforeFees = round2(Math.max(actualFare, baseFare));
