@@ -48,6 +48,8 @@ export const updateGeneralsZodSchema = z.object({
       splitRideMatchedSurchargePercent: z.number().optional(),
       platformVat: z.number().optional(),
       platformCommissionPercent: z.number().optional(),
+      driverPlatformFeePercent: z.number().optional(),
+      driverVatPercent: z.number().optional(),
       // platform info
       supportContract: z.string().optional(),
       supportEmail: z.string().email({ message: 'Invalid email' }).optional(),

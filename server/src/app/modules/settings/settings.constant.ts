@@ -25,6 +25,8 @@
   splitRideMatchedSurchargePercent: 30,
   platformVat: 9,
   platformCommissionPercent: 10,
+  driverPlatformFeePercent: 15,
+  driverVatPercent: 19,
 
   supportContract: '+357XXXXXXXX',
   supportEmail: 'support@yourapp.com',
@@ -56,6 +58,8 @@ export const GENERAL_KEYS = [
   'splitRideMatchedSurchargePercent',
   'platformVat',
   'platformCommissionPercent',
+  'driverPlatformFeePercent',
+  'driverVatPercent',
   'supportContract',
   'supportEmail',
 ] as const;

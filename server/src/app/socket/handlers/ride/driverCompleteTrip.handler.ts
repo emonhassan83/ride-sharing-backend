@@ -11,13 +11,38 @@ import { PAYMENT_STATUS } from '../../../modules/payment/payment.constant';
 import { Withdraw } from '../../../modules/withdraw/withdraw.model';
 import { WITHDRAW_STATUS } from '../../../modules/withdraw/withdraw.constant';
 import { User } from '../../../modules/user/user.model';
-import { Setting } from '../../../modules/settings/settings.model';
+import { loadFareSettings } from '../../../utils/fareCalculator';
+import { computeDriverPayoutFromPassengerTotal, roundMoney } from '../../../utils/fareMath.utils';
 import { saveLocationsToDatabase } from '../../../utils/location.db.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';
+
+const resolveDriverPayout = async (
+  totalCollectedAmount: number,
+  rideType: 'private' | 'split',
+  isMatchedSplit: boolean,
+) => {
+  const settings = await loadFareSettings();
+  const payout = computeDriverPayoutFromPassengerTotal(
+    totalCollectedAmount,
+    rideType,
+    settings,
+    isMatchedSplit,
+  );
+
+  return {
+    driverEarningAmount: payout.driverEarningAmount,
+    platformCommissionAmount: roundMoney(
+      payout.driverPlatformFeeAmount + payout.driverVatAmount,
+    ),
+    driverGrossAmount: payout.komistraGross,
+    driverPlatformFeeAmount: payout.driverPlatformFeeAmount,
+    driverVatAmount: payout.driverVatAmount,
+  };
+};
 
 export const driverCompleteTripHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -156,50 +181,27 @@ export const driverCompleteTripHandler = eventHandler<any>(
           isPaid: true,
         }).select('booking amount amountToCapture authorizedAmount').lean();
 
-        const creatorPassenger = await Passenger.findOne({
-          rideId,
-          userId: ride.rideCreatedBy,
-        }).select('_id').lean();
-        const creatorBooking = creatorPassenger
-          ? await Booking.findOne({ rideId, passengerId: creatorPassenger._id }).select('_id').lean()
-          : null;
-        const creatorPayment = creatorBooking
-          ? paidPayments.find((payment: any) => payment.booking?.toString() === creatorBooking._id.toString())
-          : null;
-        const maxPaidReferenceAmount = Math.max(
-          0,
-          ...paidPayments.map((payment: any) => Number(
-            payment.authorizedAmount || payment.amount || payment.amountToCapture || 0,
-          )),
-        );
         const totalCollectedAmount = Math.round(
-          Number(
-            creatorPayment?.authorizedAmount ||
-            creatorPayment?.amount ||
-            creatorPayment?.amountToCapture ||
-            maxPaidReferenceAmount ||
+          paidPayments.reduce(
+            (sum: number, payment: any) =>
+              sum +
+              Number(
+                payment.amount || payment.amountToCapture || payment.authorizedAmount || 0,
+              ),
             0,
           ) * 100,
         ) / 100;
-        const [commissionSetting, vatSetting] = await Promise.all([
-          Setting.findOne({ key: 'platformCommissionPercent' }).lean(),
-          Setting.findOne({ key: 'platformVat' }).lean(),
-        ]);
-        const commissionPercent = Math.max(Number(commissionSetting?.value ?? 0), 0);
-        const vatPercent = Math.max(Number(vatSetting?.value ?? 0), 0);
-        const fareBeforeFees = Math.max(
-          Math.round((totalCollectedAmount / (1 + (commissionPercent + vatPercent) / 100)) * 100) / 100,
-          0,
+        const isMatchedSplit =
+          Number((ride as any).currentSurchargePercent || 0) > 0 ||
+          paidPayments.length >= 2;
+        const {
+          driverEarningAmount,
+          platformCommissionAmount,
+        } = await resolveDriverPayout(
+          totalCollectedAmount,
+          'split',
+          isMatchedSplit,
         );
-        const platformCommissionAmount = Math.round(
-          fareBeforeFees * (commissionPercent / 100) * 100,
-        ) / 100;
-        const vatAmount = Math.round(
-          fareBeforeFees * (vatPercent / 100) * 100,
-        ) / 100;
-        const driverEarningAmount = Math.round(
-          (fareBeforeFees + vatAmount) * 100,
-        ) / 100;
 
         const creditedRide = await Ride.findOneAndUpdate(
           { _id: rideId, driverEarningCredited: { $ne: true } },
@@ -254,25 +256,10 @@ export const driverCompleteTripHandler = eventHandler<any>(
             0,
           ) * 100,
         ) / 100;
-        const [commissionSetting, vatSetting] = await Promise.all([
-          Setting.findOne({ key: 'platformCommissionPercent' }).lean(),
-          Setting.findOne({ key: 'platformVat' }).lean(),
-        ]);
-        const commissionPercent = Math.max(Number(commissionSetting?.value ?? 0), 0);
-        const vatPercent = Math.max(Number(vatSetting?.value ?? 0), 0);
-        const fareBeforeFees = Math.max(
-          Math.round((totalCollectedAmount / (1 + (commissionPercent + vatPercent) / 100)) * 100) / 100,
-          0,
-        );
-        const platformCommissionAmount = Math.round(
-          fareBeforeFees * (commissionPercent / 100) * 100,
-        ) / 100;
-        const vatAmount = Math.round(
-          fareBeforeFees * (vatPercent / 100) * 100,
-        ) / 100;
-        const driverEarningAmount = Math.round(
-          (fareBeforeFees + vatAmount) * 100,
-        ) / 100;
+        const {
+          driverEarningAmount,
+          platformCommissionAmount,
+        } = await resolveDriverPayout(totalCollectedAmount, 'private', false);
 
         const creditedRide = await Ride.findOneAndUpdate(
           { _id: rideId, driverEarningCredited: { $ne: true } },

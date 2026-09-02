@@ -405,32 +405,23 @@ const getRideById = async (rideId: string) => {
   const paymentProviderEarning = roundMoney(
     payments.reduce((sum: number, payment: any) => sum + Number(payment.providerEarning || 0), 0)
   );
-  const invoiceSettings = await Setting.find({
-    key: { $in: ['platformCommissionPercent', 'platformVat'] },
-  }).lean();
-  const invoiceSettingMap = new Map(
-    invoiceSettings.map((setting: any) => [setting.key, Number(setting.value)])
-  );
-  const platformFeePercent = invoiceSettingMap.get('platformCommissionPercent') ?? 0;
-  const vatPercent = invoiceSettingMap.get('platformVat') ?? 0;
-
   const rideTotalCollectedAmount = roundMoney((ride as any).totalCollectedAmount || 0);
   const ridePlatformFeeAmount = roundMoney((ride as any).platformCommissionAmount || 0);
   const rideDriverEarningAmount = roundMoney((ride as any).driverEarningAmount || 0);
 
-  // Final ride-level money overview. For split rides this avoids showing the
-  // original passenger authorizations as received money after fare recalculation.
   const platformReceived = roundMoney(
-    rideTotalCollectedAmount || totalAmountToCapture || totalPassengerPaid
+    rideTotalCollectedAmount || totalAmountToCapture || totalPassengerPaid,
   );
   const platformFeeAmount = roundMoney(
-    ridePlatformFeeAmount || paymentPlatformCommission || Math.max(platformReceived - rideDriverEarningAmount, 0)
+    ridePlatformFeeAmount || paymentPlatformCommission || 0,
   );
-  const vatAmount = roundMoney(Math.max(platformReceived - platformFeeAmount - rideDriverEarningAmount, 0));
   const driverEarning = roundMoney(
-    rideDriverEarningAmount
-      ? rideDriverEarningAmount + vatAmount
-      : paymentProviderEarning || Math.max(platformReceived - platformFeeAmount, 0)
+    rideDriverEarningAmount ||
+      paymentProviderEarning ||
+      Math.max(platformReceived - platformFeeAmount, 0),
+  );
+  const vatAmount = roundMoney(
+    Math.max(platformReceived - driverEarning - platformFeeAmount, 0),
   );
 
   const invoiceOverview = {

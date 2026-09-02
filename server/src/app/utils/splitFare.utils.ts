@@ -8,6 +8,7 @@ import { PAYMENT_STATUS as PAYMENT_RECORD_STATUS } from '../modules/payment/paym
 import { User } from '../modules/user/user.model';
 import StripeService from '../config/stripe.config';
 import { isPublicHoliday, loadFareSettings } from './fareCalculator';
+import { buildPassengerFareTotals, roundMoney } from './fareMath.utils';
 import { getDepartureDateTime, getRefundRestrictionHours } from './rideSchedule.utils';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { sendNotification } from './sentPushNotification';
@@ -19,9 +20,8 @@ import {
 } from '../modules/refund/refund.constant';
 
 const DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT = 30;
-const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
-// ï¿½\u20ACï¿½\u20AC Calculate single passenger fare for split ride ï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20ACï¿½\u20AC
+// Calculate single passenger fare for split ride
 export const calcSplitPassengerFare = async (
   distanceKm: number,
   requestedSeats: number,
@@ -53,31 +53,35 @@ export const calcSplitPassengerFare = async (
 }> => {
   const s = await loadFareSettings();
   const riderCount = Math.max(Number(activeRiderCount) || 1, 1);
-  const configuredSurchargePercent = Number(
+  const matchedSurchargePercent = Number(
     (s as any).splitRideMatchedSurchargePercent ?? DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT,
   );
-  const matchedSurchargePercent = configuredSurchargePercent;
-  const isMatchedSplitRide = riderCount >= 2;
 
   const baseFare = roundMoney(Number(s.baseFare || 20));
-  const splitPool = roundMoney(baseFare * (1 + matchedSurchargePercent / 100));
-  const estimatedFare = riderCount >= 2
-    ? roundMoney(splitPool / riderCount)
-    : baseFare;
+  const rideTotals = buildPassengerFareTotals({
+    rideType: 'split',
+    riderCount,
+    rawComponentFare: baseFare,
+    baseFare,
+    platformVatPercent: Number(s.platformVat || 9),
+    platformCommissionPercent: 0,
+    splitRideMatchedSurchargePercent: matchedSurchargePercent,
+  });
 
-  const splitSurchargeAmount = isMatchedSplitRide
-    ? roundMoney((baseFare * (matchedSurchargePercent / 100)) / riderCount)
-    : 0;
-  const fareBeforePlatformCommission = estimatedFare;
-  const platformCommissionPercent = Number(s.platformCommissionPercent || 0);
-  const platformVatPercent = Number(s.platformVat || 0);
-  const vatAmount = roundMoney(fareBeforePlatformCommission * (platformVatPercent / 100));
-  const platformCommissionAmount = roundMoney(
-    fareBeforePlatformCommission * (platformCommissionPercent / 100),
-  );
-  const totalFare = roundMoney(
-    fareBeforePlatformCommission + vatAmount + platformCommissionAmount,
-  );
+  const perPassengerTotal =
+    riderCount >= 2
+      ? roundMoney(rideTotals.totalFare / riderCount)
+      : rideTotals.totalFare;
+  const perPassengerSurcharge =
+    riderCount >= 2
+      ? roundMoney(rideTotals.splitRideMatchedSurchargeAmount / riderCount)
+      : 0;
+  const perPassengerBase =
+    riderCount >= 2 ? roundMoney(baseFare / riderCount) : baseFare;
+  const perPassengerVat =
+    riderCount >= 2
+      ? roundMoney(rideTotals.vatAmount / riderCount)
+      : rideTotals.vatAmount;
 
   void distanceKm;
   void requestedSeats;
@@ -86,28 +90,26 @@ export const calcSplitPassengerFare = async (
   void departureDate;
 
   return {
-    // Split pricing is fixed pool based. Distance/luggage/seats are kept on the
-    // passenger record for trip details, but they do not affect split fare.
-    initialCharge: riderCount >= 2 ? roundMoney(baseFare / riderCount) : baseFare,
+    initialCharge: perPassengerBase,
     totalKmCharge: 0,
     luggageCharge: 0,
     holidayTripCharge: 0,
-    surchargePercent: matchedSurchargePercent,
-    surchargeAmount: splitSurchargeAmount,
-    minimumFareApplied: true,
+    surchargePercent: riderCount >= 2 ? matchedSurchargePercent : 0,
+    surchargeAmount: perPassengerSurcharge,
+    minimumFareApplied: rideTotals.minimumFareApplied,
     minimumFareAmount: baseFare,
-    minimumFareAdjustment: 0,
-    splitSurchargePercent: matchedSurchargePercent,
-    splitSurchargeAmount,
-    splitRideMatchedSurchargePercent: matchedSurchargePercent,
-    splitRideMatchedSurchargeAmount: splitSurchargeAmount,
-    fareBeforePlatformCommission: estimatedFare,
-    platformVatPercent,
-    vatAmount,
-    platformCommissionPercent,
-    platformCommissionAmount,
+    minimumFareAdjustment: rideTotals.minimumFareAdjustment,
+    splitSurchargePercent: riderCount >= 2 ? matchedSurchargePercent : 0,
+    splitSurchargeAmount: perPassengerSurcharge,
+    splitRideMatchedSurchargePercent: riderCount >= 2 ? matchedSurchargePercent : 0,
+    splitRideMatchedSurchargeAmount: perPassengerSurcharge,
+    fareBeforePlatformCommission: perPassengerBase,
+    platformVatPercent: rideTotals.platformVatPercent,
+    vatAmount: perPassengerVat,
+    platformCommissionPercent: 0,
+    platformCommissionAmount: 0,
     activeSplitPassengerCount: riderCount,
-    estimatedFare: totalFare,
+    estimatedFare: perPassengerTotal,
   };
 };
 

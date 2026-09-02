@@ -6,7 +6,6 @@ import { PASSENGER_STATUS } from './passenger.constant';
 import { RIDE_STATUS } from '../ride/ride.constant';
 import { Booking } from '../booking/booking.model';
 import { getRedisClient } from '../../config/redis.config';
-import { Setting } from '../settings/settings.model';
 import { buildStoredFareBreakdown } from '../../utils/fareBreakdownResponse.utils';
 
 const getDriverRideRequest = async (driverUserId: string) => {
@@ -116,27 +115,6 @@ const getPassengerById = async (passengerId: string) => {
     .select('id paymentStatus bookingStatus totalFare amountPaid')
     .lean();
 
-  const settings = await Setting.find({
-    key: {
-      $in: [
-        'platformVat',
-        'platformCommissionPercent',
-        'baseFare',
-        'fivePassengerExtraChargePercentage',
-        'sixPassengerExtraChargePercentage',
-      ],
-    },
-  }).lean();
-  const settingMap = new Map(settings.map((setting: any) => [setting.key, Number(setting.value)]));
-  const vatPercentage = settingMap.get('platformVat') ?? 0;
-  const platformCommissionPercentage = settingMap.get('platformCommissionPercent') ?? 0;
-  const baseFare = settingMap.get('baseFare') ?? 0;
-  const fivePassengerExtraChargePercentage = settingMap.get('fivePassengerExtraChargePercentage') ?? 0;
-  const sixPassengerExtraChargePercentage = settingMap.get('sixPassengerExtraChargePercentage') ?? 0;
-
-  const grossFare = Number((passenger as any).totalFare || (passenger as any).estimatedFare || booking?.totalFare || 0);
-  const fareBeforeFees = Math.round((grossFare / (1 + (vatPercentage + platformCommissionPercentage) / 100)) * 100) / 100;
-  const platformCommissionAmount = Math.round((fareBeforeFees * (platformCommissionPercentage / 100)) * 100) / 100;
   const fareBreakdown = await buildStoredFareBreakdown(
     passenger,
     booking,
@@ -145,16 +123,17 @@ const getPassengerById = async (passengerId: string) => {
 
   return {
     ...passenger,
-    baseFare,
-    vatPercentage,
-    vatAmount: (passenger as any).vat ?? 0,
-    platformCommissionPercentage,
-    platformCommission: platformCommissionAmount,
-    platformCommissionAmount,
-    fivePassengerExtraChargePercentage,
-    fivePassengerExtraCharge: (passenger as any).fivePassengerCharge ?? 0,
-    sixPassengerExtraChargePercentage,
-    sixPassengerExtraCharge: (passenger as any).sixPassengerCharge ?? 0,
+    baseFare: fareBreakdown.baseFare,
+    vatPercentage: fareBreakdown.vatPercentage,
+    vatAmount: fareBreakdown.vatAmount,
+    vatIncluded: fareBreakdown.vatIncluded,
+    platformCommissionPercentage: fareBreakdown.platformCommissionPercentage,
+    platformCommission: fareBreakdown.platformCommissionAmount,
+    platformCommissionAmount: fareBreakdown.platformCommissionAmount,
+    fivePassengerExtraChargePercentage: fareBreakdown.fivePassengerExtraChargePercentage,
+    fivePassengerExtraCharge: fareBreakdown.fivePassengerExtraCharge,
+    sixPassengerExtraChargePercentage: fareBreakdown.sixPassengerExtraChargePercentage,
+    sixPassengerExtraCharge: fareBreakdown.sixPassengerExtraCharge,
     bookingId: booking?._id || null,
     bookingShortId: booking?.id || null,
     fareBreakdown,

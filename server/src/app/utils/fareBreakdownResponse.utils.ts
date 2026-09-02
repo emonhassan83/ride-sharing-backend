@@ -1,16 +1,16 @@
 import { Setting } from '../modules/settings/settings.model';
-
-const round2 = (value: any): number => {
-  const numeric = Number(value || 0);
-  return Math.round(numeric * 100) / 100;
-};
+import { buildPassengerFareTotals, roundMoney } from './fareMath.utils';
 
 const getNumberSetting = async (keys: string[]) => {
   const settings = await Setting.find({ key: { $in: keys } }).lean();
   return new Map(settings.map((setting: any) => [setting.key, Number(setting.value)]));
 };
 
-export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ride?: any) => {
+export const buildStoredFareBreakdown = async (
+  passenger: any,
+  booking?: any,
+  ride?: any,
+) => {
   const resolvedRide =
     ride && typeof ride === 'object' && 'type' in ride ? ride : passenger?.rideId;
 
@@ -23,8 +23,8 @@ export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ri
     'splitRideMatchedSurchargePercent',
   ]);
 
-  const vatPercentage = settingMap.get('platformVat') ?? 0;
-  const platformCommissionPercentage = settingMap.get('platformCommissionPercent') ?? 0;
+  const vatPercentage = settingMap.get('platformVat') ?? 9;
+  const platformCommissionPercentage = settingMap.get('platformCommissionPercent') ?? 10;
   const baseFare = settingMap.get('baseFare') ?? 0;
   const defaultSplitRideMatchedSurchargePercent =
     settingMap.get('splitRideMatchedSurchargePercent') ?? 0;
@@ -33,31 +33,21 @@ export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ri
   const sixPassengerExtraChargePercentage =
     settingMap.get('sixPassengerExtraChargePercentage') ?? 0;
 
-  const initialCharge = round2(passenger?.initialCharge);
-  const perKmCharge = round2(passenger?.perKmCharge);
-  const totalKmCharge = round2(passenger?.totalKmCharge);
-  const luggageCharge = round2(passenger?.luggageCharge);
-  const holidaySurcharge = round2(passenger?.holidayTripCharge);
-  const waitingCharge = round2(passenger?.waitingCharge);
-  const fivePassengerExtraCharge = round2(passenger?.fivePassengerCharge || 0);
-  const sixPassengerExtraCharge = round2(passenger?.sixPassengerCharge || 0);
+  const initialCharge = roundMoney(passenger?.initialCharge);
+  const perKmCharge = roundMoney(passenger?.perKmCharge);
+  const totalKmCharge = roundMoney(passenger?.totalKmCharge);
+  const luggageCharge = roundMoney(passenger?.luggageCharge);
+  const holidaySurcharge = roundMoney(passenger?.holidayTripCharge);
+  const waitingCharge = roundMoney(passenger?.waitingCharge);
+  const fivePassengerExtraCharge = roundMoney(passenger?.fivePassengerCharge || 0);
+  const sixPassengerExtraCharge = roundMoney(passenger?.sixPassengerCharge || 0);
   const isSplitRide = resolvedRide?.type === 'split';
 
-  // Show configured split surcharge % for split rides; amount only after 2+ riders match.
-  const splitRideMatchedSurchargePercent = isSplitRide
-    ? round2(
-        passenger?.surchargePercent ||
-          resolvedRide?.currentSurchargePercent ||
-          defaultSplitRideMatchedSurchargePercent,
-      )
-    : 0;
-  const splitRideMatchedSurchargeAmount = isSplitRide
-    ? round2(passenger?.surchargeAmount || 0)
-    : 0;
+  const passengerCountExtra = roundMoney(
+    fivePassengerExtraCharge + sixPassengerExtraCharge,
+  );
 
-  const passengerCountExtra = round2(fivePassengerExtraCharge + sixPassengerExtraCharge);
-
-  const rawComponentFare = round2(
+  const rawComponentFare = roundMoney(
     initialCharge +
       totalKmCharge +
       luggageCharge +
@@ -67,17 +57,48 @@ export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ri
       sixPassengerExtraCharge,
   );
 
-  const actualFare = round2(rawComponentFare + splitRideMatchedSurchargeAmount);
-  const fareBeforeFees = round2(Math.max(actualFare, baseFare));
-  const minimumFareAdjustment = round2(fareBeforeFees - actualFare);
+  const storedSurchargeAmount = isSplitRide
+    ? roundMoney(passenger?.surchargeAmount || 0)
+    : 0;
+  const storedSurchargePercent = isSplitRide
+    ? roundMoney(
+        passenger?.surchargePercent ||
+          resolvedRide?.currentSurchargePercent ||
+          defaultSplitRideMatchedSurchargePercent,
+      )
+    : 0;
 
-  const vatAmount = round2(fareBeforeFees * (vatPercentage / 100));
-  const platformCommissionAmount = round2(
-    fareBeforeFees * (platformCommissionPercentage / 100),
-  );
-  const totalFare = round2(
-    fareBeforeFees + vatAmount + platformCommissionAmount,
-  );
+  const fareTotals = buildPassengerFareTotals({
+    rideType: isSplitRide ? 'split' : 'private',
+    riderCount: isSplitRide ? (storedSurchargeAmount > 0 ? 2 : 1) : 1,
+    rawComponentFare,
+    baseFare,
+    platformVatPercent: vatPercentage,
+    platformCommissionPercent: platformCommissionPercentage,
+    splitRideMatchedSurchargePercent: defaultSplitRideMatchedSurchargePercent,
+  });
+
+  const splitRideMatchedSurchargePercent = isSplitRide
+    ? storedSurchargePercent || fareTotals.splitRideMatchedSurchargePercent
+    : 0;
+  const splitRideMatchedSurchargeAmount = isSplitRide
+    ? storedSurchargeAmount || fareTotals.splitRideMatchedSurchargeAmount
+    : 0;
+
+  let totalFare = fareTotals.totalFare;
+  let platformCommissionAmount = fareTotals.platformCommissionAmount;
+  let vatAmount = fareTotals.vatAmount;
+
+  if (isSplitRide && storedSurchargeAmount > 0) {
+    const { fareBeforeFees } = fareTotals;
+    totalFare = roundMoney(fareBeforeFees + storedSurchargeAmount);
+    platformCommissionAmount = 0;
+    vatAmount = fareTotals.vatAmount;
+  } else if (!isSplitRide && (passenger?.totalFare || booking?.totalFare)) {
+    totalFare = roundMoney(
+      Number(passenger?.totalFare || booking?.totalFare || fareTotals.totalFare),
+    );
+  }
 
   return {
     initialCharge,
@@ -94,18 +115,20 @@ export const buildStoredFareBreakdown = async (passenger: any, booking?: any, ri
     sixPassengerExtraChargePercentage,
 
     baseFare,
-    actualFare,
-    fareBeforeFees,
-    minimumFareApplied: minimumFareAdjustment > 0,
-    minimumFareAdjustment,
+    actualFare: fareTotals.actualFare,
+    fareBeforeFees: fareTotals.fareBeforeFees,
+    minimumFareApplied: fareTotals.minimumFareApplied,
+    minimumFareAdjustment: fareTotals.minimumFareAdjustment,
 
     vatPercentage,
     platformVatPercent: vatPercentage,
+    vatIncluded: true,
     vat: vatAmount,
     vatAmount,
+    netBeforeVat: fareTotals.netBeforeVat,
 
-    platformCommissionPercentage,
-    platformCommissionPercent: platformCommissionPercentage,
+    platformCommissionPercentage: isSplitRide ? 0 : platformCommissionPercentage,
+    platformCommissionPercent: isSplitRide ? 0 : platformCommissionPercentage,
     platformCommissionAmount,
     platformCommission: platformCommissionAmount,
 

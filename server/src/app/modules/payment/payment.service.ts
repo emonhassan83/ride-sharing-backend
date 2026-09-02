@@ -22,10 +22,14 @@ import { getIO } from '../../socket/socket.init';
 import { notifyNearbyDrivers, notifyNearbyDriversForSplitRide } from '../../utils/notifyDrivers.utils';
 import { sendNotification } from '../../utils/sentPushNotification';
 import { modeType } from '../notification/notification.interface';
-import { Setting } from '../settings/settings.model';
 import { getRedisClient } from '../../config/redis.config';
 import { recalculateSplitFares } from '../../utils/splitFare.utils';
 import { assertMinimumBookingLeadTime, getDepartureDateTime } from '../../utils/rideSchedule.utils';
+import { loadFareSettings } from '../../utils/fareCalculator';
+import {
+  computeDriverPayoutFromPassengerTotal,
+  roundMoney,
+} from '../../utils/fareMath.utils';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-06-24.dahlia',
@@ -245,7 +249,12 @@ const createPaymentIntent = async (payload: {
 
   // ── 4. Get platform commission from settings ──────────────────────────────
   const totalFare = Math.round(booking.totalFare * 100) / 100;
-  const { platformCommission, providerEarning, commissionPercent } = await getCommissionBreakdown(totalFare);
+  const rideType = (ride?.type || RIDE_TYPE.private) as 'private' | 'split';
+  const isMatchedSplit =
+    rideType === RIDE_TYPE.split &&
+    Number((passenger as any).surchargeAmount || 0) > 0;
+  const { platformCommission, providerEarning, commissionPercent } =
+    await getCommissionBreakdown(totalFare, rideType, isMatchedSplit);
 
   if (totalFare <= 0) {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid payment amount');
@@ -571,18 +580,30 @@ type TCaptureAuthorizedOptions = {
   updateBookingStatus?: boolean;
 };
 
-const getCommissionBreakdown = async (fare: number) => {
-  const [commissionSetting, vatSetting] = await Promise.all([
-    Setting.findOne({ key: 'platformCommissionPercent' }).lean(),
-    Setting.findOne({ key: 'platformVat' }).lean(),
-  ]);
-  const commissionPercent = Number(commissionSetting?.value ?? 10);
-  const vatPercent = Number(vatSetting?.value ?? 0);
-  const safeCommissionPercent = commissionPercent > 0 ? commissionPercent : 0;
-  const safeVatPercent = vatPercent > 0 ? vatPercent : 0;
-  const providerEarning = Math.round((fare / (1 + (safeCommissionPercent + safeVatPercent) / 100)) * 100) / 100;
-  const platformCommission = Math.round((providerEarning * (safeCommissionPercent / 100)) * 100) / 100;
-  return { platformCommission, providerEarning, commissionPercent: safeCommissionPercent, vatPercent: safeVatPercent };
+const getCommissionBreakdown = async (
+  totalFare: number,
+  rideType: 'private' | 'split' = 'private',
+  isMatchedSplit = false,
+) => {
+  const settings = await loadFareSettings();
+  const payout = computeDriverPayoutFromPassengerTotal(
+    totalFare,
+    rideType,
+    settings,
+    isMatchedSplit,
+  );
+
+  return {
+    platformCommission: roundMoney(
+      payout.driverPlatformFeeAmount + payout.driverVatAmount,
+    ),
+    providerEarning: payout.driverEarningAmount,
+    commissionPercent: settings.driverPlatformFeePercent,
+    vatPercent: settings.driverVatPercent,
+    driverGrossAmount: payout.komistraGross,
+    driverPlatformFeeAmount: payout.driverPlatformFeeAmount,
+    driverVatAmount: payout.driverVatAmount,
+  };
 };
 
 const captureAuthorizedBookingPayment = async (
@@ -653,7 +674,20 @@ const captureAuthorizedBookingPayment = async (
       throw new ApiError(httpStatus.BAD_REQUEST, 'Payment capture failed');
     }
 
-    const { platformCommission, providerEarning } = await getCommissionBreakdown(finalFare);
+    const passenger = await Passenger.findById(booking.passengerId).session(session);
+    if (!passenger) throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
+
+    const ride = booking.rideId
+      ? await Ride.findById(booking.rideId).session(session)
+      : null;
+    const rideType = (ride?.type || RIDE_TYPE.private) as 'private' | 'split';
+    const isMatchedSplit =
+      rideType === RIDE_TYPE.split && Number((passenger as any).surchargeAmount || 0) > 0;
+    const { platformCommission, providerEarning } = await getCommissionBreakdown(
+      finalFare,
+      rideType,
+      isMatchedSplit,
+    );
 
     payment.provider = new mongoose.Types.ObjectId(driverId) as any;
     payment.amount = finalFare;
@@ -670,16 +704,12 @@ const captureAuthorizedBookingPayment = async (
     booking.amountPaid = finalFare;
     await booking.save({ session });
 
-    const passenger = await Passenger.findById(booking.passengerId).session(session);
-    if (!passenger) throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
-
     await Passenger.findByIdAndUpdate(
       booking.passengerId,
       { paymentStatus: PAYMENT_STATUS.paid, paidAmount: finalFare },
       { session }
     );
 
-    const ride = await Ride.findById(booking.rideId).session(session);
     if (ride) {
       if (ride.type === RIDE_TYPE.split) {
         payment.providerEarning = 0;
@@ -814,12 +844,25 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       );
     }
 
-    // â”€â”€ 3. Calculate Commission â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const { platformCommission, providerEarning } = await getCommissionBreakdown(totalFare);
+    const ride = booking.rideId
+      ? await Ride.findById(booking.rideId).session(session)
+      : null;
+    const passenger = await Passenger.findById(booking.passengerId).session(session);
+    const rideType = (ride?.type || RIDE_TYPE.private) as 'private' | 'split';
+    const isMatchedSplit =
+      rideType === RIDE_TYPE.split && Number((passenger as any)?.surchargeAmount || 0) > 0;
+
+    const isMatchingPayment = !booking.driverId;
+
+    // Calculate driver-side commission estimate
+    const { platformCommission, providerEarning } = await getCommissionBreakdown(
+      totalFare,
+      rideType,
+      isMatchedSplit,
+    );
 
     const transactionId = generateTransactionId();
 
-    // â”€â”€ 4. Create Payment Record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const payment = await Payment.create(
       [
         {
@@ -833,39 +876,30 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
           providerEarning,
           status: PAYMENT_STATUS.paid,
           isPaid: true,
-          paymentIntentId: null as any, // No Stripe
+          paymentIntentId: null as any,
         },
       ],
       { session }
     );
 
-    // â”€â”€ 5. Deduct from User Wallet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     await User.findByIdAndUpdate(
       userId,
       { $inc: { wallet: -totalFare } },
       { session, returnDocument: 'after' }
     );
 
-    // â”€â”€ 6. Update Booking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     booking.paymentStatus = PAYMENT_STATUS.paid;
-    booking.bookingStatus = BOOKING_STATUS.accepted;
     booking.amountPaid = totalFare;
+    if (!isMatchingPayment) {
+      booking.bookingStatus = BOOKING_STATUS.accepted;
+    }
     await booking.save({ session });
 
-    // â”€â”€ 7. Credit Provider Wallet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const walletPaymentRide = booking.rideId
-      ? await Ride.findById(booking.rideId).session(session)
-      : null;
-    if (walletPaymentRide?.type === RIDE_TYPE.split) {
+    if (ride?.type === RIDE_TYPE.split) {
       payment[0].providerEarning = 0;
       await payment[0].save({ session });
     }
-    // Provider wallet is credited only after ride completion.
 
-    // â”€â”€ 8. Update Ride & Passenger (if needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const passenger = await Passenger.findById(booking.passengerId).session(
-      session
-    );
     if (passenger) {
       await Passenger.findByIdAndUpdate(
         booking.passengerId,
@@ -873,8 +907,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
         { session }
       );
 
-      const ride = await Ride.findById(booking.rideId).session(session);
-      if (ride) {
+      if (ride && !isMatchingPayment) {
         if (ride.type === RIDE_TYPE.split) {
           recalcRideId = ride._id.toString();
         }
@@ -883,8 +916,8 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
           ride._id,
           {
             $inc: {
-              bookedSeats:     passenger.requestedSeats  || 1,
-              malePassengers:  passenger.malePassengers  || 0,
+              bookedSeats: passenger.requestedSeats || 1,
+              malePassengers: passenger.malePassengers || 0,
               femalePassengers: passenger.femalePassengers || 0,
             },
           },
@@ -903,27 +936,32 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       }
     }
 
-    // â”€â”€ 9. Create Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const existingChat = await Chat.findOne({ booking: booking._id }).session(
-      session
-    );
-    if (!existingChat) {
-      await Chat.create(
-        [
-          {
-            booking: booking._id,
-            participants: [booking.userId, booking.driverId as any],
-            status: CHAT_STATUS.accepted,
-          },
-        ],
-        { session }
+    if (!isMatchingPayment) {
+      const existingChat = await Chat.findOne({ booking: booking._id }).session(
+        session
       );
+      if (!existingChat) {
+        await Chat.create(
+          [
+            {
+              booking: booking._id,
+              participants: [booking.userId, booking.driverId as any],
+              status: CHAT_STATUS.accepted,
+            },
+          ],
+          { session }
+        );
+      }
     }
 
-    /* ========= 6. Notifications ========= */
     if (user?.fcmToken) await paymentNotifyToUser('SUCCESS', payment[0], user);
 
     await session.commitTransaction();
+
+    let notifiedDrivers = 0;
+    if (isMatchingPayment) {
+      notifiedDrivers = await startRideMatchingAfterPayment(booking._id.toString());
+    }
 
     if (recalcRideId) {
       try {
@@ -935,9 +973,14 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
 
     return {
       success: true,
-      message: 'Payment successful via Wallet',
+      message: isMatchingPayment
+        ? notifiedDrivers > 0
+          ? `Payment successful via Wallet. ${notifiedDrivers} nearby driver(s) notified.`
+          : 'Payment successful via Wallet. We will keep looking for a driver.'
+        : 'Payment successful via Wallet',
       payment: payment[0],
       booking,
+      notifiedDrivers,
     };
   } catch (error: any) {
     await session.abortTransaction();
