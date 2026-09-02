@@ -21,6 +21,7 @@ export const buildStoredFareBreakdown = async (
     'fivePassengerExtraChargePercentage',
     'sixPassengerExtraChargePercentage',
     'splitRideMatchedSurchargePercent',
+    'fareRoundingBracket',
   ]);
 
   const vatPercentage = settingMap.get('platformVat') ?? 9;
@@ -28,6 +29,7 @@ export const buildStoredFareBreakdown = async (
   const baseFare = settingMap.get('baseFare') ?? 0;
   const defaultSplitRideMatchedSurchargePercent =
     settingMap.get('splitRideMatchedSurchargePercent') ?? 0;
+  const fareRoundingBracket = settingMap.get('fareRoundingBracket') ?? 5;
   const fivePassengerExtraChargePercentage =
     settingMap.get('fivePassengerExtraChargePercentage') ?? 0;
   const sixPassengerExtraChargePercentage =
@@ -76,6 +78,7 @@ export const buildStoredFareBreakdown = async (
     platformVatPercent: vatPercentage,
     platformCommissionPercent: platformCommissionPercentage,
     splitRideMatchedSurchargePercent: defaultSplitRideMatchedSurchargePercent,
+    fareRoundingBracket,
   });
 
   const splitRideMatchedSurchargePercent = isSplitRide

@@ -1,6 +1,15 @@
 export const roundMoney = (value: number): number =>
   Math.round(Number(value || 0) * 100) / 100;
 
+/** Round up to the next €5 (or configurable) bracket. */
+export const roundUpToFiveBracket = (
+  amount: number,
+  bracket = 5,
+): number => {
+  if (amount <= 0) return 0;
+  return Math.ceil(amount / bracket) * bracket;
+};
+
 /** Komistra amounts include VAT — extract for display only. */
 export const extractIncludedVat = (
   gross: number,
@@ -80,11 +89,15 @@ export interface PassengerFareTotalsInput {
   platformVatPercent: number;
   platformCommissionPercent: number;
   splitRideMatchedSurchargePercent: number;
+  /** Sum of all matched riders' komistra bases (split matched pool). */
+  poolKomistraBase?: number;
+  fareRoundingBracket?: number;
 }
 
 export interface PassengerFareTotals {
   actualFare: number;
   fareBeforeFees: number;
+  bracketRoundedFare: number;
   minimumFareAdjustment: number;
   minimumFareApplied: boolean;
   splitRideMatchedSurchargePercent: number;
@@ -112,44 +125,83 @@ export const buildPassengerFareTotals = (
     platformVatPercent,
     platformCommissionPercent,
     splitRideMatchedSurchargePercent,
+    poolKomistraBase,
+    fareRoundingBracket = 5,
   } = input;
 
   const isSplit = rideType === 'split';
   const isMatchedSplit = isSplit && Math.max(riderCount, 1) >= 2;
-  const { fareBeforeFees, minimumFareAdjustment, minimumFareApplied } =
-    applyMinimumFare(rawComponentFare, baseFare);
-
   const splitPercent = isSplit ? splitRideMatchedSurchargePercent : 0;
-  const splitRideMatchedSurchargeAmount = isMatchedSplit
-    ? roundMoney(fareBeforeFees * (splitRideMatchedSurchargePercent / 100))
-    : 0;
+  const actualFare = roundMoney(rawComponentFare);
 
-  const platformCommissionAmount = !isSplit
-    ? roundMoney(fareBeforeFees * (platformCommissionPercent / 100))
-    : 0;
+  let totalFare: number;
+  let fareBeforeFees: number;
+  let bracketRoundedFare: number;
+  let minimumFareAdjustment: number;
+  let minimumFareApplied: boolean;
+  let platformCommissionAmount = 0;
+  let splitRideMatchedSurchargeAmount = 0;
 
-  const totalFare = roundMoney(
-    fareBeforeFees + splitRideMatchedSurchargeAmount + platformCommissionAmount,
-  );
-  const vatAmount = extractIncludedVat(fareBeforeFees, platformVatPercent);
-  const netBeforeVat = roundMoney(fareBeforeFees - vatAmount);
+  if (isMatchedSplit) {
+    const poolBase = roundMoney(
+      poolKomistraBase ?? rawComponentFare * Math.max(riderCount, 1),
+    );
+    const poolWithSurcharge = roundMoney(
+      poolBase * (1 + splitRideMatchedSurchargePercent / 100),
+    );
+    splitRideMatchedSurchargeAmount = roundMoney(poolWithSurcharge - poolBase);
+    const perRiderBeforeBracket = roundMoney(poolWithSurcharge / riderCount);
+    bracketRoundedFare = roundUpToFiveBracket(
+      perRiderBeforeBracket,
+      fareRoundingBracket,
+    );
+    totalFare = Math.max(bracketRoundedFare, baseFare);
+    fareBeforeFees = roundMoney(poolBase / riderCount);
+    minimumFareApplied = totalFare > bracketRoundedFare;
+    minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);
+  } else if (isSplit) {
+    bracketRoundedFare = roundUpToFiveBracket(
+      rawComponentFare,
+      fareRoundingBracket,
+    );
+    totalFare = Math.max(bracketRoundedFare, baseFare);
+    fareBeforeFees = totalFare;
+    minimumFareApplied = totalFare > bracketRoundedFare;
+    minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);
+  } else {
+    platformCommissionAmount = roundMoney(
+      rawComponentFare * (platformCommissionPercent / 100),
+    );
+    const afterPmc = roundMoney(rawComponentFare + platformCommissionAmount);
+    bracketRoundedFare = roundUpToFiveBracket(afterPmc, fareRoundingBracket);
+    totalFare = Math.max(bracketRoundedFare, baseFare);
+    fareBeforeFees = actualFare;
+    minimumFareApplied = totalFare > bracketRoundedFare;
+    minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);
+  }
+
+  const vatAmount = extractIncludedVat(actualFare, platformVatPercent);
+  const netBeforeVat = roundMoney(actualFare - vatAmount);
 
   return {
-    actualFare: roundMoney(rawComponentFare),
+    actualFare,
     fareBeforeFees,
+    bracketRoundedFare,
     minimumFareAdjustment,
     minimumFareApplied,
     splitRideMatchedSurchargePercent: splitPercent,
     splitRideMatchedSurchargeAmount,
     splitSurchargePercent: splitPercent,
-    splitSurchargeAmount: splitRideMatchedSurchargeAmount,
+    splitSurchargeAmount: isMatchedSplit
+      ? roundMoney(splitRideMatchedSurchargeAmount / riderCount)
+      : splitRideMatchedSurchargeAmount,
     platformCommissionPercent: isSplit ? 0 : platformCommissionPercent,
     platformCommissionAmount,
-    platformVatPercent: platformVatPercent,
+    platformVatPercent,
     vatAmount,
     vatIncluded: true,
     netBeforeVat,
-    fareBeforePlatformCommission: fareBeforeFees,
+    fareBeforePlatformCommission: actualFare,
     totalFare,
   };
 };

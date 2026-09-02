@@ -7,7 +7,7 @@ import { Payment } from '../modules/payment/payment.model';
 import { PAYMENT_STATUS as PAYMENT_RECORD_STATUS } from '../modules/payment/payment.constant';
 import { User } from '../modules/user/user.model';
 import StripeService from '../config/stripe.config';
-import { isPublicHoliday, loadFareSettings } from './fareCalculator';
+import { calculateFareBreakdown, loadFareSettings } from './fareCalculator';
 import { buildPassengerFareTotals, roundMoney } from './fareMath.utils';
 import { getDepartureDateTime, getRefundRestrictionHours } from './rideSchedule.utils';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
@@ -21,6 +21,38 @@ import {
 
 const DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT = 30;
 
+export interface SplitPassengerFareOptions {
+  poolKomistraBase?: number;
+}
+
+export const computeSplitPoolKomistraBase = async (params: {
+  departureTime: string;
+  departureDate: Date;
+  passengers: Array<{
+    estimatedDistanceKm?: number;
+    requestedSeats?: number;
+    luggageCounts?: number;
+  }>;
+}): Promise<number> => {
+  let total = 0;
+
+  for (const passenger of params.passengers) {
+    const breakdown = await calculateFareBreakdown({
+      distanceKm: passenger.estimatedDistanceKm || 0,
+      departureDate: params.departureDate,
+      departureTime: params.departureTime,
+      luggageCount: passenger.luggageCounts || 0,
+      requestedSeats: passenger.requestedSeats || 1,
+      rideType: 'split',
+      waitingMinutes: 0,
+      activeRiderCount: 1,
+    });
+    total += breakdown.actualFare;
+  }
+
+  return roundMoney(total);
+};
+
 // Calculate single passenger fare for split ride
 export const calcSplitPassengerFare = async (
   distanceKm: number,
@@ -28,7 +60,8 @@ export const calcSplitPassengerFare = async (
   activeRiderCount: number,
   luggageCount: number,
   departureTime: string,
-  departureDate: Date
+  departureDate: Date,
+  options: SplitPassengerFareOptions = {},
 ): Promise<{
   initialCharge: number;
   totalKmCharge: number;
@@ -56,55 +89,54 @@ export const calcSplitPassengerFare = async (
   const matchedSurchargePercent = Number(
     (s as any).splitRideMatchedSurchargePercent ?? DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT,
   );
-
   const baseFare = roundMoney(Number(s.baseFare || 20));
-  const rideTotals = buildPassengerFareTotals({
+
+  const breakdown = await calculateFareBreakdown({
+    distanceKm,
+    departureDate,
+    departureTime,
+    luggageCount,
+    requestedSeats,
+    rideType: 'split',
+    waitingMinutes: 0,
+    activeRiderCount: 1,
+  });
+
+  const fareTotals = buildPassengerFareTotals({
     rideType: 'split',
     riderCount,
-    rawComponentFare: baseFare,
+    rawComponentFare: breakdown.actualFare,
     baseFare,
     platformVatPercent: Number(s.platformVat || 9),
     platformCommissionPercent: 0,
     splitRideMatchedSurchargePercent: matchedSurchargePercent,
+    poolKomistraBase: options.poolKomistraBase,
+    fareRoundingBracket: Number(s.fareRoundingBracket || 5),
   });
 
-  const perPassengerTotal =
-    riderCount >= 2
-      ? roundMoney(rideTotals.totalFare / riderCount)
-      : rideTotals.totalFare;
-  const perPassengerSurcharge =
-    riderCount >= 2
-      ? roundMoney(rideTotals.splitRideMatchedSurchargeAmount / riderCount)
-      : 0;
-  const perPassengerBase =
-    riderCount >= 2 ? roundMoney(baseFare / riderCount) : baseFare;
+  const perPassengerTotal = fareTotals.totalFare;
+  const perPassengerSurcharge = fareTotals.splitSurchargeAmount;
   const perPassengerVat =
     riderCount >= 2
-      ? roundMoney(rideTotals.vatAmount / riderCount)
-      : rideTotals.vatAmount;
-
-  void distanceKm;
-  void requestedSeats;
-  void luggageCount;
-  void departureTime;
-  void departureDate;
+      ? roundMoney(fareTotals.vatAmount / riderCount)
+      : fareTotals.vatAmount;
 
   return {
-    initialCharge: perPassengerBase,
-    totalKmCharge: 0,
-    luggageCharge: 0,
-    holidayTripCharge: 0,
+    initialCharge: breakdown.initialCharge,
+    totalKmCharge: breakdown.totalKmCharge,
+    luggageCharge: breakdown.luggageCharge,
+    holidayTripCharge: breakdown.holidaySurcharge,
     surchargePercent: riderCount >= 2 ? matchedSurchargePercent : 0,
     surchargeAmount: perPassengerSurcharge,
-    minimumFareApplied: rideTotals.minimumFareApplied,
+    minimumFareApplied: fareTotals.minimumFareApplied,
     minimumFareAmount: baseFare,
-    minimumFareAdjustment: rideTotals.minimumFareAdjustment,
+    minimumFareAdjustment: fareTotals.minimumFareAdjustment,
     splitSurchargePercent: riderCount >= 2 ? matchedSurchargePercent : 0,
     splitSurchargeAmount: perPassengerSurcharge,
     splitRideMatchedSurchargePercent: riderCount >= 2 ? matchedSurchargePercent : 0,
     splitRideMatchedSurchargeAmount: perPassengerSurcharge,
-    fareBeforePlatformCommission: perPassengerBase,
-    platformVatPercent: rideTotals.platformVatPercent,
+    fareBeforePlatformCommission: breakdown.actualFare,
+    platformVatPercent: fareTotals.platformVatPercent,
     vatAmount: perPassengerVat,
     platformCommissionPercent: 0,
     platformCommissionAmount: 0,
@@ -320,6 +352,19 @@ export const recalculateSplitFares = async (
       (ride as any).departureTime
     );
 
+    const poolKomistraBase =
+      activeRiderCount >= 2
+        ? await computeSplitPoolKomistraBase({
+            departureTime: (ride as any).departureTime,
+            departureDate: depDate,
+            passengers: activePassengers.map((passenger) => ({
+              estimatedDistanceKm: passenger.estimatedDistanceKm || 0,
+              requestedSeats: passenger.requestedSeats || 1,
+              luggageCounts: passenger.luggageCounts || 0,
+            })),
+          })
+        : undefined;
+
     for (const passenger of activePassengers) {
       const newFare = await calcSplitPassengerFare(
         passenger.estimatedDistanceKm || 0,
@@ -327,7 +372,8 @@ export const recalculateSplitFares = async (
         activeRiderCount,
         passenger.luggageCounts || 0,
         (ride as any).departureTime,
-        depDate
+        depDate,
+        poolKomistraBase !== undefined ? { poolKomistraBase } : {},
       );
 
       const oldFare = passenger.estimatedFare || 0;

@@ -27,6 +27,7 @@
   platformCommissionPercent: 10,
   driverPlatformFeePercent: 15,
   driverVatPercent: 19,
+  fareRoundingBracket: 5,
 
   supportContract: '+357XXXXXXXX',
   supportEmail: 'support@yourapp.com',
@@ -60,6 +61,7 @@ export const GENERAL_KEYS = [
   'platformCommissionPercent',
   'driverPlatformFeePercent',
   'driverVatPercent',
+  'fareRoundingBracket',
   'supportContract',
   'supportEmail',
 ] as const;

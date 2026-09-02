@@ -10,7 +10,7 @@ import { calculateDistance } from '../../../utils/location.utils';
 import { getFareType } from '../../../utils/time.utils';
 import { roundTo2 } from '../../../utils/number.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
-import { calcSplitPassengerFare } from '../../../utils/splitFare.utils';
+import { calcSplitPassengerFare, computeSplitPoolKomistraBase } from '../../../utils/splitFare.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { haversineMeters, isPointNearRoute } from '../../../utils/geo.utils';
@@ -249,13 +249,42 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     }
 
     const activeRidersAfterJoin = activeRidersBeforeJoin + 1;
+
+    let poolKomistraBase: number | undefined;
+    if (activeRidersAfterJoin >= 2) {
+      const existingActivePassengers = await Passenger.find({
+        rideId: selectedRide._id,
+        status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
+      })
+        .select('estimatedDistanceKm requestedSeats luggageCounts')
+        .lean();
+
+      poolKomistraBase = await computeSplitPoolKomistraBase({
+        departureTime,
+        departureDate: departureDateTime,
+        passengers: [
+          ...existingActivePassengers.map((passenger: any) => ({
+            estimatedDistanceKm: passenger.estimatedDistanceKm || 0,
+            requestedSeats: passenger.requestedSeats || 1,
+            luggageCounts: passenger.luggageCounts || 0,
+          })),
+          {
+            estimatedDistanceKm: actualDistance,
+            requestedSeats,
+            luggageCounts: luggageCounts || 0,
+          },
+        ],
+      });
+    }
+
     const fareBreakdown = await calcSplitPassengerFare(
       actualDistance,
       requestedSeats,
       activeRidersAfterJoin,
       luggageCounts || 0,
       departureTime,
-      departureDateTime
+      departureDateTime,
+      poolKomistraBase !== undefined ? { poolKomistraBase } : {},
     );
 
     const passenger = await Passenger.create({

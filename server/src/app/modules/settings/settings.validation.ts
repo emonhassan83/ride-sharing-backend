@@ -50,6 +50,7 @@ export const updateGeneralsZodSchema = z.object({
       platformCommissionPercent: z.number().optional(),
       driverPlatformFeePercent: z.number().optional(),
       driverVatPercent: z.number().optional(),
+      fareRoundingBracket: z.number().optional(),
       // platform info
       supportContract: z.string().optional(),
       supportEmail: z.string().email({ message: 'Invalid email' }).optional(),

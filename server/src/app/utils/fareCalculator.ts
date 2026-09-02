@@ -38,6 +38,7 @@ export interface FareBreakdown {
   platformCommissionPercent: number;
   platformCommission: number;
   platformCommissionAmount: number;
+  bracketRoundedFare: number;
   totalFare: number;
 }
 
@@ -58,6 +59,7 @@ interface FareSettings {
   splitRideMatchedSurchargePercent: number;
   driverPlatformFeePercent: number;
   driverVatPercent: number;
+  fareRoundingBracket: number;
 }
 
 const DEFAULTS: FareSettings = {
@@ -77,6 +79,7 @@ const DEFAULTS: FareSettings = {
   splitRideMatchedSurchargePercent: 30,
   driverPlatformFeePercent: 15,
   driverVatPercent: 19,
+  fareRoundingBracket: 5,
 };
 
 let holidaysCache: { [year: string]: string[] } = {};
@@ -139,6 +142,7 @@ export async function loadFareSettings(): Promise<FareSettings> {
     driverPlatformFeePercent:
       map.get('driverPlatformFeePercent') ?? DEFAULTS.driverPlatformFeePercent,
     driverVatPercent: map.get('driverVatPercent') ?? DEFAULTS.driverVatPercent,
+    fareRoundingBracket: map.get('fareRoundingBracket') ?? DEFAULTS.fareRoundingBracket,
   };
 }
 
@@ -166,24 +170,25 @@ export async function calculateFareBreakdown(params: {
   const settings = await loadFareSettings();
   const rates = getDayNightRates(departureTime, settings);
 
-  let subTotal = rates.initialCharge + roundMoney(distanceKm * rates.perKm);
+  const totalKmCharge = roundMoney(distanceKm * rates.perKm);
+  let regulatedBase = roundMoney(rates.initialCharge + totalKmCharge);
+
+  let waitingCharge = 0;
+  if (waitingMinutes > 0) {
+    waitingCharge = roundMoney((rates.waitingChargePerHour * waitingMinutes) / 60);
+    regulatedBase += waitingCharge;
+  }
+
+  let sixPassengerExtraCharge = 0;
+  if (requestedSeats === 6) {
+    const beforeMultiplier = regulatedBase;
+    const multiplier = 1 + settings.sixPassengerExtraChargePercentage / 100;
+    regulatedBase = roundMoney(regulatedBase * multiplier);
+    sixPassengerExtraCharge = roundMoney(regulatedBase - beforeMultiplier);
+  }
 
   const luggageCharge = roundMoney(luggageCount * settings.perLuggageCharge);
-  subTotal += luggageCharge;
-
-  let passengerCountExtra = 0;
-  if (rideType === 'private') {
-    if (requestedSeats === 5) {
-      passengerCountExtra = roundMoney(
-        subTotal * (settings.fivePassengerExtraChargePercentage / 100),
-      );
-    } else if (requestedSeats === 6) {
-      passengerCountExtra = roundMoney(
-        subTotal * (settings.sixPassengerExtraChargePercentage / 100),
-      );
-    }
-    subTotal += passengerCountExtra;
-  }
+  let subTotal = roundMoney(regulatedBase + luggageCharge);
 
   let holidaySurcharge = 0;
   const isHoliday = await isPublicHoliday(departureDate);
@@ -193,26 +198,11 @@ export async function calculateFareBreakdown(params: {
     subTotal += holidaySurcharge;
   }
 
-  let waitingCharge = 0;
-  if (waitingMinutes > 0) {
-    waitingCharge = roundMoney((rates.waitingChargePerHour * waitingMinutes) / 60);
-    subTotal += waitingCharge;
-  }
-
-  const totalKmCharge = roundMoney(distanceKm * rates.perKm);
-  const fivePassengerExtraCharge =
-    rideType === 'private' && requestedSeats === 5 ? passengerCountExtra : 0;
-  const sixPassengerExtraCharge =
-    rideType === 'private' && requestedSeats === 6 ? passengerCountExtra : 0;
+  const fivePassengerExtraCharge = 0;
+  const passengerCountExtra = sixPassengerExtraCharge;
 
   const rawComponentFare = roundMoney(
-    rates.initialCharge +
-      totalKmCharge +
-      luggageCharge +
-      holidaySurcharge +
-      waitingCharge +
-      fivePassengerExtraCharge +
-      sixPassengerExtraCharge,
+    regulatedBase + luggageCharge + holidaySurcharge,
   );
 
   const riderCount = Math.max(Number(activeRiderCount) || 1, 1);
@@ -224,6 +214,7 @@ export async function calculateFareBreakdown(params: {
     platformVatPercent: settings.platformVat,
     platformCommissionPercent: settings.platformCommissionPercent,
     splitRideMatchedSurchargePercent: settings.splitRideMatchedSurchargePercent,
+    fareRoundingBracket: settings.fareRoundingBracket,
   });
 
   return {
@@ -243,6 +234,7 @@ export async function calculateFareBreakdown(params: {
     baseFare: settings.baseFare,
     actualFare: fareTotals.actualFare,
     fareBeforeFees: fareTotals.fareBeforeFees,
+    bracketRoundedFare: fareTotals.bracketRoundedFare,
     vat: fareTotals.vatAmount,
     vatIncluded: fareTotals.vatIncluded,
     netBeforeVat: fareTotals.netBeforeVat,
