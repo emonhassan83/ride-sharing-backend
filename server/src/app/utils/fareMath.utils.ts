@@ -1,7 +1,7 @@
 export const roundMoney = (value: number): number =>
   Math.round(Number(value || 0) * 100) / 100;
 
-/** Round up to the next €5 (or configurable) bracket. */
+/** Round up to the next EUR 5 (or configurable) bracket. */
 export const roundUpToFiveBracket = (
   amount: number,
   bracket = 5,
@@ -10,7 +10,7 @@ export const roundUpToFiveBracket = (
   return Math.ceil(amount / bracket) * bracket;
 };
 
-/** Komistra amounts include VAT — extract for display only. */
+/** Komistra amounts include VAT; extract for display only. */
 export const extractIncludedVat = (
   gross: number,
   vatPercent = 9,
@@ -36,16 +36,16 @@ export const applyMinimumFare = (
   };
 };
 
-/** Day = 05:00–22:29, Night = 22:30–04:59 (Komistra PDF). */
+/** Day = 06:00-20:29, Night = 20:30-05:59 (official Cyprus tariff). */
 export const isDayFareTime = (departureTime: string): boolean => {
   const [hourStr, minuteStr = '0'] = departureTime.split(':');
   const totalMinutes = Number(hourStr) * 60 + Number(minuteStr);
-  return totalMinutes >= 300 && totalMinutes < 1350;
+  return totalMinutes >= 360 && totalMinutes < 1230;
 };
 
 export const isDayFareDateTime = (dateTime: Date): boolean => {
   const totalMinutes = dateTime.getHours() * 60 + dateTime.getMinutes();
-  return totalMinutes >= 300 && totalMinutes < 1350;
+  return totalMinutes >= 360 && totalMinutes < 1230;
 };
 
 export interface DayNightRateSettings {
@@ -139,7 +139,7 @@ export const buildPassengerFareTotals = (
   let bracketRoundedFare: number;
   let minimumFareAdjustment: number;
   let minimumFareApplied: boolean;
-  let platformCommissionAmount = 0;
+  const platformCommissionAmount = 0;
   let splitRideMatchedSurchargeAmount = 0;
 
   if (isMatchedSplit) {
@@ -169,11 +169,10 @@ export const buildPassengerFareTotals = (
     minimumFareApplied = totalFare > bracketRoundedFare;
     minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);
   } else {
-    platformCommissionAmount = roundMoney(
-      rawComponentFare * (platformCommissionPercent / 100),
+    bracketRoundedFare = roundUpToFiveBracket(
+      rawComponentFare,
+      fareRoundingBracket,
     );
-    const afterPmc = roundMoney(rawComponentFare + platformCommissionAmount);
-    bracketRoundedFare = roundUpToFiveBracket(afterPmc, fareRoundingBracket);
     totalFare = Math.max(bracketRoundedFare, baseFare);
     fareBeforeFees = actualFare;
     minimumFareApplied = totalFare > bracketRoundedFare;
@@ -195,7 +194,7 @@ export const buildPassengerFareTotals = (
     splitSurchargeAmount: isMatchedSplit
       ? roundMoney(splitRideMatchedSurchargeAmount / riderCount)
       : splitRideMatchedSurchargeAmount,
-    platformCommissionPercent: isSplit ? 0 : platformCommissionPercent,
+    platformCommissionPercent: 0,
     platformCommissionAmount,
     platformVatPercent,
     vatAmount,
@@ -293,10 +292,5 @@ export const reversePassengerTotalToBase = (params: {
   if (isMatchedSplit) {
     return roundMoney(total / (1 + splitRideMatchedSurchargePercent / 100));
   }
-
-  if (rideType === 'private') {
-    return roundMoney(total / (1 + platformCommissionPercent / 100));
-  }
-
   return total;
 };

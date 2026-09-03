@@ -187,23 +187,14 @@ export async function calculateFareBreakdown(params: {
     sixPassengerExtraCharge = roundMoney(regulatedBase - beforeMultiplier);
   }
 
-  const luggageCharge = roundMoney(luggageCount * settings.perLuggageCharge);
-  let subTotal = roundMoney(regulatedBase + luggageCharge);
-
-  let holidaySurcharge = 0;
-  const isHoliday = await isPublicHoliday(departureDate);
-
-  if (isHoliday) {
-    holidaySurcharge = roundMoney(subTotal * (settings.holidayIncreasePercentage / 100));
-    subTotal += holidaySurcharge;
-  }
+  // Client confirmed luggage and holiday extras should be ignored for now.
+  const luggageCharge = 0;
+  const holidaySurcharge = 0;
 
   const fivePassengerExtraCharge = 0;
   const passengerCountExtra = sixPassengerExtraCharge;
 
-  const rawComponentFare = roundMoney(
-    regulatedBase + luggageCharge + holidaySurcharge,
-  );
+  const rawComponentFare = roundMoney(regulatedBase);
 
   const riderCount = Math.max(Number(activeRiderCount) || 1, 1);
   const fareTotals = buildPassengerFareTotals({

@@ -38,8 +38,8 @@ export const buildStoredFareBreakdown = async (
   const initialCharge = roundMoney(passenger?.initialCharge);
   const perKmCharge = roundMoney(passenger?.perKmCharge);
   const totalKmCharge = roundMoney(passenger?.totalKmCharge);
-  const luggageCharge = roundMoney(passenger?.luggageCharge);
-  const holidaySurcharge = roundMoney(passenger?.holidayTripCharge);
+  const luggageCharge = 0;
+  const holidaySurcharge = 0;
   const waitingCharge = roundMoney(passenger?.waitingCharge);
   const fivePassengerExtraCharge = roundMoney(passenger?.fivePassengerCharge || 0);
   const sixPassengerExtraCharge = roundMoney(passenger?.sixPassengerCharge || 0);
@@ -130,8 +130,8 @@ export const buildStoredFareBreakdown = async (
     vatAmount,
     netBeforeVat: fareTotals.netBeforeVat,
 
-    platformCommissionPercentage: isSplitRide ? 0 : platformCommissionPercentage,
-    platformCommissionPercent: isSplitRide ? 0 : platformCommissionPercentage,
+    platformCommissionPercentage: fareTotals.platformCommissionPercent,
+    platformCommissionPercent: fareTotals.platformCommissionPercent,
     platformCommissionAmount,
     platformCommission: platformCommissionAmount,
 
