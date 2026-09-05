@@ -157,8 +157,10 @@ export const buildPassengerFareTotals = (
     );
     totalFare = Math.max(bracketRoundedFare, baseFare);
     fareBeforeFees = roundMoney(poolBase / riderCount);
-    minimumFareApplied = totalFare > bracketRoundedFare;
-    minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);
+    minimumFareApplied = totalFare > actualFare;
+    minimumFareAdjustment = minimumFareApplied
+      ? roundMoney(totalFare - actualFare)
+      : 0;
   } else if (isSplit) {
     bracketRoundedFare = roundUpToFiveBracket(
       rawComponentFare,
@@ -166,8 +168,10 @@ export const buildPassengerFareTotals = (
     );
     totalFare = Math.max(bracketRoundedFare, baseFare);
     fareBeforeFees = totalFare;
-    minimumFareApplied = totalFare > bracketRoundedFare;
-    minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);
+    minimumFareApplied = totalFare > actualFare;
+    minimumFareAdjustment = minimumFareApplied
+      ? roundMoney(totalFare - actualFare)
+      : 0;
   } else {
     bracketRoundedFare = roundUpToFiveBracket(
       rawComponentFare,
@@ -175,8 +179,10 @@ export const buildPassengerFareTotals = (
     );
     totalFare = Math.max(bracketRoundedFare, baseFare);
     fareBeforeFees = actualFare;
-    minimumFareApplied = totalFare > bracketRoundedFare;
-    minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);
+    minimumFareApplied = totalFare > actualFare;
+    minimumFareAdjustment = minimumFareApplied
+      ? roundMoney(totalFare - actualFare)
+      : 0;
   }
 
   const vatAmount = extractIncludedVat(actualFare, platformVatPercent);
