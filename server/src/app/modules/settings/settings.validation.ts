@@ -23,6 +23,7 @@ export const updateGeneralsZodSchema = z.object({
       // Access & validation ride
       bookingMaxDaysAhead: z.number().optional(),
       splitRideMinBookingHours: z.number().optional(),
+      splitRideMinDistanceKm: z.number().optional(),
       splitRideRefundRestrictionHours: z.number().optional(),
       privateRideMinBookingHours: z.number().optional(),
       privateRideRefundRestrictionHours: z.number().optional(),

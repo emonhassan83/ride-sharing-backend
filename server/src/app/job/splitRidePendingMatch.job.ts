@@ -19,10 +19,14 @@ import { RIDE_STATUS, RIDE_TYPE } from '../modules/ride/ride.constant';
 import { Ride } from '../modules/ride/ride.model';
 import { User } from '../modules/user/user.model';
 import { haversineMeters, isPointNearRoute } from '../utils/geo.utils';
-import { notifyNearbyDriversForSplitRide } from '../utils/notifyDrivers.utils';
-import { getDepartureDateTime, getRefundRestrictionHours } from '../utils/rideSchedule.utils';
+import { notifyNearbyDrivers, notifyNearbyDriversForSplitRide } from '../utils/notifyDrivers.utils';
+import {
+  getDepartureDateTime,
+  getMatchingLastNotifyHours,
+} from '../utils/rideSchedule.utils';
 import { refundToWallet, recalculateSplitFares } from '../utils/splitFare.utils';
 import { sendNotification } from '../utils/sentPushNotification';
+import { getRouteGeometry } from '../utils/maps.utils';
 
 const BATCH_SIZE = 25;
 const stripe = new Stripe(config.pay?.secretKey as string, {
@@ -256,10 +260,131 @@ const notifyMatchedRideDriver = async (ride: any, passenger: any, booking: any) 
   );
 };
 
+const releaseUnmatchedSplitToSolo = async (passenger: any) => {
+  const io = getIO();
+  const redis = getRedisClient();
+
+  const booking = await Booking.findOne({ passengerId: passenger._id });
+  if (!booking) {
+    await cancelUnmatchedSplitPassenger(passenger, 'solo_fallback_missing_booking');
+    return;
+  }
+
+  const pickupCoords = passenger.pickup?.coordinates || [];
+  const destinationCoords = passenger.destination?.coordinates || [];
+  if (pickupCoords.length < 2 || destinationCoords.length < 2) {
+    await cancelUnmatchedSplitPassenger(passenger, 'solo_fallback_invalid_route');
+    return;
+  }
+
+  let routeGeometry: any = {};
+  try {
+    routeGeometry = await getRouteGeometry(
+      { lat: pickupCoords[1], lng: pickupCoords[0] },
+      { lat: destinationCoords[1], lng: destinationCoords[0] },
+    );
+  } catch {
+    /* optional for matching */
+  }
+
+  const ride = await Ride.create({
+    type: RIDE_TYPE.private,
+    rideCreatedBy: passenger.userId,
+    pickup: passenger.pickup,
+    destination: passenger.destination,
+    departureDate: passenger.departureDate,
+    departureTime: passenger.departureTime,
+    totalSeats: 0,
+    bookedSeats: 0,
+    status: RIDE_STATUS.pending,
+    routeGeometry,
+  });
+
+  const attachedPassenger = await Passenger.findOneAndUpdate(
+    { _id: passenger._id, status: PASSENGER_STATUS.split_matching, rideId: null },
+    {
+      rideId: ride._id,
+      status: PASSENGER_STATUS.pending,
+      cancellationReason: undefined,
+    },
+    { returnDocument: 'after' },
+  );
+
+  if (!attachedPassenger) {
+    await Ride.findByIdAndDelete(ride._id);
+    return;
+  }
+
+  booking.rideId = ride._id as any;
+  booking.driverId = null as any;
+  await booking.save();
+
+  await redis.del(`split:matching:passenger:${passenger._id}`);
+
+  const rider = await User.findById(passenger.userId)
+    .select('_id name profileImage')
+    .lean();
+
+  const ridePayload = {
+    _id: attachedPassenger._id,
+    userId: {
+      _id: rider?._id || null,
+      name: rider?.name || '',
+      profileImage: rider?.profileImage || null,
+    },
+    rideId: {
+      _id: ride._id,
+      type: ride.type,
+      id: (ride as any).id || '',
+    },
+    bookingId: booking._id.toString(),
+    pickup: attachedPassenger.pickup,
+    destination: attachedPassenger.destination,
+    departureDate: ride.departureDate,
+    departureTime: ride.departureTime,
+    rideType: ride.type,
+    requestedSeats: attachedPassenger.requestedSeats || 1,
+    estimatedFare: attachedPassenger.estimatedFare || booking.totalFare || 0,
+    estimatedDistanceKm: attachedPassenger.estimatedDistanceKm || 0,
+    estimatedDurationMinutes: attachedPassenger.estimatedDurationMinutes || 0,
+    status: PASSENGER_STATUS.pending,
+    createdAt: attachedPassenger.createdAt,
+  };
+
+  const notified = await notifyNearbyDrivers(
+    ride._id.toString(),
+    { lat: pickupCoords[1], lng: pickupCoords[0] },
+    ridePayload,
+    redis,
+    io,
+    attachedPassenger._id.toString(),
+    10,
+    undefined,
+    { notifyMode: 'all_eligible' },
+  );
+
+  await redis.hset(`ride:request:${ride._id}`, {
+    bookingId: booking._id.toString(),
+    passengerId: attachedPassenger._id.toString(),
+    notifiedCount: notified.toString(),
+    matchingStatus: notified > 0 ? 'notified' : 'scheduled_pending',
+    lastNotifiedAt: notified > 0 ? Date.now().toString() : '',
+  });
+  await redis.zadd(
+    'ride:matching:queue',
+    new Date(`${ride.departureDate}T${ride.departureTime}:00`).getTime(),
+    ride._id.toString(),
+  );
+
+  console.log(
+    `✅ Split unmatched released as Solo | passenger: ${passenger._id} | ride: ${ride._id} | drivers: ${notified}`,
+  );
+};
+
 export const checkSplitRidePendingMatches = async () => {
   const redis = getRedisClient();
   const now = new Date();
-  const refundRestrictionHours = await getRefundRestrictionHours(RIDE_TYPE.split);
+  const releaseHours = await getMatchingLastNotifyHours();
 
   const passengers = await Passenger.find({
     status: PASSENGER_STATUS.split_matching,
@@ -313,16 +438,24 @@ export const checkSplitRidePendingMatches = async () => {
         continue;
       }
 
-      if (hoursUntilDeparture <= refundRestrictionHours) {
-        await cancelUnmatchedSplitPassenger(passenger);
-      } else {
-        await redis.hset(`split:matching:passenger:${passenger._id}`, {
-          passengerId: passenger._id.toString(),
-          userId: passenger.userId.toString(),
-          matchingStatus: 'searching_existing_split_ride',
-          lastCheckedAt: Date.now().toString(),
-        });
+      // Past pickup with no match → cancel authorization.
+      if (hoursUntilDeparture < 0) {
+        await cancelUnmatchedSplitPassenger(passenger, 'departure_passed_unmatched');
+        continue;
       }
+
+      // Client rule: 1h before pickup, release unmatched backlog to drivers as Solo.
+      if (hoursUntilDeparture <= releaseHours) {
+        await releaseUnmatchedSplitToSolo(passenger);
+        continue;
+      }
+
+      await redis.hset(`split:matching:passenger:${passenger._id}`, {
+        passengerId: passenger._id.toString(),
+        userId: passenger.userId.toString(),
+        matchingStatus: 'searching_existing_split_ride',
+        lastCheckedAt: Date.now().toString(),
+      });
     } catch (error) {
       console.error('Split ride pending match job error:', error);
     }

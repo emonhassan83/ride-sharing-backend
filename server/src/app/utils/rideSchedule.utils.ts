@@ -4,10 +4,12 @@ import { Setting } from '../modules/settings/settings.model';
 
 export type RideScheduleType = 'private' | 'split';
 
-export const DEFAULT_SPLIT_MIN_BOOKING_HOURS = 24;
+export const DEFAULT_SPLIT_MIN_BOOKING_HOURS = 3;
 export const DEFAULT_PRIVATE_MIN_BOOKING_HOURS = 1;
+export const DEFAULT_SPLIT_MIN_DISTANCE_KM = 20;
 export const DEFAULT_SPLIT_REFUND_RESTRICTION_HOURS = 24;
 export const DEFAULT_PRIVATE_REFUND_RESTRICTION_HOURS = 1;
+export const DEFAULT_MATCHING_LAST_NOTIFY_HOURS = 1;
 
 export const getDepartureDateTime = (
   departureDate: string,
@@ -61,9 +63,49 @@ export const getMinBookingLeadHours = async (
   rideType: string
 ): Promise<number> => {
   const normalized = normalizeRideType(rideType);
-  return normalized === 'split'
-    ? getNumericSetting('splitRideMinBookingHours', DEFAULT_SPLIT_MIN_BOOKING_HOURS)
-    : getNumericSetting('privateRideMinBookingHours', DEFAULT_PRIVATE_MIN_BOOKING_HOURS);
+  if (normalized === 'split') {
+    const value = await getNumericSetting(
+      'splitRideMinBookingHours',
+      DEFAULT_SPLIT_MIN_BOOKING_HOURS,
+    );
+    // Migrate legacy default (24h) to client-required 3h.
+    if (value === 24) {
+      await Setting.findOneAndUpdate(
+        { key: 'splitRideMinBookingHours' },
+        { $set: { value: DEFAULT_SPLIT_MIN_BOOKING_HOURS } },
+        { upsert: true },
+      );
+      return DEFAULT_SPLIT_MIN_BOOKING_HOURS;
+    }
+    return value;
+  }
+
+  return getNumericSetting(
+    'privateRideMinBookingHours',
+    DEFAULT_PRIVATE_MIN_BOOKING_HOURS,
+  );
+};
+
+export const getSplitMinDistanceKm = async (): Promise<number> =>
+  getNumericSetting('splitRideMinDistanceKm', DEFAULT_SPLIT_MIN_DISTANCE_KM);
+
+export const getMatchingLastNotifyHours = async (): Promise<number> =>
+  getNumericSetting('matchingLastNotifyHours', DEFAULT_MATCHING_LAST_NOTIFY_HOURS);
+
+export const assertSplitMinimumDistance = async (
+  distanceKm: number
+): Promise<number> => {
+  const minDistanceKm = await getSplitMinDistanceKm();
+  const distance = Number(distanceKm) || 0;
+
+  if (distance < minDistanceKm) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      `Split ride requires a minimum route distance of ${minDistanceKm} km.`
+    );
+  }
+
+  return minDistanceKm;
 };
 
 export const getRefundRestrictionHours = async (

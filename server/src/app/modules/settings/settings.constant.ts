@@ -1,6 +1,7 @@
 ﻿export const DEFAULT_GENERAL_SETTINGS = {
   bookingMaxDaysAhead: 30,
-  splitRideMinBookingHours: 24,
+  splitRideMinBookingHours: 3,
+  splitRideMinDistanceKm: 20,
   splitRideRefundRestrictionHours: 24,
   privateRideMinBookingHours: 1,
   privateRideRefundRestrictionHours: 1,
@@ -18,7 +19,7 @@
   nightFarePerKMRate: 1.1,
   nightFareWaitingCharge: 19,
   holidayIncreasePercentage: 20,
-  perLuggageCharge: 2,
+  perLuggageCharge: 1.4,
   fivePassengerExtraChargePercentage: 20,
   sixPassengerExtraChargePercentage: 40,
   baseFare: 20,
@@ -36,6 +37,7 @@
 export const GENERAL_KEYS = [
   'bookingMaxDaysAhead',
   'splitRideMinBookingHours',
+  'splitRideMinDistanceKm',
   'splitRideRefundRestrictionHours',
   'privateRideMinBookingHours',
   'privateRideRefundRestrictionHours',

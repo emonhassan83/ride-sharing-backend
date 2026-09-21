@@ -36,16 +36,30 @@ export const applyMinimumFare = (
   };
 };
 
-/** Day = 06:00-20:29, Night = 20:30-05:59 (official Cyprus tariff). */
+/** Day = 06:00:00–20:29:59, Night = 20:30:00–05:59:59 (second-level). */
+const toDaySeconds = (
+  hour: number,
+  minute = 0,
+  second = 0,
+): number => hour * 3600 + minute * 60 + second;
+
 export const isDayFareTime = (departureTime: string): boolean => {
-  const [hourStr, minuteStr = '0'] = departureTime.split(':');
-  const totalMinutes = Number(hourStr) * 60 + Number(minuteStr);
-  return totalMinutes >= 360 && totalMinutes < 1230;
+  const [hourStr, minuteStr = '0', secondStr = '0'] = departureTime.split(':');
+  const totalSeconds = toDaySeconds(
+    Number(hourStr),
+    Number(minuteStr),
+    Number(secondStr),
+  );
+  // Day: >= 06:00:00 and < 20:30:00
+  return totalSeconds >= 6 * 3600 && totalSeconds < 20 * 3600 + 30 * 60;
 };
 
 export const isDayFareDateTime = (dateTime: Date): boolean => {
-  const totalMinutes = dateTime.getHours() * 60 + dateTime.getMinutes();
-  return totalMinutes >= 360 && totalMinutes < 1230;
+  const totalSeconds =
+    dateTime.getHours() * 3600 +
+    dateTime.getMinutes() * 60 +
+    dateTime.getSeconds();
+  return totalSeconds >= 6 * 3600 && totalSeconds < 20 * 3600 + 30 * 60;
 };
 
 export interface DayNightRateSettings {

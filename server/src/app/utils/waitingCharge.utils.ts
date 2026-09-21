@@ -2,6 +2,7 @@
 import StripeService from '../config/stripe.config';
 import { User } from '../modules/user/user.model';
 import { Setting } from '../modules/settings/settings.model';
+import { isDayFareTime } from './fareMath.utils';
 
 // ✅ Hourly rate থেকে per-minute rate বের করো
 export const getWaitingRatePerMinute = async (isNight = false): Promise<number> => {
@@ -15,11 +16,9 @@ export const getWaitingRatePerMinute = async (isNight = false): Promise<number> 
   return Math.round((hourlyRate / 60) * 10000) / 10000;
 };
 
-// ✅ Departure time থেকে day/night detect করো
-export const isNightFare = (departureTime: string): boolean => {
-  const [hour] = departureTime.split(':').map(Number);
-  return hour >= 20 || hour < 6;
-};
+/** Night = 20:30:00–05:59:59 (aligned with official fare windows). */
+export const isNightFare = (departureTime: string): boolean =>
+  !isDayFareTime(departureTime);
 
 export const calculateWaitingCharge = (
   waitingStartedAt: Date,

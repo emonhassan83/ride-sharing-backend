@@ -45,6 +45,26 @@ const getSettingGenerals = async () => {
     inserted.forEach((setting) => byKey.set(setting.key, setting));
   }
 
+  // Migrate outdated client-required split booking defaults.
+  const splitLead = byKey.get('splitRideMinBookingHours');
+  if (!splitLead || Number(splitLead.value) === 24) {
+    const updated = await Setting.findOneAndUpdate(
+      { key: 'splitRideMinBookingHours' },
+      { $set: { key: 'splitRideMinBookingHours', value: 3 } },
+      { upsert: true, returnDocument: 'after' },
+    ).select('-__v').lean();
+    if (updated) byKey.set('splitRideMinBookingHours', updated);
+  }
+
+  if (!byKey.get('splitRideMinDistanceKm')) {
+    const updated = await Setting.findOneAndUpdate(
+      { key: 'splitRideMinDistanceKm' },
+      { $setOnInsert: { key: 'splitRideMinDistanceKm', value: 20 } },
+      { upsert: true, returnDocument: 'after' },
+    ).select('-__v').lean();
+    if (updated) byKey.set('splitRideMinDistanceKm', updated);
+  }
+
   return GENERAL_KEYS.map((key) => {
     const existing = byKey.get(key);
     if (existing) return existing;

@@ -2,6 +2,6 @@
 import { isDayFareDateTime } from './fareMath.utils';
 
 export function getFareType(departureDateTime: Date): 'day' | 'night' {
-  // Day = 05:00–22:29, Night = 22:30–04:59 (Komistra PDF)
+  // Day = 06:00:00–20:29:59, Night = 20:30:00–05:59:59
   return isDayFareDateTime(departureDateTime) ? 'day' : 'night';
 }

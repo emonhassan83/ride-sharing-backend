@@ -69,7 +69,7 @@ const DEFAULTS: FareSettings = {
   nightFareInitialCharge: 4.8,
   nightFarePerKMRate: 1.1,
   nightFareWaitingCharge: 19.0,
-  perLuggageCharge: 2.0,
+  perLuggageCharge: 1.4,
   holidayIncreasePercentage: 20,
   fivePassengerExtraChargePercentage: 20,
   sixPassengerExtraChargePercentage: 40,

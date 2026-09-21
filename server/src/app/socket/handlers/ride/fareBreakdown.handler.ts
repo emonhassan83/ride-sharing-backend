@@ -5,6 +5,8 @@ import { roundObjectNumbers, roundTo2 } from '../../../utils/number.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
+import { assertSplitMinimumDistance } from '../../../utils/rideSchedule.utils';
+import { RIDE_TYPE } from '../../../modules/ride/ride.constant';
 
 export const fareBreakdownHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -48,6 +50,10 @@ export const fareBreakdownHandler = eventHandler<any>(
       );
       actualDuration = Math.ceil((actualDistance / 30) * 60);
       console.warn('âš ï¸ Google Maps failed â€” using Haversine fallback');
+    }
+
+    if (type === RIDE_TYPE.split) {
+      await assertSplitMinimumDistance(actualDistance);
     }
 
     // â”€â”€ Fare breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

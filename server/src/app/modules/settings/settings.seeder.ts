@@ -26,6 +26,32 @@ const settingSeeder = async () => {
   }));
 
   await Setting.bulkWrite(bulkOps);
+
+  // Client-required split booking defaults (force-update known outdated values).
+  await Setting.bulkWrite([
+    {
+      updateOne: {
+        filter: { key: 'splitRideMinBookingHours' },
+        update: { $set: { key: 'splitRideMinBookingHours', value: 3 } },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
+        filter: { key: 'splitRideMinDistanceKm' },
+        update: { $set: { key: 'splitRideMinDistanceKm', value: 20 } },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
+        filter: { key: 'perLuggageCharge' },
+        update: { $set: { key: 'perLuggageCharge', value: 1.4 } },
+        upsert: true,
+      },
+    },
+  ]);
+
   console.log('✅ Settings seeded successfully');
 };
 

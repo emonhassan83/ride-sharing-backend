@@ -14,7 +14,7 @@ import { calcSplitPassengerFare, computeSplitPoolKomistraBase } from '../../../u
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { haversineMeters, isPointNearRoute } from '../../../utils/geo.utils';
-import { assertMinimumBookingLeadTime } from '../../../utils/rideSchedule.utils';
+import { assertMinimumBookingLeadTime, assertSplitMinimumDistance } from '../../../utils/rideSchedule.utils';
 
 export const joinSplitRideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -104,6 +104,8 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       );
       actualDuration = Math.ceil((actualDistance / 30) * 60);
     }
+
+    await assertSplitMinimumDistance(actualDistance);
 
     const fareType = getFareType(departureDateTime);
     const redis = getRedisClient();

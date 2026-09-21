@@ -24,7 +24,7 @@ import { sendNotification } from '../../utils/sentPushNotification';
 import { modeType } from '../notification/notification.interface';
 import { getRedisClient } from '../../config/redis.config';
 import { recalculateSplitFares } from '../../utils/splitFare.utils';
-import { assertMinimumBookingLeadTime, getDepartureDateTime } from '../../utils/rideSchedule.utils';
+import { assertMinimumBookingLeadTime, assertSplitMinimumDistance, getDepartureDateTime } from '../../utils/rideSchedule.utils';
 import { loadFareSettings } from '../../utils/fareCalculator';
 import {
   computeDriverPayoutFromPassengerTotal,
@@ -205,6 +205,10 @@ const createPaymentIntent = async (payload: {
     scheduleSource.departureTime,
     rideTypeForSchedule
   );
+
+  if (rideTypeForSchedule === RIDE_TYPE.split) {
+    await assertSplitMinimumDistance(Number((passenger as any).estimatedDistanceKm || 0));
+  }
 
   // ── 2. Validate user ──────────────────────────────────────────────────────
   const user = await User.findById(userId);
