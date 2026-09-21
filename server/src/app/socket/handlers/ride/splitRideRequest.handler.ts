@@ -12,9 +12,13 @@ import { roundTo2 } from '../../../utils/number.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { calcSplitPassengerFare, computeSplitPoolKomistraBase, getSplitMaxMatchedRiders } from '../../../utils/splitFare.utils';
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
+import {
+  findEligibleExistingSplitRide,
+  isRequestEligibleForSplitRide,
+  requestToMatchCandidate,
+} from '../../../utils/splitMatching.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
-import { haversineMeters, isPointNearRoute } from '../../../utils/geo.utils';
 import { assertMinimumBookingLeadTime, assertSplitMinimumDistance } from '../../../utils/rideSchedule.utils';
 
 export const joinSplitRideRequestHandler = eventHandler<any>(
@@ -29,6 +33,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       departureTime,
       luggageCounts,
       note,
+      rideId: requestedRideId,
     } = data;
     const userId = socket.auth?._id?.toString();
 
@@ -47,46 +52,11 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       RIDE_TYPE.split
     );
 
-    const nearbySplitRides = await Ride.find({
-      type: RIDE_TYPE.split,
-      splitFareLocked: { $ne: true },
-      status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
+    const matchRequest = requestToMatchCandidate({
+      pickup: { lat: pickup.lat, lng: pickup.lng },
+      destination: { lat: destination.lat, lng: destination.lng },
       departureDate,
-      $or: [
-        { totalSeats: 0 },
-        { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },
-      ],
-    })
-      .sort({ driverId: -1, createdAt: 1 })
-      .lean();
-
-    const matchingRides = nearbySplitRides.filter((ride) => {
-      if ((ride as any).splitFareLocked) return false;
-      const coords = (ride as any).routeGeometry?.coordinates;
-      if (!coords?.length) return false;
-
-      if (!isPointNearRoute(pickup.lat, pickup.lng, coords)) return false;
-      if (!isPointNearRoute(destination.lat, destination.lng, coords)) return false;
-
-      let pickupIdx = -1;
-      let destIdx = -1;
-      let pickupDist = Infinity;
-      let destDist = Infinity;
-
-      coords.forEach(([lng, lat]: [number, number], index: number) => {
-        const pd = haversineMeters(pickup.lat, pickup.lng, lat, lng);
-        const dd = haversineMeters(destination.lat, destination.lng, lat, lng);
-        if (pd < pickupDist) {
-          pickupDist = pd;
-          pickupIdx = index;
-        }
-        if (dd < destDist) {
-          destDist = dd;
-          destIdx = index;
-        }
-      });
-
-      return destIdx > pickupIdx;
+      departureTime,
     });
 
     let actualDistance = 0;
@@ -114,44 +84,78 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     let activeSeatsBeforeJoin = 0;
     let activeRidersBeforeJoin = 0;
 
-    for (const ride of matchingRides) {
+    // Manual select: join a specific ride from "Find your Split Ride".
+    if (requestedRideId) {
+      const targetRide = await Ride.findOne({
+        _id: requestedRideId,
+        type: RIDE_TYPE.split,
+        splitFareLocked: { $ne: true },
+        status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
+      }).lean();
+
+      if (!targetRide) {
+        return callback?.({
+          success: false,
+          message: 'Selected split ride was not found or is no longer available.',
+        });
+      }
+
+      const eligibility = await isRequestEligibleForSplitRide(matchRequest, targetRide, {
+        requirePaidBooking: true,
+        requestedSeats,
+      });
+
+      if (!eligibility.ok) {
+        return callback?.({
+          success: false,
+          message:
+            'Selected split ride does not meet matching rules (pickup/destination radius, time window, seats, or capacity).',
+          data: { reason: eligibility.reason },
+        });
+      }
+
       const alreadyJoined = await Passenger.findOne({
-        rideId: ride._id,
+        rideId: targetRide._id,
         userId,
         status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
       }).lean();
-      if (alreadyJoined) continue;
+      if (alreadyJoined) {
+        return callback?.({
+          success: false,
+          message: 'You already have an active request on this split ride.',
+        });
+      }
 
-      const existingActivePassengers = await Passenger.find({
-        rideId: ride._id,
-        status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
+      selectedRide = targetRide;
+      activeSeatsBeforeJoin = eligibility.usedSeats;
+      activeRidersBeforeJoin = eligibility.activePassengers.length;
+    } else {
+      const nearbySplitRides = await Ride.find({
+        type: RIDE_TYPE.split,
+        splitFareLocked: { $ne: true },
+        status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
+        departureDate,
+        $or: [
+          { totalSeats: 0 },
+          { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },
+        ],
       })
-        .select('requestedSeats')
+        .sort({ driverId: -1, createdAt: 1 })
         .lean();
 
-      const usedSeats = existingActivePassengers.reduce(
-        (sum, passenger: any) => sum + (passenger.requestedSeats || 1),
-        0
-      );
-
-      if (ride.totalSeats && usedSeats + requestedSeats > ride.totalSeats) continue;
-
-      const maxMatchedRiders = await getSplitMaxMatchedRiders();
-      if (existingActivePassengers.length >= maxMatchedRiders) continue;
-
-      const hasPaidBooking = await Booking.exists({
-        rideId: ride._id,
-        paymentStatus: {
-          $in: [BOOKING_PAYMENT_STATUS.authorized, BOOKING_PAYMENT_STATUS.paid],
-        },
+      const auto = await findEligibleExistingSplitRide(matchRequest, nearbySplitRides, {
+        requirePaidBooking: true,
+        requestedSeats,
+        userId,
       });
-      if (!hasPaidBooking) continue;
 
-      selectedRide = ride;
-      activeSeatsBeforeJoin = usedSeats;
-      activeRidersBeforeJoin = existingActivePassengers.length;
-      break;
+      if (auto) {
+        selectedRide = auto.ride;
+        activeSeatsBeforeJoin = auto.usedSeats;
+        activeRidersBeforeJoin = auto.activePassengers.length;
+      }
     }
+
     if (!selectedRide) {
       const fareBreakdown = await calcSplitPassengerFare(
         actualDistance,
@@ -189,6 +193,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         luggageCounts: luggageCounts || 0,
         note: note ?? '',
         status: PASSENGER_STATUS.split_matching,
+        originalRideIntent: 'split',
       });
 
       const booking = await Booking.create({
@@ -239,7 +244,8 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
 
       return callback?.({
         success: true,
-        message: 'No existing split ride found yet. Please complete payment; we will keep matching until the refund restriction window.',
+        message:
+          'No matching split ride found yet. Complete payment; we will keep matching peers until the 1h Solo fallback.',
         data: {
           rideId: null,
           passengerId: passenger._id.toString(),
@@ -326,6 +332,9 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       luggageCounts: luggageCounts || 0,
       note: note ?? '',
       status: PASSENGER_STATUS.pending,
+      originalRideIntent: 'split',
+      matchedVia: 'manual_join',
+      matchedAt: new Date(),
     });
 
     const booking = await Booking.create({
@@ -379,11 +388,14 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
 
     return callback?.({
       success: true,
-      message: 'Split ride join request created for existing ride. Please complete payment to notify driver.',
+      message: requestedRideId
+        ? 'Joined selected split ride. Please complete payment to notify driver.'
+        : 'Split ride join request created for existing ride. Please complete payment to notify driver.',
       data: {
         rideId: requestedRide.rideId,
         passengerId: requestedRide.passengerId,
         bookingId: requestedRide.bookingId,
+        matchedVia: 'manual_join',
         requestedRide,
         requestedRides: [requestedRide],
         estimatedDistance: roundTo2(actualDistance),
@@ -392,10 +404,3 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     });
   }
 );
-
-
-
-
-
-
-

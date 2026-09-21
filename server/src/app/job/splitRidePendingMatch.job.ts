@@ -18,13 +18,20 @@ import { modeType } from '../modules/notification/notification.interface';
 import { RIDE_STATUS, RIDE_TYPE } from '../modules/ride/ride.constant';
 import { Ride } from '../modules/ride/ride.model';
 import { User } from '../modules/user/user.model';
-import { haversineMeters, isPointNearRoute } from '../utils/geo.utils';
 import { notifyNearbyDrivers, notifyNearbyDriversForSplitRide } from '../utils/notifyDrivers.utils';
 import {
   getDepartureDateTime,
   getMatchingLastNotifyHours,
 } from '../utils/rideSchedule.utils';
 import { refundToWallet, recalculateSplitFares, getSplitMaxMatchedRiders } from '../utils/splitFare.utils';
+import {
+  findEligibleExistingSplitRide,
+  getSplitDestinationMatchRadiusKm,
+  getSplitMatchingTimeWindowMinutes,
+  getSplitPickupMatchRadiusKm,
+  isEligibleSplitPair,
+  passengerToMatchCandidate,
+} from '../utils/splitMatching.utils';
 import { sendNotification } from '../utils/sentPushNotification';
 import { getRouteGeometry } from '../utils/maps.utils';
 
@@ -34,51 +41,10 @@ const stripe = new Stripe(config.pay?.secretKey as string, {
   typescript: true,
 });
 
-const isRouteMatch = (passenger: any, ride: any): boolean => {
-  const coords = ride?.routeGeometry?.coordinates;
-  if (!coords?.length) return false;
-
-  const pickupLat = passenger.pickup.coordinates[1];
-  const pickupLng = passenger.pickup.coordinates[0];
-  const destinationLat = passenger.destination.coordinates[1];
-  const destinationLng = passenger.destination.coordinates[0];
-
-  if (!isPointNearRoute(pickupLat, pickupLng, coords)) return false;
-  if (!isPointNearRoute(destinationLat, destinationLng, coords)) return false;
-
-  let pickupIdx = -1;
-  let destIdx = -1;
-  let pickupDist = Infinity;
-  let destDist = Infinity;
-
-  coords.forEach(([lng, lat]: [number, number], index: number) => {
-    const pd = haversineMeters(pickupLat, pickupLng, lat, lng);
-    const dd = haversineMeters(destinationLat, destinationLng, lat, lng);
-    if (pd < pickupDist) {
-      pickupDist = pd;
-      pickupIdx = index;
-    }
-    if (dd < destDist) {
-      destDist = dd;
-      destIdx = index;
-    }
-  });
-
-  return destIdx > pickupIdx;
-};
-
-const getUsedSeats = async (rideId: any): Promise<number> => {
-  const activePassengers = await Passenger.find({
-    rideId,
-    status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected, PASSENGER_STATUS.split_matching] },
-  })
-    .select('requestedSeats')
-    .lean();
-
-  return activePassengers.reduce((sum: number, p: any) => sum + (p.requestedSeats || 1), 0);
-};
-
 const findMatchingExistingRide = async (passenger: any) => {
+  const request = passengerToMatchCandidate(passenger);
+  if (!request) return null;
+
   const candidateRides = await Ride.find({
     type: RIDE_TYPE.split,
     splitFareLocked: { $ne: true },
@@ -88,26 +54,61 @@ const findMatchingExistingRide = async (passenger: any) => {
     .sort({ driverId: -1, createdAt: 1 })
     .lean();
 
-  for (const ride of candidateRides) {
-    if (!isRouteMatch(passenger, ride)) continue;
+  return findEligibleExistingSplitRide(request, candidateRides, {
+    requirePaidBooking: true,
+    requestedSeats: passenger.requestedSeats || 1,
+    userId: passenger.userId?.toString(),
+  });
+};
 
-    const hasPaidBooking = await Booking.exists({
-      rideId: ride._id,
-      paymentStatus: { $in: [BOOKING_PAYMENT_STATUS.authorized, BOOKING_PAYMENT_STATUS.paid] },
-    });
-    if (!hasPaidBooking) continue;
+/** Peer-match another authorized backlog passenger (Phase 1/2 + time window). */
+const findMatchingBacklogPeer = async (passenger: any) => {
+  const request = passengerToMatchCandidate(passenger);
+  if (!request) return null;
 
-    const usedSeats = await getUsedSeats(ride._id);
-    if (ride.totalSeats && usedSeats + (passenger.requestedSeats || 1) > ride.totalSeats) continue;
+  const pickupRadiusKm = await getSplitPickupMatchRadiusKm();
+  const destinationRadiusKm = await getSplitDestinationMatchRadiusKm();
+  const windowMinutes = await getSplitMatchingTimeWindowMinutes();
+  const maxMatchedRiders = await getSplitMaxMatchedRiders();
 
-    const activeRiderCount = await Passenger.countDocuments({
-      rideId: ride._id,
-      status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected, PASSENGER_STATUS.split_matching] },
-    });
-    const maxMatchedRiders = await getSplitMaxMatchedRiders();
-    if (activeRiderCount >= maxMatchedRiders) continue;
+  const peers = await Passenger.find({
+    _id: { $ne: passenger._id },
+    status: PASSENGER_STATUS.split_matching,
+    rideId: null,
+    paymentStatus: PASSENGER_PAYMENT_STATUS.authorized,
+    departureDate: passenger.departureDate,
+    userId: { $ne: passenger.userId },
+  })
+    .sort({ createdAt: 1 })
+    .limit(50)
+    .lean();
 
-    return { ride, usedSeats };
+  for (const peer of peers) {
+    const peerCandidate = passengerToMatchCandidate(peer);
+    if (!peerCandidate) continue;
+
+    if (
+      !isEligibleSplitPair(
+        request,
+        peerCandidate,
+        pickupRadiusKm,
+        destinationRadiusKm,
+        windowMinutes,
+      )
+    ) {
+      continue;
+    }
+
+    // Capacity: seeding a new matched ride with 2 riders must leave room under max.
+    if (maxMatchedRiders < 2) continue;
+
+    const seatsNeeded =
+      (Number(passenger.requestedSeats) || 1) + (Number(peer.requestedSeats) || 1);
+    // New ride has no seat cap until driver assigns vehicle — only rider count matters.
+    if (2 > maxMatchedRiders) continue;
+    void seatsNeeded;
+
+    return peer;
   }
 
   return null;
@@ -176,6 +177,7 @@ const cancelUnmatchedSplitPassenger = async (passenger: any, reason = 'no_matchi
     paymentStatus: PASSENGER_PAYMENT_STATUS.cancelled_authorization,
     cancellationReason: reason,
     cancelledBy: CANCELLED_BY.system,
+    fallbackReason: reason,
   });
 
   await redis.del(`split:matching:passenger:${passenger._id}`);
@@ -267,6 +269,116 @@ const notifyMatchedRideDriver = async (ride: any, passenger: any, booking: any) 
   );
 };
 
+const attachPassengerToRide = async (
+  passengerId: any,
+  rideId: any,
+  matchedVia: 'auto_existing' | 'auto_peer' | 'manual_join' | 'solo_fallback',
+  extra?: Record<string, any>,
+) => {
+  return Passenger.findOneAndUpdate(
+    { _id: passengerId, status: PASSENGER_STATUS.split_matching, rideId: null },
+    {
+      rideId,
+      status: PASSENGER_STATUS.pending,
+      matchedVia,
+      matchedAt: new Date(),
+      originalRideIntent: 'split',
+      cancellationReason: undefined,
+      ...extra,
+    },
+    { returnDocument: 'after' },
+  );
+};
+
+/** Create a new split Ride from two backlog peers, then notify drivers. */
+const createPeerMatchedSplitRide = async (host: any, peer: any) => {
+  const io = getIO();
+  const redis = getRedisClient();
+
+  const hostBooking = await Booking.findOne({ passengerId: host._id });
+  const peerBooking = await Booking.findOne({ passengerId: peer._id });
+  if (!hostBooking || !peerBooking) return false;
+
+  const pickupCoords = host.pickup?.coordinates || [];
+  const destinationCoords = host.destination?.coordinates || [];
+  if (pickupCoords.length < 2 || destinationCoords.length < 2) return false;
+
+  let routeGeometry: any = {};
+  try {
+    routeGeometry = await getRouteGeometry(
+      { lat: pickupCoords[1], lng: pickupCoords[0] },
+      { lat: destinationCoords[1], lng: destinationCoords[0] },
+    );
+  } catch {
+    /* optional */
+  }
+
+  const ride = await Ride.create({
+    type: RIDE_TYPE.split,
+    rideCreatedBy: host.userId,
+    pickup: host.pickup,
+    destination: host.destination,
+    departureDate: host.departureDate,
+    departureTime: host.departureTime,
+    totalSeats: 0,
+    bookedSeats: 0,
+    status: RIDE_STATUS.pending,
+    routeGeometry,
+  });
+
+  const attachedHost = await attachPassengerToRide(host._id, ride._id, 'auto_peer');
+  const attachedPeer = await attachPassengerToRide(peer._id, ride._id, 'auto_peer');
+
+  if (!attachedHost || !attachedPeer) {
+    // Race: one was claimed elsewhere — roll back incomplete attach.
+    if (attachedHost) {
+      await Passenger.findByIdAndUpdate(attachedHost._id, {
+        rideId: null,
+        status: PASSENGER_STATUS.split_matching,
+        matchedVia: undefined,
+        matchedAt: undefined,
+      });
+    }
+    if (attachedPeer) {
+      await Passenger.findByIdAndUpdate(attachedPeer._id, {
+        rideId: null,
+        status: PASSENGER_STATUS.split_matching,
+        matchedVia: undefined,
+        matchedAt: undefined,
+      });
+    }
+    await Ride.findByIdAndDelete(ride._id);
+    return false;
+  }
+
+  hostBooking.rideId = ride._id as any;
+  peerBooking.rideId = ride._id as any;
+  await hostBooking.save();
+  await peerBooking.save();
+
+  await redis.del(`split:matching:passenger:${host._id}`);
+  await redis.del(`split:matching:passenger:${peer._id}`);
+
+  await recalculateSplitFares(ride._id.toString(), 'passenger_joined');
+
+  await notifyMatchedRideDriver(ride, attachedHost.toObject(), hostBooking);
+  await notifyMatchedRideDriver(ride, attachedPeer.toObject(), peerBooking);
+
+  for (const p of [attachedHost, attachedPeer]) {
+    io.to(`user:${p.userId}`).emit('split-ride:matched', {
+      rideId: ride._id,
+      passengerId: p._id,
+      matchedVia: 'auto_peer',
+      message: 'Your split ride request has been matched with another rider.',
+    });
+  }
+
+  console.log(
+    `✅ Split peer-matched | ride: ${ride._id} | host: ${host._id} | peer: ${peer._id}`,
+  );
+  return true;
+};
+
 const releaseUnmatchedSplitToSolo = async (passenger: any) => {
   const io = getIO();
   const redis = getRedisClient();
@@ -307,14 +419,11 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     routeGeometry,
   });
 
-  const attachedPassenger = await Passenger.findOneAndUpdate(
-    { _id: passenger._id, status: PASSENGER_STATUS.split_matching, rideId: null },
-    {
-      rideId: ride._id,
-      status: PASSENGER_STATUS.pending,
-      cancellationReason: undefined,
-    },
-    { returnDocument: 'after' },
+  const attachedPassenger = await attachPassengerToRide(
+    passenger._id,
+    ride._id,
+    'solo_fallback',
+    { fallbackReason: 'unmatched_within_1h_of_pickup' },
   );
 
   if (!attachedPassenger) {
@@ -398,6 +507,7 @@ export const checkSplitRidePendingMatches = async () => {
     rideId: null,
     paymentStatus: PASSENGER_PAYMENT_STATUS.authorized,
   })
+    .sort({ createdAt: 1 })
     .limit(BATCH_SIZE)
     .lean();
 
@@ -406,13 +516,14 @@ export const checkSplitRidePendingMatches = async () => {
       const departureDateTime = getDepartureDateTime(passenger.departureDate, passenger.departureTime);
       const hoursUntilDeparture = (departureDateTime.getTime() - now.getTime()) / 3600000;
 
+      // 1) Match to an existing paid split ride (Phase 1/2 + time window).
       const match = await findMatchingExistingRide(passenger);
       if (match) {
         const { ride } = match;
-        const attachedPassenger = await Passenger.findOneAndUpdate(
-          { _id: passenger._id, status: PASSENGER_STATUS.split_matching, rideId: null },
-          { rideId: ride._id, status: PASSENGER_STATUS.pending },
-          { returnDocument: 'after' }
+        const attachedPassenger = await attachPassengerToRide(
+          passenger._id,
+          ride._id,
+          'auto_existing',
         );
         if (!attachedPassenger) continue;
 
@@ -440,9 +551,25 @@ export const checkSplitRidePendingMatches = async () => {
           rideId: ride._id,
           passengerId: passenger._id,
           bookingId: booking._id,
+          matchedVia: 'auto_existing',
           message: 'Your split ride request has been matched to an existing ride.',
         });
         continue;
+      }
+
+      // 2) Peer-match another backlog rider → create split Ride, then notify drivers.
+      const peer = await findMatchingBacklogPeer(passenger);
+      if (peer) {
+        // Refresh peer still in backlog (race-safe createPeerMatchedSplitRide).
+        const stillPeer = await Passenger.findOne({
+          _id: peer._id,
+          status: PASSENGER_STATUS.split_matching,
+          rideId: null,
+        }).lean();
+        if (stillPeer) {
+          const created = await createPeerMatchedSplitRide(passenger, stillPeer);
+          if (created) continue;
+        }
       }
 
       // Past pickup with no match → cancel authorization.
@@ -460,7 +587,7 @@ export const checkSplitRidePendingMatches = async () => {
       await redis.hset(`split:matching:passenger:${passenger._id}`, {
         passengerId: passenger._id.toString(),
         userId: passenger.userId.toString(),
-        matchingStatus: 'searching_existing_split_ride',
+        matchingStatus: 'searching_split_peers',
         lastCheckedAt: Date.now().toString(),
       });
     } catch (error) {
@@ -468,4 +595,3 @@ export const checkSplitRidePendingMatches = async () => {
     }
   }
 };
-

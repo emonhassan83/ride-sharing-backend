@@ -33,6 +33,8 @@ export interface ISplitRideRequest {
   pickup: { lat: number; lng: number; address?: string };
   destination: { lat: number; lng: number; address?: string };
   departureDate: string; // ISO date string
-  departureTime: string; // ISO time string
+  departureTime: string; // HH:mm (:00 / :30)
   passengers: number;
+  /** Optional: manually select a specific split ride from Find list */
+  rideId?: string;
 }

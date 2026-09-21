@@ -10,11 +10,8 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
-import {
-  getWaitingRatePerMinute,
-  isNightFare,
-} from '../../../utils/waitingCharge.utils';
 import { haversineMeters } from '../../../utils/geo.utils';
+import { buildWaitTimeNotice } from '../../../utils/waitTimeNotice.utils';
 
 const ARRIVAL_THRESHOLD_METERS = 100;
 
@@ -97,16 +94,13 @@ export const driverArrivedHandler = eventHandler<any>(
     if (!validStatuses.includes(ride.status as any))
       return callback?.({
         success: false,
-        message: `Cannot trigger arrived â\u20AC” status: ${ride.status}`,
+        message: `Cannot trigger arrived — status: ${ride.status}`,
       });
 
     const io = getIO();
     const redis = getRedisClient();
+    const waitNotice = buildWaitTimeNotice();
 
-    const night = isNightFare(ride.departureTime ?? '08:00');
-    const waitingRatePerMinute = await getWaitingRatePerMinute(night);
-
-    // â”\u20ACâ”\u20AC Helper: notify passenger â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     const notifyPassenger = async (passenger: any, isLastArrival = false) => {
       await Passenger.findByIdAndUpdate(passenger._id, {
         arriveAt: new Date(),
@@ -126,16 +120,15 @@ export const driverArrivedHandler = eventHandler<any>(
         })
       );
 
-      // Socket
       io.to(`user:${passenger.userId}`).emit('ride:driver-arrived', {
         rideId,
         passengerId: passenger._id,
         driverId,
         message: 'Driver has arrived at your pickup location',
         isLastArrival,
+        waitTimeNotice: waitNotice,
       });
 
-      // âœ… FCM push â\u20AC” driver arrived
       const riderUser = await User.findById(passenger.userId)
         .select('fcmToken')
         .lean();
@@ -143,83 +136,65 @@ export const driverArrivedHandler = eventHandler<any>(
         sendNotification([riderUser.fcmToken], {
           receiver: passenger.userId,
           message: 'Driver Has Arrived!',
-          description:
-            'Your driver is at your pickup location. Please be ready within minutes.',
+          description: waitNotice.message,
           reference: rideId,
           modelType: modeType.Ride,
         }).catch(() => {});
       }
 
-      // â”\u20ACâ”\u20AC 2 min grace â†’ waiting charge â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
-      setTimeout(
-        async () => {
-          const p = await Passenger.findById(passenger._id);
-          if (!p || p.pickedUpAt) return;
+      // Dummy wait notice only — NO charge / NO price change (client rule).
+      setTimeout(async () => {
+        const p = await Passenger.findById(passenger._id);
+        if (!p || p.pickedUpAt) return;
 
-          const waitingStartedAt = new Date();
-          await Passenger.findByIdAndUpdate(passenger._id, {
-            waitingStartedAt,
-          });
+        io.to(`user:${passenger.userId}`).emit('ride:wait-time-notice', {
+          rideId,
+          passengerId: passenger._id,
+          ...waitNotice,
+        });
 
-          // Socket
-          io.to(`user:${passenger.userId}`).emit(
-            'ride:waiting-charge-started',
-            {
-              rideId,
-              passengerId: passenger._id,
-              ratePerMinute: waitingRatePerMinute,
-              ratePerHour: Math.round(waitingRatePerMinute * 60 * 100) / 100,
-              startedAt: waitingStartedAt,
-              message: `Waiting charge started: Â\u20AC${waitingRatePerMinute.toFixed(4)}/min`,
-            }
-          );
+        io.to(`driver:${driverId}`).emit('ride:wait-time-notice', {
+          rideId,
+          passengerId: passenger._id,
+          ...waitNotice,
+        });
 
-          io.to(`driver:${driverId}`).emit('ride:waiting-charge-active', {
-            rideId,
-            passengerId: passenger._id,
-            message: 'Waiting charge is now active for this passenger.',
-          });
-
-          // âœ… FCM push â\u20AC” waiting charge started
-          if (riderUser?.fcmToken) {
-            sendNotification([riderUser.fcmToken], {
-              receiver: passenger.userId,
-              message: 'Waiting Charge Started!',
-              description: `Driver is waiting. Charge: Â\u20AC${waitingRatePerMinute.toFixed(4)}/min. Please arrive ASAP.`,
-              reference: rideId,
-              modelType: modeType.Ride,
-            }).catch(() => {});
-          }
-        },
-        2 * 60 * 1000
-      );
+        if (riderUser?.fcmToken) {
+          sendNotification([riderUser.fcmToken], {
+            receiver: passenger.userId,
+            message: 'Please Board Soon',
+            description: waitNotice.message,
+            reference: rideId,
+            modelType: modeType.Ride,
+          }).catch(() => {});
+        }
+      }, waitNotice.maxWaitMinutes * 60 * 1000);
     };
 
-    // â”\u20ACâ”\u20AC PRIVATE RIDE â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     if (ride.type === RIDE_TYPE.private) {
-      const passenger = passengerId ? await Passenger.findOne({
-         _id: passengerId,
-        rideId,
-        status: [
-          PASSENGER_STATUS.confirmed,
-          PASSENGER_STATUS.in_progress,
-          PASSENGER_STATUS.driver_arrived,
-        ],
-      }) : await Passenger.findOne({
-        rideId,
-        status: [
-          PASSENGER_STATUS.confirmed,
-          PASSENGER_STATUS.in_progress,
-          PASSENGER_STATUS.driver_arrived,
-        ],
-      });
+      const passenger = passengerId
+        ? await Passenger.findOne({
+            _id: passengerId,
+            rideId,
+            status: [
+              PASSENGER_STATUS.confirmed,
+              PASSENGER_STATUS.in_progress,
+              PASSENGER_STATUS.driver_arrived,
+            ],
+          })
+        : await Passenger.findOne({
+            rideId,
+            status: [
+              PASSENGER_STATUS.confirmed,
+              PASSENGER_STATUS.in_progress,
+              PASSENGER_STATUS.driver_arrived,
+            ],
+          });
       if (!passenger)
         return callback?.({
           success: false,
           message: 'No active passenger found',
         });
-
-      console.log({ passenger });
 
       const { isNear, distanceMeters } = await checkDriverNearPickup(
         redis,
@@ -243,11 +218,10 @@ export const driverArrivedHandler = eventHandler<any>(
       return callback?.({
         success: true,
         message: 'Driver arrived notification sent',
-        data: { passengerId: passenger._id, distanceMeters },
+        data: { passengerId: passenger._id, distanceMeters, waitTimeNotice: waitNotice },
       });
     }
 
-    // â”\u20ACâ”\u20AC SPLIT â\u20AC” specific passenger â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     if (passengerId && !arriveAll) {
       const passenger = await Passenger.findOne({
         _id: passengerId,
@@ -256,7 +230,7 @@ export const driverArrivedHandler = eventHandler<any>(
           PASSENGER_STATUS.confirmed,
           PASSENGER_STATUS.in_progress,
           PASSENGER_STATUS.driver_arrived,
-        ]
+        ],
       });
       if (!passenger)
         return callback?.({
@@ -300,11 +274,11 @@ export const driverArrivedHandler = eventHandler<any>(
           passengerId: passenger._id,
           remainingUnnotified: remaining,
           distanceMeters,
+          waitTimeNotice: waitNotice,
         },
       });
     }
 
-    // â”\u20ACâ”\u20AC SPLIT â\u20AC” all passengers â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
     if (arriveAll) {
       const passengers = await Passenger.find({
         rideId,
@@ -360,8 +334,8 @@ export const driverArrivedHandler = eventHandler<any>(
         message:
           notifiedCount > 0
             ? `Arrived notification sent to ${notifiedCount} passenger(s).${skippedCount > 0 ? ` ${skippedCount} skipped.` : ''}`
-            : 'No passengers notified â\u20AC” not near any pickup.',
-        data: { results, notifiedCount, skippedCount },
+            : 'No passengers notified — not near any pickup.',
+        data: { results, notifiedCount, skippedCount, waitTimeNotice: waitNotice },
       });
     }
 
@@ -371,4 +345,3 @@ export const driverArrivedHandler = eventHandler<any>(
     });
   }
 );
-

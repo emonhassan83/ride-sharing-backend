@@ -62,6 +62,12 @@ export interface TPassenger {
   rejectionReason?: string;
   cancelledBy?: TCancelledBy;
 
+  /** Split matching audit trail (payment / invoice / fallback). */
+  originalRideIntent?: 'split' | 'private';
+  matchedVia?: 'auto_existing' | 'auto_peer' | 'manual_join' | 'solo_fallback';
+  matchedAt?: Date;
+  fallbackReason?: string;
+
   arriveAt: Date;
   arrivedNotified: boolean;
   pickedUpAt: Date;

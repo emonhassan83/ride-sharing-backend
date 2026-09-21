@@ -64,6 +64,29 @@ const settingSeeder = async () => {
         upsert: true,
       },
     },
+    {
+      updateOne: {
+        filter: { key: 'splitRidePickupMatchRadiusKm' },
+        update: { $setOnInsert: { key: 'splitRidePickupMatchRadiusKm', value: 10 } },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
+        filter: { key: 'splitRideDestinationMatchRadiusKm' },
+        update: { $setOnInsert: { key: 'splitRideDestinationMatchRadiusKm', value: 10 } },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
+        filter: { key: 'splitRideMatchingTimeWindowMinutes' },
+        update: {
+          $setOnInsert: { key: 'splitRideMatchingTimeWindowMinutes', value: 0 },
+        },
+        upsert: true,
+      },
+    },
   ]);
 
   console.log('✅ Settings seeded successfully');

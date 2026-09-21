@@ -1,7 +1,7 @@
 // handlers/ride/findNearbySplitRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
-import { haversineMeters, isPointNearRoute } from '../../../utils/geo.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
+import { calculateDistance } from '../../../utils/location.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { Ride } from '../../../modules/ride/ride.model';
@@ -10,6 +10,14 @@ import { TUser } from '../../../modules/user/user.interface';
 import { TVehicle } from '../../../modules/vehicle/vehicle.interface';
 import { User } from '../../../modules/user/user.model';
 import { ISplitRideRequest } from '../../interface/ride';
+import {
+  isRequestEligibleForSplitRide,
+  requestToMatchCandidate,
+} from '../../../utils/splitMatching.utils';
+import {
+  assertMinimumBookingLeadTime,
+  assertSplitMinimumDistance,
+} from '../../../utils/rideSchedule.utils';
 
 export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
   async (
@@ -19,11 +27,44 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
   ) => {
     if (!data) return callback?.({ success: false, message: 'Invalid data' });
 
-    const { pickup, destination, departureDate, passengers } = data;
+    const { pickup, destination, departureDate, departureTime, passengers } = data;
+    const requestedSeats = Number(passengers) > 0 ? Number(passengers) : 1;
+
+    if (!pickup || !destination)
+      return callback?.({ success: false, message: 'Pickup and destination are required' });
+    if (!departureDate || !departureTime)
+      return callback?.({
+        success: false,
+        message: 'departureDate and departureTime are required',
+      });
+
+    // Same business gates as automatic / join matching.
+    await assertMinimumBookingLeadTime(departureDate, departureTime, RIDE_TYPE.split);
+
+    let routeDistanceKm = 0;
+    try {
+      const maps = await getRealDistanceAndETA(
+        { lat: pickup.lat, lng: pickup.lng },
+        { lat: destination.lat, lng: destination.lng },
+      );
+      routeDistanceKm = maps.distanceKm;
+    } catch {
+      routeDistanceKm = calculateDistance(
+        { lat: pickup.lat, lng: pickup.lng },
+        { lat: destination.lat, lng: destination.lng },
+      );
+    }
+    await assertSplitMinimumDistance(routeDistanceKm);
+
+    const matchRequest = requestToMatchCandidate({
+      pickup: { lat: pickup.lat, lng: pickup.lng },
+      destination: { lat: destination.lat, lng: destination.lng },
+      departureDate,
+      departureTime,
+    });
 
     const redisClient = getRedisClient();
 
-    // ── Find nearby drivers ───────────────────────────────────────────────────
     type GeoRadiusResult = Array<[driverId: string, distance: string]>;
     let nearbyDrivers = (await redisClient.georadius(
       'drivers:location',
@@ -47,7 +88,6 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
 
     const nearbyDriverIds = nearbyDrivers.map((e) => e[0]);
 
-    // ── Driver current locations ──────────────────────────────────────────────
     const driverLocationMap: Record<
       string,
       { lat: number; lng: number } | null
@@ -74,15 +114,14 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
       })
     );
 
-    // ── DB query — basic filter only ──────────────────────────────────────────
     const rides = await Ride.find({
       type: RIDE_TYPE.split,
       splitFareLocked: { $ne: true },
       status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
       departureDate,
       $or: [
-        { totalSeats: 0 }, // pending ride, driver not yet assigned — no seat constraint
-        { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, passengers] } },
+        { totalSeats: 0 },
+        { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },
       ],
     })
       .populate<{ driverId: TUser }>(
@@ -92,41 +131,28 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
       .populate<{ vehicleId: TVehicle }>('vehicleId', 'name number year seats')
       .lean();
 
-    // ── Application level corridor + direction filter ─────────────────────────
-    const filteredRides = rides.filter((ride: any) => {
-      if (ride.splitFareLocked) return false;
-      const coords = ride.routeGeometry?.coordinates ?? [];
-      if (!coords.length) return false;
-
-      const pickupNear = isPointNearRoute(pickup.lat, pickup.lng, coords);
-      if (!pickupNear) return false;
-
-      const destNear = isPointNearRoute(destination.lat, destination.lng, coords);
-      if (!destNear) return false;
-
-      // Direction check — pickup index must appear before destination index on route
-      let pickupIdx = -1, destIdx = -1;
-      let pickupDist = Infinity, destDist = Infinity;
-
-      coords.forEach(([lng, lat]: [number, number], i: number) => {
-        const pd = haversineMeters(pickup.lat, pickup.lng, lat, lng);
-        const dd = haversineMeters(destination.lat, destination.lng, lat, lng);
-        if (pd < pickupDist) { pickupDist = pd; pickupIdx = i; }
-        if (dd < destDist) { destDist = dd; destIdx = i; }
+    const eligibleRides: any[] = [];
+    for (const ride of rides) {
+      const eligibility = await isRequestEligibleForSplitRide(matchRequest, ride, {
+        requirePaidBooking: true,
+        requestedSeats,
       });
+      if (eligibility.ok) {
+        eligibleRides.push({
+          ride,
+          usedSeats: eligibility.usedSeats,
+          matchedRiders: eligibility.activePassengers.length,
+        });
+      }
+    }
 
-      return destIdx > pickupIdx;
-    });
-
-    // ── Build response ────────────────────────────────────────────────────────
     const drivers = await Promise.all(
-      filteredRides.map(async (ride: any) => {
+      eligibleRides.map(async ({ ride, usedSeats, matchedRiders }: any) => {
         const driver = ride.driverId as (TUser & { _id: any; email?: string; location?: { coordinates: number[] } }) | null;
         const vehicle = ride.vehicleId as (TVehicle & { _id: any }) | null;
 
         const hasDriver = !!(driver && vehicle);
 
-        // Redis real-time location → DB populated location → ride pickup fallback
         let driverLocation: { lat: number; lng: number } | null =
           driverLocationMap[driver?._id?.toString()] ?? null;
         if (!driverLocation && driver) {
@@ -151,7 +177,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
           }
         }
 
-        const availableSeats = ride.totalSeats > 0 ? ride.totalSeats - (ride.bookedSeats || 0) : null;
+        const availableSeats = ride.totalSeats > 0 ? ride.totalSeats - usedSeats : null;
 
         return {
           rideId: ride._id,
@@ -174,13 +200,25 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
           departureTime: ride.departureTime,
           departureDate: ride.departureDate,
           status: ride.status,
+          matchedRiders,
+          availableSeats,
+          pickup: {
+            address: ride.pickup?.address ?? null,
+            lat: ride.pickup?.coordinates?.[1],
+            lng: ride.pickup?.coordinates?.[0],
+          },
+          destination: {
+            address: ride.destination?.address ?? null,
+            lat: ride.destination?.coordinates?.[1],
+            lng: ride.destination?.coordinates?.[0],
+          },
         };
       })
     );
 
     callback?.({
       success: true,
-      message: `${drivers.length} nearby split ride(s) found`,
+      message: `${drivers.length} matching split ride(s) found`,
       data: {
         pickup: {
           lat: pickup.lat,
@@ -193,7 +231,10 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
           address: destination.address ?? null,
         },
         driverCount: drivers.length,
+        rideCount: drivers.length,
+        /** Select one via join with { rideId } using the same eligibility rules. */
         drivers,
+        rides: drivers,
       },
     });
   }

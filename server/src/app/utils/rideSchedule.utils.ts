@@ -44,6 +44,14 @@ export const getDepartureDateTime = (
     );
   }
 
+  // Client rule: booking time must be 30-minute increments only (:00 or :30).
+  if (minute !== 0 && minute !== 30) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'Booking time must be in 30-minute increments only (e.g. 18:00 or 18:30).'
+    );
+  }
+
   return new Date(year, month - 1, day, rawHour, minute);
 };
 

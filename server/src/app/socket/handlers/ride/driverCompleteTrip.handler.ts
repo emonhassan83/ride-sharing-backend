@@ -100,7 +100,7 @@ export const driverCompleteTripHandler = eventHandler<any>(
     let grandTotal = 0;
 
     for (const passenger of passengersToComplete) {
-      const totalFare = passenger.totalFare || (passenger.estimatedFare || 0) + (passenger.waitingCharge || 0);
+      const totalFare = passenger.estimatedFare || passenger.totalFare || 0;
       grandTotal += totalFare;
 
       await Passenger.findByIdAndUpdate(passenger._id, { status: PASSENGER_STATUS.completed });

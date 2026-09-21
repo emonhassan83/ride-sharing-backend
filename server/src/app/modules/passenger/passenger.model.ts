@@ -94,6 +94,17 @@ const passengerSchema = new Schema<TPassenger>(
       enum: Object.values(CANCELLED_BY),
     },
 
+    originalRideIntent: {
+      type: String,
+      enum: ['split', 'private'],
+    },
+    matchedVia: {
+      type: String,
+      enum: ['auto_existing', 'auto_peer', 'manual_join', 'solo_fallback'],
+    },
+    matchedAt: { type: Date },
+    fallbackReason: { type: String },
+
     // ── Trip tracking ─────────────────────────────────────────────────────────
     arriveAt:          { type: Date },
     arrivedNotified:   { type: Boolean, default: false },

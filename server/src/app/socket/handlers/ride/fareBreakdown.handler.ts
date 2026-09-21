@@ -6,6 +6,7 @@ import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { assertSplitMinimumDistance } from '../../../utils/rideSchedule.utils';
+import { getDepartureDateTime } from '../../../utils/rideSchedule.utils';
 import { RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 
@@ -31,7 +32,11 @@ export const fareBreakdownHandler = eventHandler<any>(
 
     const requestedSeats = passengers || 1;
 
-    const departureDateTime = departureDate ? new Date(departureDate) : new Date();
+    // Validate 30-min booking slots when time is provided.
+    let departureDateTime = departureDate ? new Date(departureDate) : new Date();
+    if (departureDate && departureTime) {
+      departureDateTime = getDepartureDateTime(departureDate, departureTime);
+    }
 
     let actualDistance = 0;
     let actualDuration = 0;
