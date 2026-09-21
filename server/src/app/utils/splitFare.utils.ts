@@ -8,7 +8,11 @@ import { PAYMENT_STATUS as PAYMENT_RECORD_STATUS } from '../modules/payment/paym
 import { User } from '../modules/user/user.model';
 import StripeService from '../config/stripe.config';
 import { calculateFareBreakdown, loadFareSettings } from './fareCalculator';
-import { buildPassengerFareTotals, roundMoney } from './fareMath.utils';
+import {
+  buildPassengerFareTotals,
+  resolveSplitMatchedSurchargePercent,
+  roundMoney,
+} from './fareMath.utils';
 import { getDepartureDateTime, getRefundRestrictionHours } from './rideSchedule.utils';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { sendNotification } from './sentPushNotification';
@@ -18,12 +22,21 @@ import {
   REFUND_STATUS,
   REFUND_TYPE,
 } from '../modules/refund/refund.constant';
+import { Setting } from '../modules/settings/settings.model';
 
 const DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT = 30;
+const DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT_3 = 50;
+export const DEFAULT_SPLIT_RIDE_MAX_MATCHED_RIDERS = 3;
 
 export interface SplitPassengerFareOptions {
   poolKomistraBase?: number;
 }
+
+export const getSplitMaxMatchedRiders = async (): Promise<number> => {
+  const setting = await Setting.findOne({ key: 'splitRideMaxMatchedRiders' }).lean();
+  const value = Number(setting?.value ?? DEFAULT_SPLIT_RIDE_MAX_MATCHED_RIDERS);
+  return value > 0 ? value : DEFAULT_SPLIT_RIDE_MAX_MATCHED_RIDERS;
+};
 
 export const computeSplitPoolKomistraBase = async (params: {
   departureTime: string;
@@ -37,6 +50,7 @@ export const computeSplitPoolKomistraBase = async (params: {
   let total = 0;
 
   for (const passenger of params.passengers) {
+    // Each order's initial upfront (tariff × PMCrfPR → €5 → min).
     const breakdown = await calculateFareBreakdown({
       distanceKm: passenger.estimatedDistanceKm || 0,
       departureDate: params.departureDate,
@@ -47,7 +61,7 @@ export const computeSplitPoolKomistraBase = async (params: {
       waitingMinutes: 0,
       activeRiderCount: 1,
     });
-    total += breakdown.actualFare;
+    total += breakdown.totalFare;
   }
 
   return roundMoney(total);
@@ -86,8 +100,16 @@ export const calcSplitPassengerFare = async (
 }> => {
   const s = await loadFareSettings();
   const riderCount = Math.max(Number(activeRiderCount) || 1, 1);
-  const matchedSurchargePercent = Number(
-    (s as any).splitRideMatchedSurchargePercent ?? DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT,
+  const matchedSurchargePercent = resolveSplitMatchedSurchargePercent(
+    riderCount,
+    Number(
+      (s as any).splitRideMatchedSurchargePercent ??
+        DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT,
+    ),
+    Number(
+      (s as any).splitRideMatchedSurchargePercent3 ??
+        DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT_3,
+    ),
   );
   const baseFare = roundMoney(Number(s.baseFare || 20));
 
@@ -108,7 +130,7 @@ export const calcSplitPassengerFare = async (
     rawComponentFare: breakdown.actualFare,
     baseFare,
     platformVatPercent: Number(s.platformVat || 9),
-    platformCommissionPercent: 0,
+    platformCommissionPercent: Number(s.platformCommissionPercent || 10),
     splitRideMatchedSurchargePercent: matchedSurchargePercent,
     poolKomistraBase: options.poolKomistraBase,
     fareRoundingBracket: Number(s.fareRoundingBracket || 5),
@@ -116,24 +138,21 @@ export const calcSplitPassengerFare = async (
 
   const perPassengerTotal = fareTotals.totalFare;
   const perPassengerSurcharge = fareTotals.splitSurchargeAmount;
-  const perPassengerVat =
-    riderCount >= 2
-      ? roundMoney(fareTotals.vatAmount / riderCount)
-      : fareTotals.vatAmount;
+  const perPassengerVat = fareTotals.vatAmount;
 
   return {
     initialCharge: breakdown.initialCharge,
     totalKmCharge: breakdown.totalKmCharge,
     luggageCharge: breakdown.luggageCharge,
     holidayTripCharge: breakdown.holidaySurcharge,
-    surchargePercent: riderCount >= 2 ? matchedSurchargePercent : 0,
+    surchargePercent: matchedSurchargePercent,
     surchargeAmount: perPassengerSurcharge,
     minimumFareApplied: fareTotals.minimumFareApplied,
     minimumFareAmount: baseFare,
     minimumFareAdjustment: fareTotals.minimumFareAdjustment,
-    splitSurchargePercent: riderCount >= 2 ? matchedSurchargePercent : 0,
+    splitSurchargePercent: matchedSurchargePercent,
     splitSurchargeAmount: perPassengerSurcharge,
-    splitRideMatchedSurchargePercent: riderCount >= 2 ? matchedSurchargePercent : 0,
+    splitRideMatchedSurchargePercent: matchedSurchargePercent,
     splitRideMatchedSurchargeAmount: perPassengerSurcharge,
     fareBeforePlatformCommission: breakdown.actualFare,
     platformVatPercent: fareTotals.platformVatPercent,
@@ -336,9 +355,17 @@ export const recalculateSplitFares = async (
 
     const activeRiderCount = activePassengers.length;
     const fareSettings = await loadFareSettings();
-    const newSurchargePercent = activeRiderCount >= 2
-      ? Number((fareSettings as any).splitRideMatchedSurchargePercent ?? DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT)
-      : 0;
+    const newSurchargePercent = resolveSplitMatchedSurchargePercent(
+      activeRiderCount,
+      Number(
+        (fareSettings as any).splitRideMatchedSurchargePercent ??
+          DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT,
+      ),
+      Number(
+        (fareSettings as any).splitRideMatchedSurchargePercent3 ??
+          DEFAULT_SPLIT_RIDE_MATCHED_SURCHARGE_PERCENT_3,
+      ),
+    );
 
     const ride = await Ride.findById(rideId).lean();
     if (!ride) return;

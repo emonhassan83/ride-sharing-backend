@@ -47,6 +47,8 @@ export const updateGeneralsZodSchema = z.object({
       sixPassengerExtraChargePercentage: z.number().optional(),
       baseFare: z.number().optional(),
       splitRideMatchedSurchargePercent: z.number().optional(),
+      splitRideMatchedSurchargePercent3: z.number().optional(),
+      splitRideMaxMatchedRiders: z.number().optional(),
       platformVat: z.number().optional(),
       platformCommissionPercent: z.number().optional(),
       driverPlatformFeePercent: z.number().optional(),

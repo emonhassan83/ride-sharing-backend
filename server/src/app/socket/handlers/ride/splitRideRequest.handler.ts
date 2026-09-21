@@ -10,7 +10,8 @@ import { calculateDistance } from '../../../utils/location.utils';
 import { getFareType } from '../../../utils/time.utils';
 import { roundTo2 } from '../../../utils/number.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
-import { calcSplitPassengerFare, computeSplitPoolKomistraBase } from '../../../utils/splitFare.utils';
+import { calcSplitPassengerFare, computeSplitPoolKomistraBase, getSplitMaxMatchedRiders } from '../../../utils/splitFare.utils';
+import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { haversineMeters, isPointNearRoute } from '../../../utils/geo.utils';
@@ -135,6 +136,9 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
 
       if (ride.totalSeats && usedSeats + requestedSeats > ride.totalSeats) continue;
 
+      const maxMatchedRiders = await getSplitMaxMatchedRiders();
+      if (existingActivePassengers.length >= maxMatchedRiders) continue;
+
       const hasPaidBooking = await Booking.exists({
         rideId: ride._id,
         paymentStatus: {
@@ -214,19 +218,18 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       });
       await redis.expire(`split:matching:passenger:${passenger._id}`, ttl);
 
+      const price = toRiderPriceView({
+        estimatedFare: fareBreakdown.estimatedFare,
+        vatAmount: fareBreakdown.vatAmount,
+        vatPercentage: fareBreakdown.platformVatPercent,
+      });
+
       const requestedRide = {
         rideId: null,
         passengerId: passenger._id.toString(),
         bookingId: booking._id.toString(),
         matchingStatus: PASSENGER_STATUS.split_matching,
-        estimatedFare: fareBreakdown.estimatedFare,
-        surchargePercent: fareBreakdown.surchargePercent,
-        surchargeAmount: fareBreakdown.surchargeAmount,
-        minimumFareApplied: fareBreakdown.minimumFareApplied,
-        minimumFareAmount: fareBreakdown.minimumFareAmount,
-        minimumFareAdjustment: fareBreakdown.minimumFareAdjustment,
-        splitSurchargePercent: fareBreakdown.splitSurchargePercent,
-        splitSurchargeAmount: fareBreakdown.splitSurchargeAmount,
+        ...price,
         availableSeats: 0,
         departureDate,
         departureTime,
@@ -251,6 +254,13 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     }
 
     const activeRidersAfterJoin = activeRidersBeforeJoin + 1;
+    const maxMatchedRiders = await getSplitMaxMatchedRiders();
+    if (activeRidersAfterJoin > maxMatchedRiders) {
+      return callback?.({
+        success: false,
+        message: `Split ride allows a maximum of ${maxMatchedRiders} matched riders.`,
+      });
+    }
 
     let poolKomistraBase: number | undefined;
     if (activeRidersAfterJoin >= 2) {
@@ -347,18 +357,17 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     });
     await redis.expire(`ride:request:${selectedRide._id}:${passenger._id}`, ttl);
 
+    const price = toRiderPriceView({
+      estimatedFare: fareBreakdown.estimatedFare,
+      vatAmount: fareBreakdown.vatAmount,
+      vatPercentage: fareBreakdown.platformVatPercent,
+    });
+
     const requestedRide = {
       rideId: selectedRide._id.toString(),
       passengerId: passenger._id.toString(),
       bookingId: booking._id.toString(),
-      estimatedFare: fareBreakdown.estimatedFare,
-      surchargePercent: fareBreakdown.surchargePercent,
-      surchargeAmount: fareBreakdown.surchargeAmount,
-      minimumFareApplied: fareBreakdown.minimumFareApplied,
-      minimumFareAmount: fareBreakdown.minimumFareAmount,
-      minimumFareAdjustment: fareBreakdown.minimumFareAdjustment,
-      splitSurchargePercent: fareBreakdown.splitSurchargePercent,
-      splitSurchargeAmount: fareBreakdown.splitSurchargeAmount,
+      ...price,
       availableSeats: selectedRide.totalSeats
         ? selectedRide.totalSeats - activeSeatsBeforeJoin - requestedSeats
         : 0,

@@ -24,13 +24,14 @@
   sixPassengerExtraChargePercentage: 40,
   baseFare: 20,
   splitRideMatchedSurchargePercent: 30,
+  splitRideMatchedSurchargePercent3: 50,
+  splitRideMaxMatchedRiders: 3,
   platformVat: 9,
   platformCommissionPercent: 10,
   driverPlatformFeePercent: 15,
   driverVatPercent: 19,
   fareRoundingBracket: 5,
 
-  supportContract: '+357XXXXXXXX',
   supportEmail: 'support@yourapp.com',
 } as const;
 
@@ -59,12 +60,13 @@ export const GENERAL_KEYS = [
   'sixPassengerExtraChargePercentage',
   'baseFare',
   'splitRideMatchedSurchargePercent',
+  'splitRideMatchedSurchargePercent3',
+  'splitRideMaxMatchedRiders',
   'platformVat',
   'platformCommissionPercent',
   'driverPlatformFeePercent',
   'driverVatPercent',
   'fareRoundingBracket',
-  'supportContract',
   'supportEmail',
 ] as const;
 

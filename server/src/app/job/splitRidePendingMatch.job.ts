@@ -24,7 +24,7 @@ import {
   getDepartureDateTime,
   getMatchingLastNotifyHours,
 } from '../utils/rideSchedule.utils';
-import { refundToWallet, recalculateSplitFares } from '../utils/splitFare.utils';
+import { refundToWallet, recalculateSplitFares, getSplitMaxMatchedRiders } from '../utils/splitFare.utils';
 import { sendNotification } from '../utils/sentPushNotification';
 import { getRouteGeometry } from '../utils/maps.utils';
 
@@ -99,6 +99,13 @@ const findMatchingExistingRide = async (passenger: any) => {
 
     const usedSeats = await getUsedSeats(ride._id);
     if (ride.totalSeats && usedSeats + (passenger.requestedSeats || 1) > ride.totalSeats) continue;
+
+    const activeRiderCount = await Passenger.countDocuments({
+      rideId: ride._id,
+      status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected, PASSENGER_STATUS.split_matching] },
+    });
+    const maxMatchedRiders = await getSplitMaxMatchedRiders();
+    if (activeRiderCount >= maxMatchedRiders) continue;
 
     return { ride, usedSeats };
   }

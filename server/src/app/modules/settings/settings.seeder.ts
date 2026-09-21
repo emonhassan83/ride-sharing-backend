@@ -50,6 +50,20 @@ const settingSeeder = async () => {
         upsert: true,
       },
     },
+    {
+      updateOne: {
+        filter: { key: 'splitRideMatchedSurchargePercent3' },
+        update: { $set: { key: 'splitRideMatchedSurchargePercent3', value: 50 } },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
+        filter: { key: 'splitRideMaxMatchedRiders' },
+        update: { $set: { key: 'splitRideMaxMatchedRiders', value: 3 } },
+        upsert: true,
+      },
+    },
   ]);
 
   console.log('✅ Settings seeded successfully');

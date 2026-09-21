@@ -7,6 +7,7 @@ import { RIDE_STATUS } from '../ride/ride.constant';
 import { Booking } from '../booking/booking.model';
 import { getRedisClient } from '../../config/redis.config';
 import { buildStoredFareBreakdown } from '../../utils/fareBreakdownResponse.utils';
+import { toRiderPriceView } from '../../utils/riderPriceResponse.utils';
 
 const getDriverRideRequest = async (driverUserId: string) => {
   // Find rides where the user is a passenger and the ride is pending
@@ -121,22 +122,23 @@ const getPassengerById = async (passengerId: string) => {
     (passenger as any).rideId,
   );
 
+  const price = toRiderPriceView({
+    estimatedFare: Number(
+      (passenger as any).totalFare ||
+        (passenger as any).estimatedFare ||
+        booking?.totalFare ||
+        fareBreakdown.totalFare,
+    ),
+    vatAmount: fareBreakdown.vatAmount,
+    vatPercentage: fareBreakdown.vatPercentage,
+    vatIncluded: fareBreakdown.vatIncluded,
+  });
+
   return {
     ...passenger,
-    baseFare: fareBreakdown.baseFare,
-    vatPercentage: fareBreakdown.vatPercentage,
-    vatAmount: fareBreakdown.vatAmount,
-    vatIncluded: fareBreakdown.vatIncluded,
-    platformCommissionPercentage: fareBreakdown.platformCommissionPercentage,
-    platformCommission: fareBreakdown.platformCommissionAmount,
-    platformCommissionAmount: fareBreakdown.platformCommissionAmount,
-    fivePassengerExtraChargePercentage: fareBreakdown.fivePassengerExtraChargePercentage,
-    fivePassengerExtraCharge: fareBreakdown.fivePassengerExtraCharge,
-    sixPassengerExtraChargePercentage: fareBreakdown.sixPassengerExtraChargePercentage,
-    sixPassengerExtraCharge: fareBreakdown.sixPassengerExtraCharge,
+    ...price,
     bookingId: booking?._id || null,
     bookingShortId: booking?.id || null,
-    fareBreakdown,
   };
 };
 

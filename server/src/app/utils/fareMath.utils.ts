@@ -101,9 +101,11 @@ export interface PassengerFareTotalsInput {
   rawComponentFare: number;
   baseFare: number;
   platformVatPercent: number;
+  /** PMCrfPR — baked into private & unmatched-split upfront fare. */
   platformCommissionPercent: number;
+  /** PMCrfSR for matched split (2→30%, 3→50%). */
   splitRideMatchedSurchargePercent: number;
-  /** Sum of all matched riders' komistra bases (split matched pool). */
+  /** Sum of each rider's initial upfront totals (after PMCrfPR + €5 + min). */
   poolKomistraBase?: number;
   fareRoundingBracket?: number;
 }
@@ -128,6 +130,18 @@ export interface PassengerFareTotals {
   totalFare: number;
 }
 
+/** Resolve PMCrfSR by matched rider count (client: 2→+30%, 3→+50%). */
+export const resolveSplitMatchedSurchargePercent = (
+  riderCount: number,
+  twoRiderPercent = 30,
+  threeRiderPercent = 50,
+): number => {
+  const count = Math.max(Number(riderCount) || 1, 1);
+  if (count >= 3) return threeRiderPercent;
+  if (count >= 2) return twoRiderPercent;
+  return 0;
+};
+
 export const buildPassengerFareTotals = (
   input: PassengerFareTotalsInput,
 ): PassengerFareTotals => {
@@ -144,63 +158,55 @@ export const buildPassengerFareTotals = (
   } = input;
 
   const isSplit = rideType === 'split';
-  const isMatchedSplit = isSplit && Math.max(riderCount, 1) >= 2;
-  const splitPercent = isSplit ? splitRideMatchedSurchargePercent : 0;
+  const riders = Math.max(Number(riderCount) || 1, 1);
+  const isMatchedSplit = isSplit && riders >= 2;
   const actualFare = roundMoney(rawComponentFare);
+
+  // PMCrfPR baked into private + unmatched-split initial upfront.
+  const afterPmc = roundMoney(
+    actualFare * (1 + Number(platformCommissionPercent || 0) / 100),
+  );
+  const initialBracket = roundUpToFiveBracket(afterPmc, fareRoundingBracket);
+  const initialUpfront = Math.max(initialBracket, baseFare);
 
   let totalFare: number;
   let fareBeforeFees: number;
   let bracketRoundedFare: number;
   let minimumFareAdjustment: number;
   let minimumFareApplied: boolean;
-  const platformCommissionAmount = 0;
   let splitRideMatchedSurchargeAmount = 0;
+  const splitPercent = isMatchedSplit ? splitRideMatchedSurchargePercent : 0;
 
   if (isMatchedSplit) {
-    const poolBase = roundMoney(
-      poolKomistraBase ?? rawComponentFare * Math.max(riderCount, 1),
+    // Worked example: avg(initial upfronts) × PMCrfSR ÷ riders → €5 ceil → min.
+    const poolInitial = roundMoney(
+      poolKomistraBase ?? initialUpfront * riders,
     );
-    const poolWithSurcharge = roundMoney(
-      poolBase * (1 + splitRideMatchedSurchargePercent / 100),
+    const averageInitial = roundMoney(poolInitial / riders);
+    const sharedBasis = roundMoney(
+      averageInitial * (1 + splitRideMatchedSurchargePercent / 100),
     );
-    splitRideMatchedSurchargeAmount = roundMoney(poolWithSurcharge - poolBase);
-    const perRiderBeforeBracket = roundMoney(poolWithSurcharge / riderCount);
+    splitRideMatchedSurchargeAmount = roundMoney(sharedBasis - averageInitial);
+    const perRiderBeforeBracket = roundMoney(sharedBasis / riders);
     bracketRoundedFare = roundUpToFiveBracket(
       perRiderBeforeBracket,
       fareRoundingBracket,
     );
     totalFare = Math.max(bracketRoundedFare, baseFare);
-    fareBeforeFees = roundMoney(poolBase / riderCount);
-    minimumFareApplied = totalFare > actualFare;
-    minimumFareAdjustment = minimumFareApplied
-      ? roundMoney(totalFare - actualFare)
-      : 0;
-  } else if (isSplit) {
-    bracketRoundedFare = roundUpToFiveBracket(
-      rawComponentFare,
-      fareRoundingBracket,
-    );
-    totalFare = Math.max(bracketRoundedFare, baseFare);
-    fareBeforeFees = totalFare;
-    minimumFareApplied = totalFare > actualFare;
-    minimumFareAdjustment = minimumFareApplied
-      ? roundMoney(totalFare - actualFare)
-      : 0;
+    fareBeforeFees = averageInitial;
+    minimumFareApplied = totalFare > bracketRoundedFare;
+    minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);
   } else {
-    bracketRoundedFare = roundUpToFiveBracket(
-      rawComponentFare,
-      fareRoundingBracket,
-    );
-    totalFare = Math.max(bracketRoundedFare, baseFare);
-    fareBeforeFees = actualFare;
-    minimumFareApplied = totalFare > actualFare;
-    minimumFareAdjustment = minimumFareApplied
-      ? roundMoney(totalFare - actualFare)
-      : 0;
+    bracketRoundedFare = initialBracket;
+    totalFare = initialUpfront;
+    fareBeforeFees = afterPmc;
+    minimumFareApplied = totalFare > bracketRoundedFare;
+    minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);
   }
 
-  const vatAmount = extractIncludedVat(actualFare, platformVatPercent);
-  const netBeforeVat = roundMoney(actualFare - vatAmount);
+  // VAT extracted from regulated base (display); PMC baked into totalFare only.
+  const vatAmount = extractIncludedVat(totalFare, platformVatPercent);
+  const netBeforeVat = roundMoney(totalFare - vatAmount);
 
   return {
     actualFare,
@@ -212,10 +218,11 @@ export const buildPassengerFareTotals = (
     splitRideMatchedSurchargeAmount,
     splitSurchargePercent: splitPercent,
     splitSurchargeAmount: isMatchedSplit
-      ? roundMoney(splitRideMatchedSurchargeAmount / riderCount)
-      : splitRideMatchedSurchargeAmount,
+      ? roundMoney(splitRideMatchedSurchargeAmount / riders)
+      : 0,
+    // Not rider-facing; keep 0 so APIs don't show a separate platform charge.
     platformCommissionPercent: 0,
-    platformCommissionAmount,
+    platformCommissionAmount: 0,
     platformVatPercent,
     vatAmount,
     vatIncluded: true,
@@ -312,5 +319,11 @@ export const reversePassengerTotalToBase = (params: {
   if (isMatchedSplit) {
     return roundMoney(total / (1 + splitRideMatchedSurchargePercent / 100));
   }
+
+  if (rideType === 'private' || rideType === 'split') {
+    // Reverse baked PMCrfPR from passenger total (lossy around €5 brackets).
+    return roundMoney(total / (1 + platformCommissionPercent / 100));
+  }
+
   return total;
 };

@@ -24,6 +24,7 @@ import { modeType } from '../../../modules/notification/notification.interface';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { recalculateSplitFares } from '../../../utils/splitFare.utils';
 import { buildStoredFareBreakdown } from '../../../utils/fareBreakdownResponse.utils';
+import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 
 const ensureRiderInRoom = (userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
@@ -414,6 +415,12 @@ await redis.hset(`ride:active:${rideId}`, {
       ensureRiderInRoom(passenger.userId.toString(), rideId);
 
       const fareBreakdown = await buildStoredFareBreakdown(passenger, booking, ride);
+      const price = toRiderPriceView({
+        estimatedFare: Number(passenger.estimatedFare || booking.totalFare || fareBreakdown.totalFare),
+        vatAmount: fareBreakdown.vatAmount,
+        vatPercentage: fareBreakdown.vatPercentage,
+        vatIncluded: fareBreakdown.vatIncluded,
+      });
 
       const payload = buildAcceptedPayload(
         rideId,
@@ -423,18 +430,18 @@ await redis.hset(`ride:active:${rideId}`, {
         driverDetails,
         socket,
         estimatedArrival,
-        { rideFullyAccepted: true, fareBreakdown }
+        { rideFullyAccepted: true, ...price }
       );
 
       io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
       console.log(
-        `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`
+        `Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`
       );
 
       return callback?.({
         success: true,
         message: 'Private ride accepted successfully',
-        data: { bookingId: booking._id, estimatedArrival, fareBreakdown },
+        data: { bookingId: booking._id, estimatedArrival, ...price },
       });
     }
 
@@ -593,6 +600,16 @@ await redis.hset(`ride:active:${rideId}`, {
 
       const refreshedPassenger = await Passenger.findById(passenger._id).lean() || passenger;
       const fareBreakdown = await buildStoredFareBreakdown(refreshedPassenger, booking, ride);
+      const price = toRiderPriceView({
+        estimatedFare: Number(
+          (refreshedPassenger as any).estimatedFare ||
+            booking.totalFare ||
+            fareBreakdown.totalFare,
+        ),
+        vatAmount: fareBreakdown.vatAmount,
+        vatPercentage: fareBreakdown.vatPercentage,
+        vatIncluded: fareBreakdown.vatIncluded,
+      });
 
       const payload = buildAcceptedPayload(
         rideId,
@@ -605,13 +622,13 @@ await redis.hset(`ride:active:${rideId}`, {
         {
           rideFullyAccepted: isLastPassenger,
           remainingPassengers: remainingCount,
-          fareBreakdown,
+          ...price,
         }
       );
 
       io.to(`user:${passenger.userId.toString()}`).emit('ride:driver-accepted', payload);
       console.log(
-        `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
+        `Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
       );
 
       return callback?.({
@@ -624,7 +641,7 @@ await redis.hset(`ride:active:${rideId}`, {
           estimatedArrival,
           rideFullyAccepted: isLastPassenger,
           remainingPassengers: remainingCount,
-          fareBreakdown,
+          ...price,
         },
       });
     }

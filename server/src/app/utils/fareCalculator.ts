@@ -4,6 +4,7 @@ import axios from 'axios';
 import {
   buildPassengerFareTotals,
   getDayNightRates,
+  resolveSplitMatchedSurchargePercent,
   roundMoney,
 } from './fareMath.utils';
 
@@ -57,6 +58,7 @@ interface FareSettings {
   platformVat: number;
   platformCommissionPercent: number;
   splitRideMatchedSurchargePercent: number;
+  splitRideMatchedSurchargePercent3: number;
   driverPlatformFeePercent: number;
   driverVatPercent: number;
   fareRoundingBracket: number;
@@ -77,6 +79,7 @@ const DEFAULTS: FareSettings = {
   platformVat: 9,
   platformCommissionPercent: 10,
   splitRideMatchedSurchargePercent: 30,
+  splitRideMatchedSurchargePercent3: 50,
   driverPlatformFeePercent: 15,
   driverVatPercent: 19,
   fareRoundingBracket: 5,
@@ -139,6 +142,9 @@ export async function loadFareSettings(): Promise<FareSettings> {
       map.get('platformCommissionPercent') ?? DEFAULTS.platformCommissionPercent,
     splitRideMatchedSurchargePercent:
       map.get('splitRideMatchedSurchargePercent') ?? DEFAULTS.splitRideMatchedSurchargePercent,
+    splitRideMatchedSurchargePercent3:
+      map.get('splitRideMatchedSurchargePercent3') ??
+      DEFAULTS.splitRideMatchedSurchargePercent3,
     driverPlatformFeePercent:
       map.get('driverPlatformFeePercent') ?? DEFAULTS.driverPlatformFeePercent,
     driverVatPercent: map.get('driverVatPercent') ?? DEFAULTS.driverVatPercent,
@@ -197,6 +203,11 @@ export async function calculateFareBreakdown(params: {
   const rawComponentFare = roundMoney(regulatedBase);
 
   const riderCount = Math.max(Number(activeRiderCount) || 1, 1);
+  const matchedSurchargePercent = resolveSplitMatchedSurchargePercent(
+    riderCount,
+    settings.splitRideMatchedSurchargePercent,
+    settings.splitRideMatchedSurchargePercent3,
+  );
   const fareTotals = buildPassengerFareTotals({
     rideType,
     riderCount,
@@ -204,7 +215,7 @@ export async function calculateFareBreakdown(params: {
     baseFare: settings.baseFare,
     platformVatPercent: settings.platformVat,
     platformCommissionPercent: settings.platformCommissionPercent,
-    splitRideMatchedSurchargePercent: settings.splitRideMatchedSurchargePercent,
+    splitRideMatchedSurchargePercent: matchedSurchargePercent,
     fareRoundingBracket: settings.fareRoundingBracket,
   });
 
