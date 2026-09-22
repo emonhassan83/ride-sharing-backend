@@ -133,7 +133,7 @@ export const getActiveSplitPassengersOnRide = async (rideId: any) =>
     status: { $nin: ACTIVE_STATUSES_EXCLUDE },
   })
     .select(
-      'pickup destination departureDate departureTime requestedSeats userId estimatedDistanceKm luggageCounts status',
+      'pickup destination departureDate departureTime requestedSeats userId estimatedDistanceKm status',
     )
     .lean();
 

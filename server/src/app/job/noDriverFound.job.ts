@@ -17,6 +17,7 @@ import { BOOKING_STATUS, PAYMENT_STATUS } from '../modules/booking/booking.const
 import { REFUND_STATUS, REFUND_TYPE } from '../modules/refund/refund.constant';
 import { refundToWallet } from '../utils/splitFare.utils';
 import { getDepartureDateTime } from '../utils/rideSchedule.utils';
+import { toLuggageFyiView } from '../utils/luggage.utils';
 import Stripe from 'stripe';
 import { config } from '../config/env.config';
 
@@ -149,6 +150,7 @@ export const checkNoDriverFound = async () => {
       status: PASSENGER_STATUS.pending,
       bookingId: booking._id.toString(),
       createdAt: (passenger as any).createdAt,
+      ...toLuggageFyiView(passenger),
     };
 
     const notified = await notifyNearbyDrivers(

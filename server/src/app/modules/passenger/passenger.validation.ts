@@ -24,6 +24,9 @@ export const createZodSchema = z.object({
 
     fareType: z.enum(Object.values(FARE_TYPE) as [string, ...string[]]),
     luggageCounts: z.number().min(0).default(0),
+    largeSuitcase: z.number().int().min(0).default(0),
+    smallSuitcase: z.number().int().min(0).default(0),
+    luggageNote: z.string().optional(),
     note: z.string().optional()
   }),
 });

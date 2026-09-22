@@ -8,6 +8,7 @@ import { haversineMeters } from '../../../utils/geo.utils';
 import { TSocket } from '../../interface/index.interface';
 import { RIDE_STATUS } from '../../../modules/ride/ride.constant';
 import eventHandler from '../../utils/eventHandler';
+import { toLuggageFyiView } from '../../../utils/luggage.utils';
 
 export const getRidePassengersHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -46,7 +47,9 @@ export const getRidePassengersHandler = eventHandler<any>(
         PASSENGER_STATUS.completed,
       ]},
     })
-      .select('userId pickup destination status requestedSeats estimatedFare pickedUpAt arriveAt')
+      .select(
+        'userId pickup destination status requestedSeats estimatedFare pickedUpAt arriveAt largeSuitcase smallSuitcase luggageNote luggageCounts note'
+      )
       .lean();
 
     if (!passengers.length) {
@@ -83,6 +86,7 @@ export const getRidePassengersHandler = eventHandler<any>(
           status:         passenger.status,
           requestedSeats: passenger.requestedSeats,
           estimatedFare:  passenger.estimatedFare,
+          ...toLuggageFyiView(passenger),
           name:           user?.name         || '',
           profileImage:   user?.profileImage || null,
           pickup: {

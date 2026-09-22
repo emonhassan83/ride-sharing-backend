@@ -13,7 +13,7 @@ const getBookingById = async (bookingId: string) => {
     .populate('driverId', 'name profileImage email phone')
     .populate(
       'passengerId',
-      'pickup destination fareType initialCharge perKmCharge departureTime estimatedDistanceKm totalKmCharge luggageCounts luggageCharge holidayTripCharge vat estimatedFare departureDate departureTime'
+      'pickup destination fareType initialCharge perKmCharge departureTime estimatedDistanceKm totalKmCharge luggageCounts luggageCharge holidayTripCharge vat estimatedFare departureDate departureTime largeSuitcase smallSuitcase luggageNote note requestedSeats'
     )
     .populate({
       path: 'rideId',
@@ -36,7 +36,7 @@ const getAllBookings = async (query: Record<string, unknown>) => {
       { path: 'driverId', select: 'name' },
       {
         path: 'passengerId',
-        select: 'pickup destination departureDate departureTime requestedSeats',
+        select: 'pickup destination departureDate departureTime requestedSeats largeSuitcase smallSuitcase luggageNote luggageCounts note',
       },
       {
         path: 'rideId',

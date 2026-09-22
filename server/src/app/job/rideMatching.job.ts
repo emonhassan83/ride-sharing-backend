@@ -7,6 +7,7 @@ import { getRedisClient } from '../config/redis.config';
 import { getIO } from '../socket/socket.init';
 import { notifyNearbyDrivers } from '../utils/notifyDrivers.utils';
 import { User } from '../modules/user/user.model';
+import { toLuggageFyiView } from '../utils/luggage.utils';
 
 export const startRideMatchingJob = async (): Promise<void> => {
   try {
@@ -68,6 +69,7 @@ export const startRideMatchingJob = async (): Promise<void> => {
         estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,
         status:              PASSENGER_STATUS.pending,
         createdAt:           (passenger as any).createdAt,
+        ...toLuggageFyiView(passenger),
       };
 
       const count = await notifyNearbyDrivers(

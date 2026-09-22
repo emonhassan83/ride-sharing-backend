@@ -9,6 +9,7 @@ import { assertSplitMinimumDistance } from '../../../utils/rideSchedule.utils';
 import { getDepartureDateTime } from '../../../utils/rideSchedule.utils';
 import { RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
+import { normalizeAndAssertLuggage, toLuggageFyiView } from '../../../utils/luggage.utils';
 
 export const fareBreakdownHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -21,7 +22,9 @@ export const fareBreakdownHandler = eventHandler<any>(
       femalePassengers,
       departureDate,
       departureTime,
-      luggageCounts,
+      largeSuitcase,
+      smallSuitcase,
+      luggageNote,
     } = data;
 
     if (!pickup || !destination)
@@ -31,6 +34,12 @@ export const fareBreakdownHandler = eventHandler<any>(
       return callback?.({ success: false, message: 'Ride type is required' });
 
     const requestedSeats = passengers || 1;
+    const luggage = normalizeAndAssertLuggage({
+      largeSuitcase,
+      smallSuitcase,
+      luggageNote,
+      requestedSeats,
+    });
 
     // Validate 30-min booking slots when time is provided.
     let departureDateTime = departureDate ? new Date(departureDate) : new Date();
@@ -64,7 +73,7 @@ export const fareBreakdownHandler = eventHandler<any>(
       distanceKm: actualDistance,
       departureDate: departureDateTime,
       departureTime: departureTime || new Date().toLocaleTimeString(),
-      luggageCount: luggageCounts || 0,
+      luggageCount: 0, // FYI only — never billed
       requestedSeats,
       rideType: type,
       waitingMinutes: 0,
@@ -84,6 +93,10 @@ export const fareBreakdownHandler = eventHandler<any>(
         ...price,
         estimatedDistance: roundTo2(actualDistance),
         estimatedDuration: actualDuration,
+        luggage: {
+          ...toLuggageFyiView(luggage),
+          ...luggage.sizeGuide,
+        },
         rideDetails: {
           bookingDate: departureDate || new Date().toISOString().split('T')[0],
           bookingTime: departureTime || new Date().toLocaleTimeString(),
@@ -93,7 +106,7 @@ export const fareBreakdownHandler = eventHandler<any>(
           requestedSeats,
           malePassengers: malePassengers || 0,
           femalePassengers: femalePassengers || 0,
-          luggageCounts: luggageCounts || 0,
+          ...toLuggageFyiView(luggage),
         },
       },
     });

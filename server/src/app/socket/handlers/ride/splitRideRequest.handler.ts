@@ -20,6 +20,7 @@ import {
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
 import { assertMinimumBookingLeadTime, assertSplitMinimumDistance } from '../../../utils/rideSchedule.utils';
+import { normalizeAndAssertLuggage } from '../../../utils/luggage.utils';
 
 export const joinSplitRideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -31,7 +32,9 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       femalePassengers,
       departureDate,
       departureTime,
-      luggageCounts,
+      largeSuitcase,
+      smallSuitcase,
+      luggageNote,
       note,
       rideId: requestedRideId,
     } = data;
@@ -46,6 +49,14 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     const requestedSeats = Number(passengers) > 0 ? Number(passengers) : 1;
     const malePassengerCount = Number(malePassengers) > 0 ? Number(malePassengers) : 0;
     const femalePassengerCount = Number(femalePassengers) > 0 ? Number(femalePassengers) : 0;
+
+    const luggage = normalizeAndAssertLuggage({
+      largeSuitcase,
+      smallSuitcase,
+      luggageNote,
+      requestedSeats,
+    });
+
     const { departureDateTime } = await assertMinimumBookingLeadTime(
       departureDate,
       departureTime,
@@ -161,7 +172,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         actualDistance,
         requestedSeats,
         1,
-        luggageCounts || 0,
+        0, // luggage FYI only — never billed
         departureTime,
         departureDateTime
       );
@@ -180,7 +191,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         initialCharge: fareBreakdown.initialCharge,
         perKmCharge: fareBreakdown.totalKmCharge / (actualDistance || 1),
         totalKmCharge: fareBreakdown.totalKmCharge,
-        luggageCharge: fareBreakdown.luggageCharge,
+        luggageCharge: 0,
         holidayTripCharge: fareBreakdown.holidayTripCharge,
         vat: fareBreakdown.vatAmount,
         surchargePercent: fareBreakdown.surchargePercent,
@@ -190,7 +201,10 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         waitingCharge: 0,
         estimatedDistanceKm: actualDistance,
         estimatedDurationMinutes: actualDuration,
-        luggageCounts: luggageCounts || 0,
+        luggageCounts: 0,
+        largeSuitcase: luggage.largeSuitcase,
+        smallSuitcase: luggage.smallSuitcase,
+        luggageNote: luggage.luggageNote,
         note: note ?? '',
         status: PASSENGER_STATUS.split_matching,
         originalRideIntent: 'split',
@@ -255,6 +269,13 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
           requestedRides: [requestedRide],
           estimatedDistance: roundTo2(actualDistance),
           estimatedDuration: actualDuration,
+          luggage: {
+            largeSuitcase: luggage.largeSuitcase,
+            smallSuitcase: luggage.smallSuitcase,
+            luggageNote: luggage.luggageNote,
+            luggageCounts: 0,
+            ...luggage.sizeGuide,
+          },
         },
       });
     }
@@ -284,12 +305,12 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
           ...existingActivePassengers.map((passenger: any) => ({
             estimatedDistanceKm: passenger.estimatedDistanceKm || 0,
             requestedSeats: passenger.requestedSeats || 1,
-            luggageCounts: passenger.luggageCounts || 0,
+            luggageCounts: 0,
           })),
           {
             estimatedDistanceKm: actualDistance,
             requestedSeats,
-            luggageCounts: luggageCounts || 0,
+            luggageCounts: 0,
           },
         ],
       });
@@ -299,7 +320,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       actualDistance,
       requestedSeats,
       activeRidersAfterJoin,
-      luggageCounts || 0,
+      0, // luggage FYI only — never billed
       departureTime,
       departureDateTime,
       poolKomistraBase !== undefined ? { poolKomistraBase } : {},
@@ -319,7 +340,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       initialCharge: fareBreakdown.initialCharge,
       perKmCharge: fareBreakdown.totalKmCharge / (actualDistance || 1),
       totalKmCharge: fareBreakdown.totalKmCharge,
-      luggageCharge: fareBreakdown.luggageCharge,
+      luggageCharge: 0,
       holidayTripCharge: fareBreakdown.holidayTripCharge,
       vat: fareBreakdown.vatAmount,
       surchargePercent: fareBreakdown.surchargePercent,
@@ -329,7 +350,10 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       waitingCharge: 0,
       estimatedDistanceKm: actualDistance,
       estimatedDurationMinutes: actualDuration,
-      luggageCounts: luggageCounts || 0,
+      luggageCounts: 0,
+      largeSuitcase: luggage.largeSuitcase,
+      smallSuitcase: luggage.smallSuitcase,
+      luggageNote: luggage.luggageNote,
       note: note ?? '',
       status: PASSENGER_STATUS.pending,
       originalRideIntent: 'split',
@@ -400,6 +424,13 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         requestedRides: [requestedRide],
         estimatedDistance: roundTo2(actualDistance),
         estimatedDuration: actualDuration,
+        luggage: {
+          largeSuitcase: luggage.largeSuitcase,
+          smallSuitcase: luggage.smallSuitcase,
+          luggageNote: luggage.luggageNote,
+          luggageCounts: 0,
+          ...luggage.sizeGuide,
+        },
       },
     });
   }

@@ -53,9 +53,30 @@ const getARide = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getDriverInvoice = catchAsync(async (req: Request, res: Response) => {
+  const result = await RideService.getDriverMonthlyInvoice(
+    {
+      userId: req.user?.userId as string,
+      role: req.user?.role as string,
+    },
+    {
+      year: Number(req.query.year),
+      month: Number(req.query.month),
+      driverId: req.query.driverId as string | undefined,
+    },
+  );
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Driver invoice data fetched successfully',
+    data: result,
+  });
+});
+
 export const RideController = {
   getAllRides,
   getDriverRides,
   getRiderRides,
   getARide,
+  getDriverInvoice,
 };

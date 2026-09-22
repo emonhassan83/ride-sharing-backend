@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { RideController } from './ride.controller';
 import auth from '../../middlewares/auth';
 import { USER_ROLE } from '../user/user.constant';
+import validateRequest from '../../utils/validateRequest';
+import { RideValidation } from './ride.validation';
 
 const router = Router();
 
@@ -12,6 +14,14 @@ router.get(
   RideController.getDriverRides
 );
 router.get('/rider-rides', auth(USER_ROLE.user), RideController.getRiderRides);
+
+// Monthly driver invoice (must be before /:id)
+router.get(
+  '/driver-invoice',
+  auth([USER_ROLE.provider, USER_ROLE.admin]),
+  validateRequest(RideValidation.driverInvoiceQueryZodSchema),
+  RideController.getDriverInvoice
+);
 
 // Get available all ride
 router.get('/', auth(USER_ROLE.admin), RideController.getAllRides);

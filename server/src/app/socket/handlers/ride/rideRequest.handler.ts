@@ -17,6 +17,7 @@ import { notifyNearbyDrivers } from '../../../utils/notifyDrivers.utils';
 import { Booking } from '../../../modules/booking/booking.model';
 import { BOOKING_STATUS, PAYMENT_STATUS as BOOKING_PAYMENT_STATUS } from '../../../modules/booking/booking.constant';
 import { assertMinimumBookingLeadTime } from '../../../utils/rideSchedule.utils';
+import { normalizeAndAssertLuggage } from '../../../utils/luggage.utils';
 
 export const rideRequestHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -24,7 +25,7 @@ export const rideRequestHandler = eventHandler<any>(
       pickup, destination, type, passengers,
       malePassengers, femalePassengers,
       departureDate, departureTime,
-      luggageCounts, note,
+      largeSuitcase, smallSuitcase, luggageNote, note,
       selectedDriverId, driverId,
     } = data;
     const userId = socket.auth?._id?.toString();
@@ -38,6 +39,13 @@ export const rideRequestHandler = eventHandler<any>(
     const requestedSeats = Number(passengers) > 0 ? Number(passengers) : 1;
     const malePassengerCount = Number(malePassengers) > 0 ? Number(malePassengers) : 0;
     const femalePassengerCount = Number(femalePassengers) > 0 ? Number(femalePassengers) : 0;
+
+    const luggage = normalizeAndAssertLuggage({
+      largeSuitcase,
+      smallSuitcase,
+      luggageNote,
+      requestedSeats,
+    });
 
     const { departureDateTime } = await assertMinimumBookingLeadTime(
       departureDate,
@@ -78,7 +86,7 @@ export const rideRequestHandler = eventHandler<any>(
       distanceKm:     actualDistance,
       departureDate:  departureDateTime,
       departureTime:  departureTime,
-      luggageCount:   luggageCounts || 0,
+      luggageCount:   0, // FYI only — never billed
       requestedSeats,
       rideType:       type,
       waitingMinutes: 0,
@@ -126,7 +134,7 @@ export const rideRequestHandler = eventHandler<any>(
       initialCharge:            fareBreakdown.initialCharge,
       perKmCharge:              fareBreakdown.perKmCharge,
       totalKmCharge:            roundTo2(fareBreakdown.totalKmCharge),
-      luggageCharge:            fareBreakdown.luggageCharge,
+      luggageCharge:            0,
       holidayTripCharge:        fareBreakdown.holidaySurcharge,
       surchargePercent:         fareBreakdown.splitSurchargePercent || 0,
       surchargeAmount:          fareBreakdown.splitSurchargeAmount || 0,
@@ -138,7 +146,10 @@ export const rideRequestHandler = eventHandler<any>(
       sixPassengerCharge:       requestedSeats === 6 ? fareBreakdown.sixPassengerExtraCharge || 0 : 0,
       estimatedDistanceKm:      actualDistance,
       estimatedDurationMinutes: actualDuration,
-      luggageCounts:            luggageCounts || 0,
+      luggageCounts:            0,
+      largeSuitcase:            luggage.largeSuitcase,
+      smallSuitcase:            luggage.smallSuitcase,
+      luggageNote:              luggage.luggageNote,
       note:                     note ?? '',
       status:                   PASSENGER_STATUS.pending,
     });
@@ -178,6 +189,11 @@ export const rideRequestHandler = eventHandler<any>(
       bookingId:           '',
       estimatedDistanceKm: roundTo2(actualDistance),
       status:              PASSENGER_STATUS.pending,
+      largeSuitcase:       luggage.largeSuitcase,
+      smallSuitcase:       luggage.smallSuitcase,
+      luggageNote:         luggage.luggageNote,
+      luggageCounts:       0,
+      note:                note ?? '',
       createdAt:           passenger.createdAt,
     };
 
@@ -237,6 +253,13 @@ export const rideRequestHandler = eventHandler<any>(
         estimatedDistance: roundTo2(actualDistance),
         estimatedDuration: actualDuration,
         fareBreakdown:     roundedBreakdown,
+        luggage: {
+          largeSuitcase: luggage.largeSuitcase,
+          smallSuitcase: luggage.smallSuitcase,
+          luggageNote: luggage.luggageNote,
+          luggageCounts: 0,
+          ...luggage.sizeGuide,
+        },
         rideDetails: {
           bookingDate: departureDate,
           bookingTime: departureTime,

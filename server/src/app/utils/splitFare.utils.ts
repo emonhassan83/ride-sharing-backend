@@ -55,7 +55,7 @@ export const computeSplitPoolKomistraBase = async (params: {
       distanceKm: passenger.estimatedDistanceKm || 0,
       departureDate: params.departureDate,
       departureTime: params.departureTime,
-      luggageCount: passenger.luggageCounts || 0,
+      luggageCount: 0, // FYI only — never billed
       requestedSeats: passenger.requestedSeats || 1,
       rideType: 'split',
       waitingMinutes: 0,
@@ -117,7 +117,7 @@ export const calcSplitPassengerFare = async (
     distanceKm,
     departureDate,
     departureTime,
-    luggageCount,
+    luggageCount: 0, // FYI only — never billed
     requestedSeats,
     rideType: 'split',
     waitingMinutes: 0,
@@ -387,7 +387,7 @@ export const recalculateSplitFares = async (
             passengers: activePassengers.map((passenger) => ({
               estimatedDistanceKm: passenger.estimatedDistanceKm || 0,
               requestedSeats: passenger.requestedSeats || 1,
-              luggageCounts: passenger.luggageCounts || 0,
+              luggageCounts: 0,
             })),
           })
         : undefined;
@@ -397,7 +397,7 @@ export const recalculateSplitFares = async (
         passenger.estimatedDistanceKm || 0,
         passenger.requestedSeats || 1,
         activeRiderCount,
-        passenger.luggageCounts || 0,
+        0, // FYI only — never billed
         (ride as any).departureTime,
         depDate,
         poolKomistraBase !== undefined ? { poolKomistraBase } : {},

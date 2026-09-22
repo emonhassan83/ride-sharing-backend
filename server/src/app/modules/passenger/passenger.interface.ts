@@ -54,7 +54,11 @@ export interface TPassenger {
 
   estimatedDistanceKm: number;
   estimatedDurationMinutes: number;
+  /** Legacy count — always 0 (luggage is FYI, not billed). */
   luggageCounts: number;
+  largeSuitcase: number;
+  smallSuitcase: number;
+  luggageNote?: string;
   note?: string;
 
   status: TPassengerStatus;

@@ -34,6 +34,7 @@ import {
 } from '../utils/splitMatching.utils';
 import { sendNotification } from '../utils/sentPushNotification';
 import { getRouteGeometry } from '../utils/maps.utils';
+import { toLuggageFyiView } from '../utils/luggage.utils';
 
 const BATCH_SIZE = 25;
 const stripe = new Stripe(config.pay?.secretKey as string, {
@@ -230,6 +231,7 @@ const notifyMatchedRideDriver = async (ride: any, passenger: any, booking: any) 
     estimatedDurationMinutes: passenger.estimatedDurationMinutes || 0,
     status: PASSENGER_STATUS.pending,
     createdAt: passenger.createdAt,
+    ...toLuggageFyiView(passenger),
   };
 
   const driverId = ride.driverId?.toString();
@@ -465,6 +467,7 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     estimatedDurationMinutes: attachedPassenger.estimatedDurationMinutes || 0,
     status: PASSENGER_STATUS.pending,
     createdAt: attachedPassenger.createdAt,
+    ...toLuggageFyiView(attachedPassenger),
   };
 
   const notified = await notifyNearbyDrivers(

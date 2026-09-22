@@ -25,6 +25,7 @@ import { PaymentService } from '../../../modules/payment/payment.service';
 import { recalculateSplitFares } from '../../../utils/splitFare.utils';
 import { buildStoredFareBreakdown } from '../../../utils/fareBreakdownResponse.utils';
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
+import { toLuggageFyiView } from '../../../utils/luggage.utils';
 
 const ensureRiderInRoom = (userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
@@ -106,6 +107,7 @@ const buildAcceptedPayload = (
   estimatedArrival,
   totalFare: passenger.estimatedFare,
   status: 'confirmed',
+  ...toLuggageFyiView(passenger),
   ...extra,
 });
 

@@ -8,6 +8,11 @@ import { Booking } from '../booking/booking.model';
 import { getRedisClient } from '../../config/redis.config';
 import { buildStoredFareBreakdown } from '../../utils/fareBreakdownResponse.utils';
 import { toRiderPriceView } from '../../utils/riderPriceResponse.utils';
+import { extractIncludedVat, roundMoney } from '../../utils/fareMath.utils';
+import { toLuggageFyiView } from '../../utils/luggage.utils';
+
+const LUGGAGE_SELECT =
+  'largeSuitcase smallSuitcase luggageNote luggageCounts note';
 
 const getDriverRideRequest = async (driverUserId: string) => {
   // Find rides where the user is a passenger and the ride is pending
@@ -51,12 +56,15 @@ const getDriverRideRequest = async (driverUserId: string) => {
       },
     ])
     .select(
-      'userId rideId pickup destination departureDate departureTime requestedSeats estimatedDistanceKm estimatedFare status createdAt'
+      `userId rideId pickup destination departureDate departureTime requestedSeats estimatedDistanceKm estimatedFare status createdAt ${LUGGAGE_SELECT}`
     )
     .sort({ createdAt: -1 })
     .lean();
 
-  return passengerRides;
+  return passengerRides.map((p) => ({
+    ...p,
+    ...toLuggageFyiView(p),
+  }));
 };
 
 // Get all passengers for a ride
@@ -76,9 +84,10 @@ const getPassengersByRide = async (rideId: string) => {
       },
     ])
     .select(
-      'userId pickup destination departureDate departureTime requestedSeats estimatedFare status createdAt'
+      `userId pickup destination departureDate departureTime requestedSeats estimatedFare status createdAt ${LUGGAGE_SELECT}`
     )
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .lean();
 
   if (!passengers.length) {
     throw new ApiError(
@@ -87,7 +96,10 @@ const getPassengersByRide = async (rideId: string) => {
     );
   }
 
-  return passengers;
+  return passengers.map((p) => ({
+    ...p,
+    ...toLuggageFyiView(p),
+  }));
 };
 
 // Get single passenger by ID
@@ -101,7 +113,7 @@ const getPassengerById = async (passengerId: string) => {
         populate: [
           {
             path: 'driverId',
-            select: 'name email phone profileImage',
+            select: 'name email phone profileImage address',
           },
         ],
       },
@@ -134,9 +146,18 @@ const getPassengerById = async (passengerId: string) => {
     vatIncluded: fareBreakdown.vatIncluded,
   });
 
+  // Invoice: Trip Fee (net) + VAT + Total — net derived from locked gross.
+  const lockedTotal = price.estimatedFare;
+  const vatPercentage = price.vatPercentage;
+  const vatAmount = extractIncludedVat(lockedTotal, vatPercentage);
+  const tripFee = roundMoney(lockedTotal - vatAmount);
+
   return {
     ...passenger,
     ...price,
+    ...toLuggageFyiView(passenger),
+    vatAmount,
+    tripFee,
     bookingId: booking?._id || null,
     bookingShortId: booking?.id || null,
   };

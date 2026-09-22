@@ -30,6 +30,7 @@ import {
   computeDriverPayoutFromPassengerTotal,
   roundMoney,
 } from '../../utils/fareMath.utils';
+import { toLuggageFyiView } from '../../utils/luggage.utils';
 
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-06-24.dahlia',
@@ -98,6 +99,7 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
     estimatedDurationMinutes: (passenger as any).estimatedDurationMinutes || 0,
     status: PASSENGER_STATUS.pending,
     createdAt: (passenger as any).createdAt,
+    ...toLuggageFyiView(passenger),
   };
 
   let notified = 0;

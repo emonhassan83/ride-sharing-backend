@@ -78,7 +78,11 @@ const passengerSchema = new Schema<TPassenger>(
 
     estimatedDistanceKm: { type: Number, default: 0 },
     estimatedDurationMinutes: { type: Number, default: 0 },
+    /** Always 0 — luggage is driver FYI only, no charge. */
     luggageCounts: { type: Number, default: 0 },
+    largeSuitcase: { type: Number, default: 0, min: 0 },
+    smallSuitcase: { type: Number, default: 0, min: 0 },
+    luggageNote: { type: String, default: '' },
     note: { type: String },
 
     status: {
