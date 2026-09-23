@@ -7,6 +7,18 @@ import { SettingValidation } from './settings.validation';
 
 const router = Router();
 
+router.get(
+  '/platform-seller',
+  auth(USER_ROLE.admin),
+  SettingController.getPlatformSeller,
+);
+router.post(
+  '/platform-seller',
+  auth(USER_ROLE.admin),
+  validateRequest(SettingValidation.updatePlatformSellerZodSchema),
+  SettingController.updatePlatformSeller,
+);
+
 router.get('/generals', SettingController.getSettingGenerals);
 router.post(
   '/generals',

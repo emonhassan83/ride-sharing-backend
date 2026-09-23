@@ -39,6 +39,33 @@
   supportEmail: 'support@yourapp.com',
 } as const;
 
+export const PLATFORM_SELLER_KEY = 'platformSeller';
+
+/** Split Ride Ltd seller + payout bank details (admin-editable). */
+export const DEFAULT_PLATFORM_SELLER = {
+  companyName: 'Split Ride Ltd',
+  addressLine1: 'Stasikratous 37, 4th Floor',
+  addressLine2: '1065 Nicosia, Cyprus',
+  regCode: 'HE412953',
+  vatNumber: 'CY10412953X',
+  accountHolderName: 'SPLIT RIDE LTD',
+  bankName: 'BANK OF CYPRUS',
+  iban: 'CY39002001950000357012345678',
+  swiftBic: 'BCYPCY21XXX',
+} as const;
+
+export type TPlatformSeller = {
+  companyName: string;
+  addressLine1: string;
+  addressLine2: string;
+  regCode: string;
+  vatNumber: string;
+  accountHolderName: string;
+  bankName: string;
+  iban: string;
+  swiftBic: string;
+};
+
 export const GENERAL_KEYS = [
   'bookingMaxDaysAhead',
   'splitRideMinBookingHours',

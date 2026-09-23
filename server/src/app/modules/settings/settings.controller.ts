@@ -38,10 +38,30 @@ const updateGenerals = catchAsync(async (req, res) => {
   });
 });
 
+const getPlatformSeller = catchAsync(async (_req, res) => {
+  const result = await SettingService.getPlatformSeller();
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Platform seller settings retrieved successfully',
+    data: result,
+  });
+});
+
+const updatePlatformSeller = catchAsync(async (req, res) => {
+  const result = await SettingService.updatePlatformSeller(req.body);
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Platform seller settings updated successfully',
+    data: result,
+  });
+});
+
 export const SettingController = {
   getSetting,
   getSettingGenerals,
   createOrUpdate,
   updateGenerals,
+  getPlatformSeller,
+  updatePlatformSeller,
 };
 

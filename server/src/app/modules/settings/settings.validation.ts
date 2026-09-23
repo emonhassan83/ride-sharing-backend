@@ -70,9 +70,28 @@ export const updateGeneralsZodSchema = z.object({
     }),
 });
 
+export const updatePlatformSellerZodSchema = z.object({
+  body: z
+    .object({
+      companyName: z.string().trim().min(1).optional(),
+      addressLine1: z.string().trim().min(1).optional(),
+      addressLine2: z.string().trim().optional(),
+      regCode: z.string().trim().min(1).optional(),
+      vatNumber: z.string().trim().min(1).optional(),
+      accountHolderName: z.string().trim().min(1).optional(),
+      bankName: z.string().trim().min(1).optional(),
+      iban: z.string().trim().min(1).optional(),
+      swiftBic: z.string().trim().min(1).optional(),
+    })
+    .refine((data) => Object.keys(data).length > 0, {
+      message: 'At least one seller field must be provided',
+    }),
+});
+
 export const SettingValidation = {
   createOrUpdateSettingZodSchema,
   updateGeneralsZodSchema,
+  updatePlatformSellerZodSchema,
 };
 
 

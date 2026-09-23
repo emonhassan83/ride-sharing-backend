@@ -1,5 +1,9 @@
 import { Setting } from './settings.model';
-import { DEFAULT_GENERAL_SETTINGS } from './settings.constant';
+import {
+  DEFAULT_GENERAL_SETTINGS,
+  DEFAULT_PLATFORM_SELLER,
+  PLATFORM_SELLER_KEY,
+} from './settings.constant';
 
 const settingSeeder = async () => {
   const settingsData: { key: string; value: unknown }[] = [
@@ -14,6 +18,10 @@ const settingSeeder = async () => {
     {
       key: 'providerTramsAndCondition',
       value: 'Full trams and condition content goes here...',
+    },
+    {
+      key: PLATFORM_SELLER_KEY,
+      value: DEFAULT_PLATFORM_SELLER,
     },
   ];
 

@@ -5,6 +5,7 @@ import { Ride } from '../ride/ride.model';
 import { PASSENGER_STATUS } from './passenger.constant';
 import { RIDE_STATUS } from '../ride/ride.constant';
 import { Booking } from '../booking/booking.model';
+import { Provider } from '../provider/provider.model';
 import { getRedisClient } from '../../config/redis.config';
 import { buildStoredFareBreakdown } from '../../utils/fareBreakdownResponse.utils';
 import { toRiderPriceView } from '../../utils/riderPriceResponse.utils';
@@ -124,6 +125,15 @@ const getPassengerById = async (passengerId: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Passenger not found');
   }
 
+  const ride = (passenger as any).rideId;
+  const driver = ride?.driverId;
+  if (driver && typeof driver === 'object' && driver._id) {
+    const provider = await Provider.findOne({ userId: driver._id })
+      .select('vatNumber')
+      .lean();
+    driver.vatNumber = provider?.vatNumber || null;
+  }
+
   const booking = await Booking.findOne({ passengerId })
     .select('id paymentStatus bookingStatus totalFare amountPaid')
     .lean();
@@ -160,6 +170,7 @@ const getPassengerById = async (passengerId: string) => {
     tripFee,
     bookingId: booking?._id || null,
     bookingShortId: booking?.id || null,
+    invoiceId: booking?.id || null,
   };
 };
 

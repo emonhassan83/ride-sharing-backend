@@ -1,7 +1,13 @@
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../errors/ApiError';
 import { Setting } from './settings.model';
-import { DEFAULT_GENERAL_SETTINGS, GENERAL_KEYS } from './settings.constant';
+import {
+  DEFAULT_GENERAL_SETTINGS,
+  DEFAULT_PLATFORM_SELLER,
+  GENERAL_KEYS,
+  PLATFORM_SELLER_KEY,
+  TPlatformSeller,
+} from './settings.constant';
 
 const getSetting = async (key: string) => {
   if (!key) throw new ApiError(StatusCodes.BAD_REQUEST, 'Key is required');
@@ -116,9 +122,58 @@ const updateGenerals = async (payload: Record<string, any>) => {
   return validKeys.map((key) => byKey.get(key)).filter(Boolean);
 };
 
+const toPlatformSeller = (value: unknown): TPlatformSeller => {
+  const stored =
+    value && typeof value === 'object' ? (value as Partial<TPlatformSeller>) : {};
+  return {
+    companyName: stored.companyName ?? DEFAULT_PLATFORM_SELLER.companyName,
+    addressLine1: stored.addressLine1 ?? DEFAULT_PLATFORM_SELLER.addressLine1,
+    addressLine2: stored.addressLine2 ?? DEFAULT_PLATFORM_SELLER.addressLine2,
+    regCode: stored.regCode ?? DEFAULT_PLATFORM_SELLER.regCode,
+    vatNumber: stored.vatNumber ?? DEFAULT_PLATFORM_SELLER.vatNumber,
+    accountHolderName:
+      stored.accountHolderName ?? DEFAULT_PLATFORM_SELLER.accountHolderName,
+    bankName: stored.bankName ?? DEFAULT_PLATFORM_SELLER.bankName,
+    iban: stored.iban ?? DEFAULT_PLATFORM_SELLER.iban,
+    swiftBic: stored.swiftBic ?? DEFAULT_PLATFORM_SELLER.swiftBic,
+  };
+};
+
+const getPlatformSeller = async (): Promise<TPlatformSeller> => {
+  const setting = await Setting.findOne({ key: PLATFORM_SELLER_KEY })
+    .select('value')
+    .lean();
+
+  if (!setting) {
+    await Setting.updateOne(
+      { key: PLATFORM_SELLER_KEY },
+      { $setOnInsert: { key: PLATFORM_SELLER_KEY, value: DEFAULT_PLATFORM_SELLER } },
+      { upsert: true },
+    );
+    return { ...DEFAULT_PLATFORM_SELLER };
+  }
+
+  return toPlatformSeller(setting.value);
+};
+
+const updatePlatformSeller = async (payload: Partial<TPlatformSeller>) => {
+  const current = await getPlatformSeller();
+  const next = toPlatformSeller({ ...current, ...payload });
+
+  await Setting.findOneAndUpdate(
+    { key: PLATFORM_SELLER_KEY },
+    { $set: { key: PLATFORM_SELLER_KEY, value: next } },
+    { upsert: true, returnDocument: 'after' },
+  );
+
+  return next;
+};
+
 export const SettingService = {
   getSetting,
   getSettingGenerals,
   createOrUpdate,
   updateGenerals,
+  getPlatformSeller,
+  updatePlatformSeller,
 };

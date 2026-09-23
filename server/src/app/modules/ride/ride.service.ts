@@ -9,6 +9,7 @@ import { Booking } from '../booking/booking.model';
 import { Payment } from '../payment/payment.model';
 import { Provider } from '../provider/provider.model';
 import { User } from '../user/user.model';
+import { SettingService } from '../settings/settings.service';
 import { USER_ROLE } from '../user/user.constant';
 import { buildStoredFareBreakdown } from '../../utils/fareBreakdownResponse.utils';
 import { toLuggageFyiView } from '../../utils/luggage.utils';
@@ -117,8 +118,11 @@ const getDriverMonthlyInvoice = async (
   netEarning = roundMoneyPrecise(netEarning);
   vatAmount = roundMoneyPrecise(vatAmount);
   const totalEarning = roundMoneyPrecise(netEarning + vatAmount);
+  const seller = await SettingService.getPlatformSeller();
+  const invoiceId = `CY${year}${pad2(month)}-${String(driverId).slice(-6).toUpperCase()}`;
 
   return {
+    invoiceId,
     period: {
       year,
       month,
@@ -135,6 +139,7 @@ const getDriverMonthlyInvoice = async (
       vatNumber: provider?.vatNumber || null,
       ibanNumber: provider?.ibanNumber || null,
     },
+    seller,
     summary: {
       rideCount: rides.length,
       netEarning,
