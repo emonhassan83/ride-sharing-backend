@@ -461,6 +461,7 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     departureDate: ride.departureDate,
     departureTime: ride.departureTime,
     rideType: ride.type,
+    vehicleType: (ride as any).vehicleType || null,
     requestedSeats: attachedPassenger.requestedSeats || 1,
     estimatedFare: attachedPassenger.estimatedFare || booking.totalFare || 0,
     estimatedDistanceKm: attachedPassenger.estimatedDistanceKm || 0,

@@ -69,6 +69,11 @@ const rideSchema = new Schema<TRide>(
     },
 
     totalSeats: { type: Number, required: true, min: 0 },
+    vehicleType: {
+      type: String,
+      enum: ['4-seater', '6-seater'],
+      default: null,
+    },
     bookedSeats: { type: Number, default: 0 },
     malePassengers: { type: Number, default: 0, required: true },
     femalePassengers: { type: Number, default: 0, required: true },

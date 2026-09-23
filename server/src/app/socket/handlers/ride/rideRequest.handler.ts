@@ -26,6 +26,7 @@ export const rideRequestHandler = eventHandler<any>(
       malePassengers, femalePassengers,
       departureDate, departureTime,
       largeSuitcase, smallSuitcase, luggageNote, note,
+      vehicleType,
       selectedDriverId, driverId,
     } = data;
     const userId = socket.auth?._id?.toString();
@@ -45,6 +46,8 @@ export const rideRequestHandler = eventHandler<any>(
       smallSuitcase,
       luggageNote,
       requestedSeats,
+      rideType: type === 'private' ? 'private' : 'split',
+      vehicleType,
     });
 
     const { departureDateTime } = await assertMinimumBookingLeadTime(
@@ -114,6 +117,7 @@ export const rideRequestHandler = eventHandler<any>(
       departureDate: departureDate,
       departureTime: departureTime,
       totalSeats:    0,
+      ...(type === 'private' ? { vehicleType: luggage.vehicleClass } : {}),
       bookedSeats:   0,
       status:        RIDE_STATUS.pending,
       routeGeometry,
@@ -146,7 +150,7 @@ export const rideRequestHandler = eventHandler<any>(
       sixPassengerCharge:       requestedSeats === 6 ? fareBreakdown.sixPassengerExtraCharge || 0 : 0,
       estimatedDistanceKm:      actualDistance,
       estimatedDurationMinutes: actualDuration,
-      luggageCounts:            0,
+      luggageCounts:            luggage.luggageCounts,
       largeSuitcase:            luggage.largeSuitcase,
       smallSuitcase:            luggage.smallSuitcase,
       luggageNote:              luggage.luggageNote,
@@ -192,7 +196,7 @@ export const rideRequestHandler = eventHandler<any>(
       largeSuitcase:       luggage.largeSuitcase,
       smallSuitcase:       luggage.smallSuitcase,
       luggageNote:         luggage.luggageNote,
-      luggageCounts:       0,
+      luggageCounts:       luggage.luggageCounts,
       note:                note ?? '',
       createdAt:           passenger.createdAt,
     };
@@ -228,6 +232,7 @@ export const rideRequestHandler = eventHandler<any>(
       lastNotifiedAt:     notifiedCount > 0 ? Date.now().toString() : '',
       selectedDriverId:   requestedDriverId ? requestedDriverId.toString() : '',
       matchingStatus:     'awaiting_payment',
+      vehicleType:        type === 'private' ? luggage.vehicleClass : '',
       timestamp:          Date.now().toString(),
     });
 
@@ -257,7 +262,9 @@ export const rideRequestHandler = eventHandler<any>(
           largeSuitcase: luggage.largeSuitcase,
           smallSuitcase: luggage.smallSuitcase,
           luggageNote: luggage.luggageNote,
-          luggageCounts: 0,
+          luggageCounts: luggage.luggageCounts,
+          note: note ?? '',
+          vehicleType: luggage.vehicleClass,
           ...luggage.sizeGuide,
         },
         rideDetails: {
@@ -266,6 +273,7 @@ export const rideRequestHandler = eventHandler<any>(
           pickup:      passenger.pickup,
           destination: passenger.destination,
           rideType:    ride.type,
+          vehicleType: type === 'private' ? luggage.vehicleClass : null,
           totalSeats:  ride.totalSeats,
           bookingId:   booking._id.toString(),
         },

@@ -93,6 +93,7 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
     departureDate: ride.departureDate,
     departureTime: ride.departureTime,
     rideType: ride.type,
+    vehicleType: (ride as any).vehicleType || null,
     requestedSeats: (passenger as any).requestedSeats || 1,
     estimatedFare: (passenger as any).estimatedFare || booking.totalFare || 0,
     estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,

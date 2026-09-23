@@ -6,6 +6,31 @@ import { Ride } from '../modules/ride/ride.model';
 import { modeType } from '../modules/notification/notification.interface';
 import { sendNotification } from './sentPushNotification';
 import { hasDriverRideAtDateTime } from './geo.utils';
+import { Vehicle } from '../modules/vehicle/vehicle.model';
+import { isVehicleType } from './luggage.utils';
+
+/** Private rides: match online drivers whose default vehicle is the requested type. */
+async function privateMatchingDriverIds(
+  ridePayload: any,
+  redis: any,
+): Promise<Set<string> | null> {
+  if (ridePayload?.rideType !== 'private') return null;
+  if (!isVehicleType(ridePayload.vehicleType)) return null;
+
+  const onlineIds = (await redis.smembers('users:online')) as string[];
+  if (!onlineIds?.length) return new Set();
+
+  const vehicles = await Vehicle.find({
+    userId: { $in: onlineIds },
+    isDeleted: false,
+    isDefault: true,
+    seats: ridePayload.vehicleType === '6-seater' ? { $gte: 6 } : { $gte: 4, $lte: 5 },
+  })
+    .select('userId')
+    .lean();
+
+  return new Set(vehicles.map((vehicle) => String(vehicle.userId)));
+}
 
 const CORRIDOR_RADIUS_METERS = 10000;
 
@@ -119,6 +144,7 @@ export async function notifyNearbyDrivers(
   const rideType = ridePayload.rideType as string;
   const requestedSeats = (ridePayload.requestedSeats as number) || 1;
   const notifyMode = options?.notifyMode || 'nearby';
+  const privateDriverIds = await privateMatchingDriverIds(ridePayload, redis);
 
   if (notifyMode === 'all_eligible') {
     const eligibleDrivers = await User.find({
@@ -133,6 +159,7 @@ export async function notifyNearbyDrivers(
 
     for (const driver of eligibleDrivers) {
       const driverId = driver._id.toString();
+      if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
       const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
       if (rejected) continue;
 
@@ -203,6 +230,7 @@ export async function notifyNearbyDrivers(
   // â”€â”€ Online drivers â€” availability check + socket + FCM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   for (const [driverId] of onlineDrivers) {
     if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
+    if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
@@ -264,6 +292,7 @@ export async function notifyNearbyDrivers(
   for (const driver of offlineDrivers) {
     const driverId = driver._id.toString();
     if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
+    if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
     if (onlineDriverIds.has(driverId)) continue;
 
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);

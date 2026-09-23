@@ -35,6 +35,10 @@ export interface ISplitRideRequest {
   departureDate: string; // ISO date string
   departureTime: string; // HH:mm (:00 / :30)
   passengers: number;
-  /** Optional: manually select a specific split ride from Find list */
+  largeSuitcase?: number;
+  smallSuitcase?: number;
+  luggageNote?: string;
+  note?: string;
+  /** Ride chosen from ride:find-nearby-split-ride */
   rideId?: string;
 }

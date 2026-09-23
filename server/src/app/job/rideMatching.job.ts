@@ -64,6 +64,8 @@ export const startRideMatchingJob = async (): Promise<void> => {
         },
         departureDate:       ride.departureDate,
         departureTime:       ride.departureTime,
+        rideType:            ride.type,
+        vehicleType:         (ride as any).vehicleType || null,
         requestedSeats:      ride.totalSeats,
         estimatedFare:       (passenger as any).estimatedFare       || 0,
         estimatedDistanceKm: (passenger as any).estimatedDistanceKm || 0,

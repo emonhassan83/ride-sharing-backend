@@ -25,6 +25,8 @@ export const fareBreakdownHandler = eventHandler<any>(
       largeSuitcase,
       smallSuitcase,
       luggageNote,
+      note,
+      vehicleType,
     } = data;
 
     if (!pickup || !destination)
@@ -39,6 +41,8 @@ export const fareBreakdownHandler = eventHandler<any>(
       smallSuitcase,
       luggageNote,
       requestedSeats,
+      rideType: type === RIDE_TYPE.private ? 'private' : 'split',
+      vehicleType,
     });
 
     // Validate 30-min booking slots when time is provided.
@@ -94,8 +98,10 @@ export const fareBreakdownHandler = eventHandler<any>(
         estimatedDistance: roundTo2(actualDistance),
         estimatedDuration: actualDuration,
         luggage: {
-          ...toLuggageFyiView(luggage),
+          ...toLuggageFyiView({ ...luggage, note }),
           ...luggage.sizeGuide,
+          vehicleClass: luggage.vehicleClass,
+          vehicleType: luggage.vehicleClass,
         },
         rideDetails: {
           bookingDate: departureDate || new Date().toISOString().split('T')[0],
@@ -103,10 +109,12 @@ export const fareBreakdownHandler = eventHandler<any>(
           pickup,
           destination,
           rideType: type,
+          vehicleType: type === RIDE_TYPE.private ? luggage.vehicleClass : null,
           requestedSeats,
           malePassengers: malePassengers || 0,
           femalePassengers: femalePassengers || 0,
-          ...toLuggageFyiView(luggage),
+          vehicleClass: luggage.vehicleClass,
+          ...toLuggageFyiView({ ...luggage, note }),
         },
       },
     });

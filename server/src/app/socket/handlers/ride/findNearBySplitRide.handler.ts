@@ -18,6 +18,11 @@ import {
   assertMinimumBookingLeadTime,
   assertSplitMinimumDistance,
 } from '../../../utils/rideSchedule.utils';
+import {
+  normalizeAndAssertLuggage,
+  toLuggageFyiView,
+  vehicleFitsParty,
+} from '../../../utils/luggage.utils';
 
 export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
   async (
@@ -27,8 +32,24 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
   ) => {
     if (!data) return callback?.({ success: false, message: 'Invalid data' });
 
-    const { pickup, destination, departureDate, departureTime, passengers } = data;
+    const {
+      pickup,
+      destination,
+      departureDate,
+      departureTime,
+      passengers,
+      largeSuitcase,
+      smallSuitcase,
+      luggageNote,
+      note,
+    } = data;
     const requestedSeats = Number(passengers) > 0 ? Number(passengers) : 1;
+    const luggage = normalizeAndAssertLuggage({
+      largeSuitcase,
+      smallSuitcase,
+      luggageNote,
+      requestedSeats,
+    });
 
     if (!pickup || !destination)
       return callback?.({ success: false, message: 'Pickup and destination are required' });
@@ -137,13 +158,16 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
         requirePaidBooking: true,
         requestedSeats,
       });
-      if (eligibility.ok) {
-        eligibleRides.push({
-          ride,
-          usedSeats: eligibility.usedSeats,
-          matchedRiders: eligibility.activePassengers.length,
-        });
-      }
+      if (!eligibility.ok) continue;
+
+      const vehicleSeats = Number((ride as any).vehicleId?.seats) || 0;
+      if (!vehicleFitsParty(vehicleSeats, requestedSeats)) continue;
+
+      eligibleRides.push({
+        ride,
+        usedSeats: eligibility.usedSeats,
+        matchedRiders: eligibility.activePassengers.length,
+      });
     }
 
     const drivers = await Promise.all(
@@ -199,6 +223,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
           eta,
           departureTime: ride.departureTime,
           departureDate: ride.departureDate,
+          requiredVehicleClass: luggage.vehicleClass,
           status: ride.status,
           matchedRiders,
           availableSeats,
@@ -232,7 +257,13 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
         },
         driverCount: drivers.length,
         rideCount: drivers.length,
-        /** Select one via join with { rideId } using the same eligibility rules. */
+        requiredVehicleClass: luggage.vehicleClass,
+        luggage: {
+          ...toLuggageFyiView({ ...luggage, note }),
+          ...luggage.sizeGuide,
+          vehicleClass: luggage.vehicleClass,
+        },
+        /** Pass this ride's rideId to ride:join-split-ride to add the order under it. */
         drivers,
         rides: drivers,
       },

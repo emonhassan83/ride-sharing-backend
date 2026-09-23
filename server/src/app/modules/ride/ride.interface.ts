@@ -34,6 +34,8 @@ export interface TRide {
   departureDate: string;
 
   totalSeats: number;
+  /** Private ride: 4-seater | 6-seater chosen by the rider. */
+  vehicleType?: '4-seater' | '6-seater';
   bookedSeats: number;
   malePassengers: number;
   femalePassengers: number;
