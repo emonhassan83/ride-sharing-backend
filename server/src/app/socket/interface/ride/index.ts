@@ -33,7 +33,7 @@ export interface ISplitRideRequest {
   pickup: { lat: number; lng: number; address?: string };
   destination: { lat: number; lng: number; address?: string };
   departureDate: string; // ISO date string
-  departureTime: string; // HH:mm (:00 / :30)
+  departureTime: string; // HH:mm
   passengers: number;
   largeSuitcase?: number;
   smallSuitcase?: number;
