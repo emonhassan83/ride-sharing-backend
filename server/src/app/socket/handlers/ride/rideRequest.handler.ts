@@ -41,13 +41,14 @@ export const rideRequestHandler = eventHandler<any>(
     const malePassengerCount = Number(malePassengers) > 0 ? Number(malePassengers) : 0;
     const femalePassengerCount = Number(femalePassengers) > 0 ? Number(femalePassengers) : 0;
 
+    const isPrivate = type === 'private';
     const luggage = normalizeAndAssertLuggage({
       largeSuitcase,
       smallSuitcase,
       luggageNote,
       requestedSeats,
-      rideType: type === 'private' ? 'private' : 'split',
-      vehicleType,
+      rideType: isPrivate ? 'private' : 'split',
+      vehicleType: isPrivate ? vehicleType : undefined,
     });
 
     const { departureDateTime } = await assertMinimumBookingLeadTime(
@@ -264,8 +265,7 @@ export const rideRequestHandler = eventHandler<any>(
           luggageNote: luggage.luggageNote,
           luggageCounts: luggage.luggageCounts,
           note: note ?? '',
-          vehicleType: luggage.vehicleClass,
-          ...luggage.sizeGuide,
+          ...(isPrivate ? { vehicleType: luggage.vehicleClass, ...luggage.sizeGuide } : {}),
         },
         rideDetails: {
           bookingDate: departureDate,

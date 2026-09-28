@@ -173,6 +173,14 @@ export const normalizeAndAssertLuggage = (input: {
     });
   } else {
     vehicleClass = resolveLuggageVehicleClass(requestedSeats);
+    return {
+      largeSuitcase,
+      smallSuitcase,
+      luggageNote,
+      luggageCounts: largeSuitcase + smallSuitcase,
+      vehicleClass,
+      sizeGuide: getLuggageSizeGuide(vehicleClass),
+    };
   }
   const limits = LUGGAGE_LIMITS[vehicleClass];
 
