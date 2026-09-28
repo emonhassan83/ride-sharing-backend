@@ -298,6 +298,24 @@ export const checkNoDriverFound = async () => {
     'userId rideId'
   ).lean();
 
+  const ridesToRemove = pendingRides.filter((ride) =>
+    cancelRideIds.includes(ride._id.toString()),
+  );
+  for (const ride of ridesToRemove) {
+    const driverIds = new Set<string>(
+      ((ride as any).notifiedDriverIds || []).map((id: any) => id.toString()),
+    );
+    if ((ride as any).driverId) driverIds.add((ride as any).driverId.toString());
+
+    for (const driverId of driverIds) {
+      io.to(`driver:${driverId}`).emit('ride:request-removed', {
+        rideId: ride._id,
+        reason: 'pickup_time_no_accept',
+        message: 'Ride request expired. Pickup time passed with no driver accepted.',
+      });
+    }
+  }
+
   for (const p of cancelledPassengers) {
     io.to(`user:${p.userId}`).emit('ride:no-driver-found', {
       rideId: p.rideId,
