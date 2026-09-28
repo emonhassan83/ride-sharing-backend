@@ -566,6 +566,7 @@ const getRideById = async (rideId: string) => {
   const vatAmount = roundMoney(
     Math.max(platformReceived - driverEarning - platformFeeAmount, 0),
   );
+  const seller = await SettingService.getPlatformSeller();
 
   const invoiceOverview = {
     rideId: (ride as any)._id,
@@ -589,6 +590,7 @@ const getRideById = async (rideId: string) => {
             : null,
         }
       : null,
+    seller,
     totals: {
       platformReceived,
       driverEarning,
