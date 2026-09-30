@@ -304,6 +304,13 @@ export const driverAcceptRideHandler = eventHandler<any>(
         message: 'This ride has already been accepted or cancelled.',
       });
 
+    if (ride.driverId && ride.driverId.toString() !== driverId) {
+      return callback?.({
+        success: false,
+        message: 'This ride has already been accepted by another driver.',
+      });
+    }
+
     // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Available seats: same date + overlapping time ÃƒÂ Ã‚Â¦Ã‚ÂÃƒÂ Ã‚Â¦Ã‚Â° rides ÃƒÂ Ã‚Â¦Ã‚Â¬ÃƒÂ Ã‚Â¦Ã‚Â¾ÃƒÂ Ã‚Â¦Ã‚Â¦ ÃƒÂ Ã‚Â¦Ã‚Â¦ÃƒÂ Ã‚Â¦Ã‚Â¿ÃƒÂ Ã‚Â¦Ã‚Â¯ÃƒÂ Ã‚Â¦Ã‚Â¼ÃƒÂ Ã‚Â§Ã¢â‚¬Â¡
     const availableSeats = await getDriverAvailableSeats(
       driverId,
@@ -356,29 +363,64 @@ export const driverAcceptRideHandler = eventHandler<any>(
         pickupLng
       );
 
-      const assignedRide = await Ride.findOneAndUpdate(
-        {
-          _id: rideId,
-          status: RIDE_STATUS.pending,
-          $or: [{ driverId: { $exists: false } }, { driverId: null }],
-        },
-        {
-          driverId,
-          vehicleId,
-          status: RIDE_STATUS.accepted,
-          notifiedDriverIds: [driverId],
-          ...(ride.totalSeats === 0 && { totalSeats: vehicleTotalSeats }),
-        },
-        { returnDocument: 'after' }
-      );
+      // Resume if this driver already claimed (common after capture mid-fail),
+      // otherwise atomically claim an unassigned pending ride.
+      const alreadyClaimedByMe =
+        ride.driverId?.toString() === driverId &&
+        (ride.status === RIDE_STATUS.accepted || ride.status === RIDE_STATUS.pending);
 
-      if (!assignedRide)
+      let assignedRide = alreadyClaimedByMe ? ride : null;
+
+      if (!assignedRide) {
+        assignedRide = await Ride.findOneAndUpdate(
+          {
+            _id: rideId,
+            status: RIDE_STATUS.pending,
+            $or: [{ driverId: { $exists: false } }, { driverId: null }],
+          },
+          {
+            $set: {
+              driverId,
+              vehicleId,
+              status: RIDE_STATUS.accepted,
+              ...(ride.totalSeats === 0 ? { totalSeats: vehicleTotalSeats } : {}),
+            },
+            $addToSet: { notifiedDriverIds: driverId },
+          },
+          { new: true },
+        );
+      } else if (ride.totalSeats === 0 || !ride.vehicleId) {
+        assignedRide = await Ride.findByIdAndUpdate(
+          rideId,
+          {
+            $set: {
+              vehicleId: ride.vehicleId || vehicleId,
+              status: RIDE_STATUS.accepted,
+              ...(ride.totalSeats === 0 ? { totalSeats: vehicleTotalSeats } : {}),
+            },
+            $addToSet: { notifiedDriverIds: driverId },
+          },
+          { new: true },
+        );
+      }
+
+      if (!assignedRide) {
+        const current = await Ride.findById(rideId).select('driverId status').lean();
+        if (current?.driverId && current.driverId.toString() !== driverId) {
+          return callback?.({
+            success: false,
+            message: 'This ride has already been accepted by another driver.',
+          });
+        }
         return callback?.({
           success: false,
-          message: 'This ride has already been accepted by another driver.',
+          message: 'This ride is no longer available to accept.',
         });
+      }
 
-      await notifyOtherNotifiedDriversRideTaken(ride, driverId, io, passenger._id.toString());
+      if (!alreadyClaimedByMe) {
+        await notifyOtherNotifiedDriversRideTaken(ride, driverId, io, passenger._id.toString());
+      }
 
       booking.userId = passenger.userId as any;
       booking.driverId = driverId as any;
@@ -386,10 +428,24 @@ export const driverAcceptRideHandler = eventHandler<any>(
       booking.bookingStatus = BOOKING_STATUS.accepted;
       await booking.save();
 
-      await PaymentService.captureAuthorizedBookingPayment(
-        booking._id.toString(),
-        driverId
-      );
+      try {
+        await PaymentService.captureAuthorizedBookingPayment(
+          booking._id.toString(),
+          driverId
+        );
+      } catch (captureErr: any) {
+        // Keep claim for same-driver retry; surface real payment error (not "another driver").
+        console.error(
+          `Private accept capture failed | rideId=${rideId} driverId=${driverId}:`,
+          captureErr?.message || captureErr,
+        );
+        return callback?.({
+          success: false,
+          message:
+            captureErr?.message ||
+            'Payment capture failed. Please try accepting again.',
+        });
+      }
 
       notifyAdminForNewPendingBooking(booking).catch(() => { });
 
