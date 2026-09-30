@@ -13,8 +13,11 @@ import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { calcSplitPassengerFare, computeSplitPoolKomistraBase, getSplitMaxMatchedRiders } from '../../../utils/splitFare.utils';
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 import {
+  acquireSplitJoinLock,
+  enforceSplitMaxRidersAfterJoin,
   findEligibleExistingSplitRide,
   isRequestEligibleForSplitRide,
+  releaseSplitJoinLock,
   requestToMatchCandidate,
 } from '../../../utils/splitMatching.utils';
 import { TSocket } from '../../interface/index.interface';
@@ -290,150 +293,201 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       });
     }
 
-    let poolKomistraBase: number | undefined;
-    if (activeRidersAfterJoin >= 2) {
-      const existingActivePassengers = await Passenger.find({
-        rideId: selectedRide._id,
-        status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
-      })
-        .select('estimatedDistanceKm requestedSeats luggageCounts')
-        .lean();
-
-      poolKomistraBase = await computeSplitPoolKomistraBase({
-        departureTime,
-        departureDate: departureDateTime,
-        passengers: [
-          ...existingActivePassengers.map((passenger: any) => ({
-            estimatedDistanceKm: passenger.estimatedDistanceKm || 0,
-            requestedSeats: passenger.requestedSeats || 1,
-            luggageCounts: 0,
-          })),
-          {
-            estimatedDistanceKm: actualDistance,
-            requestedSeats,
-            luggageCounts: 0,
-          },
-        ],
+    const joinRideId = selectedRide._id.toString();
+    const lockAcquired = await acquireSplitJoinLock(joinRideId);
+    if (!lockAcquired) {
+      return callback?.({
+        success: false,
+        message: 'Another rider is joining this split ride. Please try again.',
       });
     }
 
-    const fareBreakdown = await calcSplitPassengerFare(
-      actualDistance,
-      requestedSeats,
-      activeRidersAfterJoin,
-      0, // luggage FYI only — never billed
-      departureTime,
-      departureDateTime,
-      poolKomistraBase !== undefined ? { poolKomistraBase } : {},
-    );
-
-    const passenger = await Passenger.create({
-      userId,
-      rideId: selectedRide._id,
-      pickup: { address: pickup.address, coordinates: [pickup.lng, pickup.lat] },
-      destination: { address: destination.address, coordinates: [destination.lng, destination.lat] },
-      departureDate,
-      departureTime,
-      requestedSeats,
-      malePassengers: malePassengerCount,
-      femalePassengers: femalePassengerCount,
-      fareType,
-      initialCharge: fareBreakdown.initialCharge,
-      perKmCharge: fareBreakdown.totalKmCharge / (actualDistance || 1),
-      totalKmCharge: fareBreakdown.totalKmCharge,
-      luggageCharge: 0,
-      holidayTripCharge: fareBreakdown.holidayTripCharge,
-      vat: fareBreakdown.vatAmount,
-      surchargePercent: fareBreakdown.surchargePercent,
-      surchargeAmount: fareBreakdown.surchargeAmount,
-      estimatedFare: fareBreakdown.estimatedFare,
-      totalFare: fareBreakdown.estimatedFare,
-      waitingCharge: 0,
-      estimatedDistanceKm: actualDistance,
-      estimatedDurationMinutes: actualDuration,
-      luggageCounts: luggage.luggageCounts,
-      largeSuitcase: luggage.largeSuitcase,
-      smallSuitcase: luggage.smallSuitcase,
-      luggageNote: luggage.luggageNote,
-      note: note ?? '',
-      status: PASSENGER_STATUS.pending,
-      originalRideIntent: 'split',
-      matchedVia,
-      matchedAt: new Date(),
-    });
-
-    const booking = await Booking.create({
-      passengerId: passenger._id,
-      rideId: selectedRide._id,
-      userId,
-      driverId: (selectedRide as any).driverId || undefined,
-      totalFare: passenger.estimatedFare,
-      amountPaid: 0,
-      bookingStatus: BOOKING_STATUS.pending,
-      paymentStatus: BOOKING_PAYMENT_STATUS.pending,
-    });
-
-    socket.join(`ride:${selectedRide._id}`);
-    socket.join(`passenger:${passenger._id}`);
-
-    const ttl = Math.max(
-      3600,
-      Math.floor((departureDateTime.getTime() - Date.now()) / 1000) + 7200
-    );
-    await redis.hset(`ride:request:${selectedRide._id}:${passenger._id}`, {
-      userId,
-      passengerId: passenger._id.toString(),
-      rideId: selectedRide._id.toString(),
-      bookingId: booking._id.toString(),
-      estimatedFare: fareBreakdown.estimatedFare.toString(),
-      matchingStatus: 'awaiting_payment',
-      timestamp: Date.now().toString(),
-    });
-    await redis.expire(`ride:request:${selectedRide._id}:${passenger._id}`, ttl);
-
-    const price = toRiderPriceView({
-      estimatedFare: fareBreakdown.estimatedFare,
-      vatAmount: fareBreakdown.vatAmount,
-      vatPercentage: fareBreakdown.platformVatPercent,
-    });
-
-    const requestedRide = {
-      rideId: selectedRide._id.toString(),
-      passengerId: passenger._id.toString(),
-      bookingId: booking._id.toString(),
-      ...price,
-      availableSeats: selectedRide.totalSeats
-        ? selectedRide.totalSeats - activeSeatsBeforeJoin - requestedSeats
-        : 0,
-      departureDate: selectedRide.departureDate,
-      departureTime: selectedRide.departureTime,
-      pickup: { address: (selectedRide as any).pickup.address },
-      destination: { address: (selectedRide as any).destination.address },
-    };
-
-    return callback?.({
-      success: true,
-      message: requestedRideId
-        ? 'Joined selected split ride. Please complete payment to notify driver.'
-        : 'Split ride join request created for an available matching ride. Please complete payment to notify driver.',
-      data: {
-        rideId: requestedRide.rideId,
-        passengerId: requestedRide.passengerId,
-        bookingId: requestedRide.bookingId,
-        matchedVia,
-        requestedRide,
-        requestedRides: [requestedRide],
-        estimatedDistance: roundTo2(actualDistance),
-        estimatedDuration: actualDuration,
-        luggage: {
-          largeSuitcase: luggage.largeSuitcase,
-          smallSuitcase: luggage.smallSuitcase,
-          luggageNote: luggage.luggageNote,
-          luggageCounts: luggage.luggageCounts,
-          note: note ?? '',
-          ...luggage.sizeGuide,
+    try {
+      // Re-check under lock (race-safe).
+      const lockedActive = await Passenger.countDocuments({
+        rideId: selectedRide._id,
+        status: {
+          $nin: [
+            PASSENGER_STATUS.cancelled,
+            PASSENGER_STATUS.rejected,
+            PASSENGER_STATUS.split_matching,
+          ],
         },
-      },
-    });
+      });
+      if (lockedActive >= maxMatchedRiders) {
+        return callback?.({
+          success: false,
+          message: `Split ride allows a maximum of ${maxMatchedRiders} matched riders.`,
+        });
+      }
+
+      const ridersAfterJoin = lockedActive + 1;
+      let poolKomistraBase: number | undefined;
+      if (ridersAfterJoin >= 2) {
+        const existingActivePassengers = await Passenger.find({
+          rideId: selectedRide._id,
+          status: {
+            $nin: [
+              PASSENGER_STATUS.cancelled,
+              PASSENGER_STATUS.rejected,
+              PASSENGER_STATUS.split_matching,
+            ],
+          },
+        })
+          .select('estimatedDistanceKm requestedSeats luggageCounts')
+          .lean();
+
+        poolKomistraBase = await computeSplitPoolKomistraBase({
+          departureTime,
+          departureDate: departureDateTime,
+          passengers: [
+            ...existingActivePassengers.map((passenger: any) => ({
+              estimatedDistanceKm: passenger.estimatedDistanceKm || 0,
+              requestedSeats: passenger.requestedSeats || 1,
+              luggageCounts: 0,
+            })),
+            {
+              estimatedDistanceKm: actualDistance,
+              requestedSeats,
+              luggageCounts: 0,
+            },
+          ],
+        });
+      }
+
+      const fareBreakdown = await calcSplitPassengerFare(
+        actualDistance,
+        requestedSeats,
+        ridersAfterJoin,
+        0, // luggage FYI only — never billed
+        departureTime,
+        departureDateTime,
+        poolKomistraBase !== undefined ? { poolKomistraBase } : {},
+      );
+
+      const passenger = await Passenger.create({
+        userId,
+        rideId: selectedRide._id,
+        pickup: { address: pickup.address, coordinates: [pickup.lng, pickup.lat] },
+        destination: { address: destination.address, coordinates: [destination.lng, destination.lat] },
+        departureDate,
+        departureTime,
+        requestedSeats,
+        malePassengers: malePassengerCount,
+        femalePassengers: femalePassengerCount,
+        fareType,
+        initialCharge: fareBreakdown.initialCharge,
+        perKmCharge: fareBreakdown.totalKmCharge / (actualDistance || 1),
+        totalKmCharge: fareBreakdown.totalKmCharge,
+        luggageCharge: 0,
+        holidayTripCharge: fareBreakdown.holidayTripCharge,
+        vat: fareBreakdown.vatAmount,
+        surchargePercent: fareBreakdown.surchargePercent,
+        surchargeAmount: fareBreakdown.surchargeAmount,
+        estimatedFare: fareBreakdown.estimatedFare,
+        totalFare: fareBreakdown.estimatedFare,
+        waitingCharge: 0,
+        estimatedDistanceKm: actualDistance,
+        estimatedDurationMinutes: actualDuration,
+        luggageCounts: luggage.luggageCounts,
+        largeSuitcase: luggage.largeSuitcase,
+        smallSuitcase: luggage.smallSuitcase,
+        luggageNote: luggage.luggageNote,
+        note: note ?? '',
+        status: PASSENGER_STATUS.pending,
+        originalRideIntent: 'split',
+        matchedVia,
+        matchedAt: new Date(),
+      });
+
+      const cap = await enforceSplitMaxRidersAfterJoin(
+        selectedRide._id,
+        passenger._id,
+        'cancel_new',
+      );
+      if (!cap.ok) {
+        await Booking.deleteMany({ passengerId: passenger._id });
+        return callback?.({
+          success: false,
+          message: `Split ride allows a maximum of ${cap.maxMatchedRiders} matched riders.`,
+        });
+      }
+
+      const booking = await Booking.create({
+        passengerId: passenger._id,
+        rideId: selectedRide._id,
+        userId,
+        driverId: (selectedRide as any).driverId || undefined,
+        totalFare: passenger.estimatedFare,
+        amountPaid: 0,
+        bookingStatus: BOOKING_STATUS.pending,
+        paymentStatus: BOOKING_PAYMENT_STATUS.pending,
+      });
+
+      socket.join(`ride:${selectedRide._id}`);
+      socket.join(`passenger:${passenger._id}`);
+
+      const ttl = Math.max(
+        3600,
+        Math.floor((departureDateTime.getTime() - Date.now()) / 1000) + 7200
+      );
+      await redis.hset(`ride:request:${selectedRide._id}:${passenger._id}`, {
+        userId,
+        passengerId: passenger._id.toString(),
+        rideId: selectedRide._id.toString(),
+        bookingId: booking._id.toString(),
+        estimatedFare: fareBreakdown.estimatedFare.toString(),
+        matchingStatus: 'awaiting_payment',
+        timestamp: Date.now().toString(),
+      });
+      await redis.expire(`ride:request:${selectedRide._id}:${passenger._id}`, ttl);
+
+      const price = toRiderPriceView({
+        estimatedFare: fareBreakdown.estimatedFare,
+        vatAmount: fareBreakdown.vatAmount,
+        vatPercentage: fareBreakdown.platformVatPercent,
+      });
+
+      const requestedRide = {
+        rideId: selectedRide._id.toString(),
+        passengerId: passenger._id.toString(),
+        bookingId: booking._id.toString(),
+        ...price,
+        availableSeats: selectedRide.totalSeats
+          ? selectedRide.totalSeats - activeSeatsBeforeJoin - requestedSeats
+          : 0,
+        departureDate: selectedRide.departureDate,
+        departureTime: selectedRide.departureTime,
+        pickup: { address: (selectedRide as any).pickup.address },
+        destination: { address: (selectedRide as any).destination.address },
+      };
+
+      return callback?.({
+        success: true,
+        message: requestedRideId
+          ? 'Joined selected split ride. Please complete payment to notify driver.'
+          : 'Split ride join request created for an available matching ride. Please complete payment to notify driver.',
+        data: {
+          rideId: requestedRide.rideId,
+          passengerId: requestedRide.passengerId,
+          bookingId: requestedRide.bookingId,
+          matchedVia,
+          requestedRide,
+          requestedRides: [requestedRide],
+          estimatedDistance: roundTo2(actualDistance),
+          estimatedDuration: actualDuration,
+          luggage: {
+            largeSuitcase: luggage.largeSuitcase,
+            smallSuitcase: luggage.smallSuitcase,
+            luggageNote: luggage.luggageNote,
+            luggageCounts: luggage.luggageCounts,
+            note: note ?? '',
+            ...luggage.sizeGuide,
+          },
+        },
+      });
+    } finally {
+      await releaseSplitJoinLock(joinRideId);
+    }
   }
 );

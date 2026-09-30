@@ -25,12 +25,15 @@ import {
 } from '../utils/rideSchedule.utils';
 import { refundToWallet, recalculateSplitFares, getSplitMaxMatchedRiders } from '../utils/splitFare.utils';
 import {
+  acquireSplitJoinLock,
+  enforceSplitMaxRidersAfterJoin,
   findEligibleExistingSplitRide,
   getSplitDestinationMatchRadiusKm,
   getSplitMatchingTimeWindowMinutes,
   getSplitPickupMatchRadiusKm,
   isEligibleSplitPair,
   passengerToMatchCandidate,
+  releaseSplitJoinLock,
 } from '../utils/splitMatching.utils';
 import { sendNotification } from '../utils/sentPushNotification';
 import { getRouteGeometry } from '../utils/maps.utils';
@@ -524,41 +527,56 @@ export const checkSplitRidePendingMatches = async () => {
       const match = await findMatchingExistingRide(passenger);
       if (match) {
         const { ride } = match;
-        const attachedPassenger = await attachPassengerToRide(
-          passenger._id,
-          ride._id,
-          'auto_existing',
-        );
-        if (!attachedPassenger) continue;
+        const rideLockId = ride._id.toString();
+        const locked = await acquireSplitJoinLock(rideLockId);
+        if (!locked) continue;
 
-        const booking = await Booking.findOneAndUpdate(
-          { passengerId: passenger._id },
-          { rideId: ride._id, driverId: ride.driverId || null },
-          { returnDocument: 'after' }
-        );
-        if (!booking) continue;
+        try {
+          const attachedPassenger = await attachPassengerToRide(
+            passenger._id,
+            ride._id,
+            'auto_existing',
+          );
+          if (!attachedPassenger) continue;
 
-        await redis.del(`split:matching:passenger:${passenger._id}`);
-        await redis.hset(`ride:request:${ride._id}:${passenger._id}`, {
-          userId: passenger.userId.toString(),
-          passengerId: passenger._id.toString(),
-          rideId: ride._id.toString(),
-          bookingId: booking._id.toString(),
-          matchingStatus: 'matched_after_payment',
-          timestamp: Date.now().toString(),
-        });
+          const cap = await enforceSplitMaxRidersAfterJoin(
+            ride._id,
+            passenger._id,
+            'detach_to_matching',
+          );
+          if (!cap.ok) continue;
 
-        await recalculateSplitFares(ride._id.toString(), 'passenger_joined');
-        await notifyMatchedRideDriver(ride, attachedPassenger.toObject(), booking);
+          const booking = await Booking.findOneAndUpdate(
+            { passengerId: passenger._id },
+            { rideId: ride._id, driverId: ride.driverId || null },
+            { returnDocument: 'after' }
+          );
+          if (!booking) continue;
 
-        getIO().to(`user:${passenger.userId}`).emit('split-ride:matched', {
-          rideId: ride._id,
-          passengerId: passenger._id,
-          bookingId: booking._id,
-          matchedVia: 'auto_existing',
-          message: 'Your split ride request has been matched to an existing ride.',
-        });
-        continue;
+          await redis.del(`split:matching:passenger:${passenger._id}`);
+          await redis.hset(`ride:request:${ride._id}:${passenger._id}`, {
+            userId: passenger.userId.toString(),
+            passengerId: passenger._id.toString(),
+            rideId: ride._id.toString(),
+            bookingId: booking._id.toString(),
+            matchingStatus: 'matched_after_payment',
+            timestamp: Date.now().toString(),
+          });
+
+          await recalculateSplitFares(ride._id.toString(), 'passenger_joined');
+          await notifyMatchedRideDriver(ride, attachedPassenger.toObject(), booking);
+
+          getIO().to(`user:${passenger.userId}`).emit('split-ride:matched', {
+            rideId: ride._id,
+            passengerId: passenger._id,
+            bookingId: booking._id,
+            matchedVia: 'auto_existing',
+            message: 'Your split ride request has been matched to an existing ride.',
+          });
+          continue;
+        } finally {
+          await releaseSplitJoinLock(rideLockId);
+        }
       }
 
       // 2) Peer-match another backlog rider → create split Ride, then notify drivers.

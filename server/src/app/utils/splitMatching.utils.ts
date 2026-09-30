@@ -3,6 +3,7 @@
  * Phase 1: pickups within radius. Phase 2: destinations within radius.
  * Time window is configurable (default 0 = exact same departureTime — do not invent a window).
  */
+import { getRedisClient } from '../config/redis.config';
 import { Setting } from '../modules/settings/settings.model';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { Passenger } from '../modules/passenger/passenger.model';
@@ -127,19 +128,131 @@ const ACTIVE_STATUSES_EXCLUDE = [
   PASSENGER_STATUS.split_matching,
 ];
 
+/** Statuses that count as driver-accepted seats on a split ride. */
+export const SPLIT_DRIVER_ACCEPTED_STATUSES = [
+  PASSENGER_STATUS.confirmed,
+  PASSENGER_STATUS.driver_arrived,
+  PASSENGER_STATUS.in_progress,
+  PASSENGER_STATUS.picked_up,
+  PASSENGER_STATUS.dropped_off,
+  PASSENGER_STATUS.completed,
+] as const;
+
 export const getActiveSplitPassengersOnRide = async (rideId: any) =>
   Passenger.find({
     rideId,
     status: { $nin: ACTIVE_STATUSES_EXCLUDE },
   })
     .select(
-      'pickup destination departureDate departureTime requestedSeats userId estimatedDistanceKm status',
+      'pickup destination departureDate departureTime requestedSeats userId estimatedDistanceKm status createdAt',
     )
+    .sort({ createdAt: 1 })
     .lean();
+
+export const countActiveSplitPassengersOnRide = async (
+  rideId: any,
+): Promise<number> =>
+  Passenger.countDocuments({
+    rideId,
+    status: { $nin: ACTIVE_STATUSES_EXCLUDE },
+  });
 
 export const getUsedSeatsOnRide = async (rideId: any): Promise<number> => {
   const active = await getActiveSplitPassengersOnRide(rideId);
   return active.reduce((sum, p: any) => sum + (p.requestedSeats || 1), 0);
+};
+
+/** Redis lock so concurrent joins cannot race past the max-rider cap. */
+export const acquireSplitJoinLock = async (
+  rideId: string,
+  ttlSeconds = 15,
+): Promise<boolean> => {
+  const result = await getRedisClient().set(
+    `split:join:lock:${rideId}`,
+    '1',
+    'EX',
+    ttlSeconds,
+    'NX',
+  );
+  return result === 'OK';
+};
+
+export const releaseSplitJoinLock = async (rideId: string): Promise<void> => {
+  await getRedisClient().del(`split:join:lock:${rideId}`);
+};
+
+/**
+ * After a join/attach: if active riders exceed max, cancel/detach this passenger.
+ * Returns true when the passenger may stay on the ride.
+ */
+export const enforceSplitMaxRidersAfterJoin = async (
+  rideId: any,
+  passengerId: any,
+  mode: 'cancel_new' | 'detach_to_matching' = 'cancel_new',
+): Promise<{ ok: boolean; maxMatchedRiders: number; activeCount: number }> => {
+  const maxMatchedRiders = await getSplitMaxMatchedRiders();
+  const activeCount = await countActiveSplitPassengersOnRide(rideId);
+
+  if (activeCount <= maxMatchedRiders) {
+    return { ok: true, maxMatchedRiders, activeCount };
+  }
+
+  if (mode === 'detach_to_matching') {
+    await Passenger.findOneAndUpdate(
+      { _id: passengerId, rideId },
+      {
+        rideId: null,
+        status: PASSENGER_STATUS.split_matching,
+        matchedVia: undefined,
+        matchedAt: undefined,
+      },
+    );
+    await Booking.findOneAndUpdate(
+      { passengerId, rideId },
+      { rideId: null, driverId: null },
+    );
+  } else {
+    // Unpaid overflow join — remove entirely so it never shows on the ride.
+    await Booking.deleteMany({ passengerId, rideId });
+    await Passenger.deleteOne({ _id: passengerId, rideId });
+  }
+
+  return { ok: false, maxMatchedRiders, activeCount };
+};
+
+/**
+ * Hard gate for driver accept: at most N riders, earliest by createdAt win slots.
+ */
+export const assertDriverCanAcceptSplitPassenger = async (
+  rideId: any,
+  passengerId: any,
+): Promise<{ ok: boolean; message?: string }> => {
+  const maxMatchedRiders = await getSplitMaxMatchedRiders();
+
+  const alreadyAccepted = await Passenger.countDocuments({
+    rideId,
+    status: { $in: [...SPLIT_DRIVER_ACCEPTED_STATUSES] },
+  });
+  if (alreadyAccepted >= maxMatchedRiders) {
+    return {
+      ok: false,
+      message: `Split ride allows a maximum of ${maxMatchedRiders} matched riders. Driver cannot accept more.`,
+    };
+  }
+
+  const active = await getActiveSplitPassengersOnRide(rideId);
+  const allowedIds = active
+    .slice(0, maxMatchedRiders)
+    .map((p: any) => p._id.toString());
+
+  if (!allowedIds.includes(String(passengerId))) {
+    return {
+      ok: false,
+      message: `Split ride allows a maximum of ${maxMatchedRiders} matched riders. This passenger is outside the cap.`,
+    };
+  }
+
+  return { ok: true };
 };
 
 /**

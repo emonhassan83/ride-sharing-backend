@@ -23,6 +23,11 @@ import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { recalculateSplitFares } from '../../../utils/splitFare.utils';
+import {
+  assertDriverCanAcceptSplitPassenger,
+  getActiveSplitPassengersOnRide,
+} from '../../../utils/splitMatching.utils';
+import { getSplitMaxMatchedRiders } from '../../../utils/splitFare.utils';
 import { buildStoredFareBreakdown } from '../../../utils/fareBreakdownResponse.utils';
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 import { toLuggageFyiView } from '../../../utils/luggage.utils';
@@ -480,6 +485,14 @@ await redis.hset(`ride:active:${rideId}`, {
           message: `Not enough seats. ${availableSeats} available, ${requestedSeats} requested.`,
         });
 
+      const riderCap = await assertDriverCanAcceptSplitPassenger(rideId, passenger._id);
+      if (!riderCap.ok) {
+        return callback?.({
+          success: false,
+          message: riderCap.message || 'Split ride rider limit reached.',
+        });
+      }
+
       const pickupLat = passenger.pickup.coordinates[1];
       const pickupLng = passenger.pickup.coordinates[0];
       const estimatedArrival = await calcEstimatedArrival(
@@ -489,11 +502,16 @@ await redis.hset(`ride:active:${rideId}`, {
         pickupLng
       );
 
-      const remainingCount = await Passenger.countDocuments({
-        rideId,
-        _id: { $ne: passenger._id },
-        status: PASSENGER_STATUS.pending,
-      });
+      // Only riders inside the max cap block "fully accepted"; overflow pending ignored.
+      const maxMatchedRiders = await getSplitMaxMatchedRiders();
+      const activeSorted = await getActiveSplitPassengersOnRide(rideId);
+      const remainingCount = activeSorted
+        .slice(0, maxMatchedRiders)
+        .filter(
+          (p: any) =>
+            p._id.toString() !== passenger._id.toString() &&
+            p.status === PASSENGER_STATUS.pending,
+        ).length;
       const isLastPassenger = remainingCount === 0;
 
       if (ride.driverId && ride.driverId.toString() !== driverId)
