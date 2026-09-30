@@ -37,6 +37,34 @@ const ensureRiderInRoom = (userId: string, rideId: string) => {
   if (riderSocket) riderSocket.join(`ride:${rideId}`);
 };
 
+/** Accept only when hold is still valid; map status → clear driver-facing error. */
+const getBookingPaymentBlockMessage = (
+  booking: { paymentStatus?: string } | null,
+): string | null => {
+  if (!booking) return 'Passenger payment is not completed yet.';
+  const status = booking.paymentStatus as string;
+  if (
+    status === PAYMENT_STATUS.authorized ||
+    status === PAYMENT_STATUS.paid
+  ) {
+    return null;
+  }
+  if (status === PAYMENT_STATUS.requires_reauthorization) {
+    return 'Passenger must re-authorize payment (fare increased). Request is not acceptable yet.';
+  }
+  if (status === PAYMENT_STATUS.pending) {
+    return 'Passenger payment is not completed yet.';
+  }
+  if (
+    status === PAYMENT_STATUS.cancelled_authorization ||
+    status === PAYMENT_STATUS.failed ||
+    status === PAYMENT_STATUS.refunded
+  ) {
+    return 'Passenger payment is no longer valid for this ride.';
+  }
+  return 'Passenger payment is not completed yet.';
+};
+
 const getDriverLocation = async (
   redis: any,
   driverId: string
@@ -342,11 +370,21 @@ export const driverAcceptRideHandler = eventHandler<any>(
         });
 
       const booking = await Booking.findOne({ passengerId: passenger._id, rideId: ride._id });
-      if (!booking || ![PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid].includes(booking.paymentStatus as any))
+      if (!booking) {
         return callback?.({
           success: false,
           message: 'Passenger payment is not completed yet.',
+          data: { paymentStatus: null },
         });
+      }
+      const privatePaymentBlock = getBookingPaymentBlockMessage(booking);
+      if (privatePaymentBlock) {
+        return callback?.({
+          success: false,
+          message: privatePaymentBlock,
+          data: { paymentStatus: booking.paymentStatus || null },
+        });
+      }
 
       if (availableSeats < (passenger.requestedSeats || 1))
         return callback?.({
@@ -528,11 +566,31 @@ await redis.hset(`ride:active:${rideId}`, {
         });
 
       const booking = await Booking.findOne({ passengerId: passenger._id, rideId: ride._id });
-      if (!booking || ![PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid].includes(booking.paymentStatus as any))
+      if (!booking) {
         return callback?.({
           success: false,
           message: 'Passenger payment is not completed yet.',
+          data: { paymentStatus: null },
         });
+      }
+      const splitPaymentBlock = getBookingPaymentBlockMessage(booking);
+      if (splitPaymentBlock) {
+        // Stale cards after fare re-auth: ask app to drop this request.
+        if (booking.paymentStatus === PAYMENT_STATUS.requires_reauthorization) {
+          io.to(`driver:${driverId}`).emit('ride:request-removed', {
+            rideId,
+            passengerId: passenger._id,
+            reason: 'payment_requires_reauthorization',
+            message:
+              'Passenger must re-authorize payment before this request can be accepted.',
+          });
+        }
+        return callback?.({
+          success: false,
+          message: splitPaymentBlock,
+          data: { paymentStatus: booking.paymentStatus || null },
+        });
+      }
 
       const requestedSeats = passenger.requestedSeats || 1;
       if (availableSeats < requestedSeats)

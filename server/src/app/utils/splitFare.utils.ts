@@ -446,6 +446,27 @@ export const recalculateSplitFares = async (
           if (booking) {
             booking.paymentStatus = PAYMENT_RECORD_STATUS.requires_reauthorization as any;
           }
+
+          // Drivers must not accept until rider re-auths — clear stale request cards.
+          if (io) {
+            const driverIds = new Set<string>(
+              ((ride as any).notifiedDriverIds || []).map((id: any) =>
+                id.toString(),
+              ),
+            );
+            if ((ride as any).driverId) {
+              driverIds.add((ride as any).driverId.toString());
+            }
+            for (const notifiedDriverId of driverIds) {
+              io.to(`driver:${notifiedDriverId}`).emit('ride:request-removed', {
+                rideId,
+                passengerId: passenger._id,
+                reason: 'payment_requires_reauthorization',
+                message:
+                  'Passenger must re-authorize the updated fare. Request removed for now.',
+              });
+            }
+          }
         } else {
           payment.status = PAYMENT_RECORD_STATUS.authorized;
           await Passenger.findByIdAndUpdate(passenger._id, {
