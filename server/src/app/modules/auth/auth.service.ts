@@ -567,10 +567,12 @@ const logoutUser = async (userId: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'This user is not found !');
   }
 
-  // set user login boolean field
   await User.findByIdAndUpdate(
     userId,
-    { isLoginOTPVerified: false },
+    {
+      isLoginOTPVerified: false,
+      fcmToken: null,
+    },
     { returnDocument: 'after' }
   );
 
