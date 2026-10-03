@@ -3,8 +3,6 @@ import { User } from '../modules/user/user.model';
 import { USER_ROLE, USER_STATUS } from '../modules/user/user.constant';
 import { ILatLng } from '../socket/interface/ride';
 import { Ride } from '../modules/ride/ride.model';
-import { modeType } from '../modules/notification/notification.interface';
-import { sendNotification } from './sentPushNotification';
 import { hasDriverRideAtDateTime } from './geo.utils';
 import { Vehicle } from '../modules/vehicle/vehicle.model';
 import { isVehicleType } from './luggage.utils';
@@ -154,7 +152,7 @@ export async function notifyNearbyDrivers(
       isKycVerified: true,
       ...(targetDriverIds?.length ? { _id: { $in: targetDriverIds } } : {}),
     })
-      .select('_id fcmToken')
+      .select('_id')
       .lean();
 
     for (const driver of eligibleDrivers) {
@@ -175,33 +173,11 @@ export async function notifyNearbyDrivers(
       const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
       if (!shouldNotify) continue;
 
+      // Ride requests: socket only (no FCM push).
       const isKnownOnline = await redis.sismember('users:online', driverId);
-      if (isKnownOnline) {
-        io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
-      }
+      if (!isKnownOnline) continue;
 
-      const fcmToken = (driver as any).fcmToken;
-      if (fcmToken) {
-        try {
-          await sendNotification([fcmToken], {
-            receiver: driver._id,
-            message: 'New Ride Request!',
-            description: `New ${rideType} scheduled ride from ${ridePayload.pickup?.address || 'nearby'}`,
-            reference: passengerId,
-            modelType: modeType.Passenger,
-            data: {
-              type: 'RIDE_REQUEST',
-              rideId,
-              passengerId: passengerId || '',
-              bookingId: ridePayload.bookingId || '',
-              rideType,
-            },
-          });
-        } catch (err) {
-          console.warn(`FCM failed for scheduled driver ${driverId}:`, err);
-        }
-      }
-
+      io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
       notifiedIds.push(driverId);
       notifiedCount++;
     }
@@ -227,16 +203,15 @@ export async function notifyNearbyDrivers(
 
   const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
 
-  // â”€â”€ Online drivers â€” availability check + socket + FCM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Online drivers — availability check + socket only (no FCM)
   for (const [driverId] of onlineDrivers) {
     if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
     if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    // KYC check for online drivers
     const driverDoc = await User.findById(driverId)
-      .select('isKycVerified fcmToken _id')
+      .select('isKycVerified _id')
       .lean();
     if (!driverDoc?.isKycVerified) continue;
 
@@ -252,28 +227,9 @@ export async function notifyNearbyDrivers(
     io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
     notifiedIds.push(driverId);
     notifiedCount++;
-
-    if (driverDoc?.fcmToken) {
-      sendNotification([driverDoc.fcmToken], {
-        receiver: driverDoc._id,
-        message: 'New Ride Request!',
-        description: `New ${rideType} ride from ${ridePayload.pickup?.address || 'nearby'}`,
-        reference: passengerId,
-        modelType: modeType.Passenger,
-        data: {
-          type: 'RIDE_REQUEST',
-          rideId,
-          passengerId: passengerId || '',
-          bookingId: ridePayload.bookingId || '',
-          rideType,
-        },
-      }).catch((err: any) =>
-        console.warn(`FCM failed for online driver ${driverId}:`, err)
-      );
-    }
   }
 
-  // â”€â”€ Offline drivers â€” availability check + FCM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Offline / redis-online but not in geo: socket only if currently online
   const offlineDrivers = await User.find({
     role: USER_ROLE.provider,
     isDeleted: false,
@@ -286,7 +242,7 @@ export async function notifyNearbyDrivers(
       },
     },
   })
-    .select('_id fcmToken location')
+    .select('_id location')
     .lean();
 
   for (const driver of offlineDrivers) {
@@ -298,7 +254,6 @@ export async function notifyNearbyDrivers(
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    // âœ… Availability check
     const availability = await hasDriverRideAtDateTime(
       driverId,
       departureDate,
@@ -309,41 +264,17 @@ export async function notifyNearbyDrivers(
 
     if (!availability.available) {
       console.log(
-        `â­ï¸ Skipping offline driver ${driverId} â€” ${availability.reason}`
+        `Skipping offline driver ${driverId} — ${availability.reason}`
       );
       continue;
     }
 
-    notifiedIds.push(driverId);
-
     const isKnownOnline = await redis.sismember('users:online', driverId);
-    if (isKnownOnline) {
-      io.to('driver:' + driverId).emit('ride:new-request', ridePayload);
-      notifiedCount++;
-    }
+    if (!isKnownOnline) continue;
 
-    const fcmToken = (driver as any).fcmToken;
-    if (fcmToken) {
-      try {
-        await sendNotification([fcmToken], {
-          receiver: driver._id,
-          message: 'New Ride Request!',
-          description: `New ${rideType} ride from ${ridePayload.pickup?.address || 'nearby'}`,
-          reference: passengerId,
-          modelType: modeType.Passenger,
-          data: {
-            type: 'RIDE_REQUEST',
-            rideId,
-            passengerId: passengerId || '',
-            bookingId: ridePayload.bookingId || '',
-            rideType,
-          },
-        });
-        if (!isKnownOnline) notifiedCount++;
-      } catch (err) {
-        console.warn(`FCM failed for offline driver ${driverId}:`, err);
-      }
-    }
+    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    notifiedIds.push(driverId);
+    notifiedCount++;
   }
 
   if (notifiedIds.length) {
@@ -421,7 +352,7 @@ export async function notifyNearbyDriversForSplitRide(
     }
 
     const dbDriver = await User.findById(driverId)
-      .select('_id fcmToken location isKycVerified')
+      .select('_id location isKycVerified')
       .lean();
     if (!dbDriver?.isKycVerified) continue;
 
@@ -431,33 +362,14 @@ export async function notifyNearbyDriversForSplitRide(
     io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
     notifiedIds.push(driverId);
     notifiedCount++;
-
-    if (dbDriver?.fcmToken) {
-      sendNotification([(dbDriver as any).fcmToken], {
-        receiver: dbDriver._id,
-        message: 'New Split Ride Request!',
-        description: `Split ride from ${ridePayload.pickup?.address || 'nearby'}`,
-        reference: passengerId || ridePayload.passengerId,
-        modelType: modeType.Passenger,
-        data: {
-          type: 'SPLIT_RIDE_REQUEST',
-          rideId,
-          passengerId: passengerId || ridePayload.passengerId || '',
-          bookingId: ridePayload.bookingId || '',
-          rideType: 'split',
-        },
-      }).catch((err: any) =>
-        console.warn(`FCM failed for online split driver ${driverId}:`, err)
-      );
-    }
   }
 
-  // â”€â”€ Offline drivers â€” availability + route check + FCM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Offline split drivers — socket only if currently online
   const offlineDrivers = await User.find({
     role: USER_ROLE.provider,
     isDeleted: false,
     status: USER_STATUS.active,
-    isKycVerified: true, 
+    isKycVerified: true,
     location: {
       $nearSphere: {
         $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
@@ -465,7 +377,7 @@ export async function notifyNearbyDriversForSplitRide(
       },
     },
   })
-    .select('_id fcmToken location')
+    .select('_id location')
     .lean();
 
   for (const driver of offlineDrivers) {
@@ -475,7 +387,6 @@ export async function notifyNearbyDriversForSplitRide(
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    // âœ… Availability check for split ride
     const availability = await hasDriverRideAtDateTime(
       driverId,
       departureDate,
@@ -486,7 +397,7 @@ export async function notifyNearbyDriversForSplitRide(
 
     if (!availability.available) {
       console.log(
-        `â­ï¸ Skipping offline split driver ${driverId} â€” ${availability.reason}`
+        `Skipping offline split driver ${driverId} — ${availability.reason}`
       );
       continue;
     }
@@ -497,30 +408,12 @@ export async function notifyNearbyDriversForSplitRide(
     const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
     if (!shouldNotify) continue;
 
-    notifiedIds.push(driverId);
+    const isKnownOnline = await redis.sismember('users:online', driverId);
+    if (!isKnownOnline) continue;
 
-    const fcmToken = (driver as any).fcmToken;
-    if (fcmToken) {
-      try {
-        await sendNotification([fcmToken], {
-          receiver: driver._id,
-          message: 'New Split Ride Request!',
-          description: `Split ride from ${ridePayload.pickup?.address || 'nearby'}`,
-          reference: passengerId || ridePayload.passengerId,
-          modelType: modeType.Passenger,
-          data: {
-            type: 'SPLIT_RIDE_REQUEST',
-            rideId,
-            passengerId: passengerId || ridePayload.passengerId || '',
-            bookingId: ridePayload.bookingId || '',
-            rideType: 'split',
-          },
-        });
-        notifiedCount++;
-      } catch (err) {
-        console.warn(`FCM failed for offline split driver ${driverId}:`, err);
-      }
-    }
+    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    notifiedIds.push(driverId);
+    notifiedCount++;
   }
 
   if (notifiedIds.length) {

@@ -11,18 +11,15 @@ export const DEFAULT_SPLIT_MIN_DISTANCE_KM = 20;
 export const DEFAULT_SPLIT_REFUND_RESTRICTION_HOURS = 24;
 export const DEFAULT_PRIVATE_REFUND_RESTRICTION_HOURS = 1;
 export const DEFAULT_MATCHING_LAST_NOTIFY_HOURS = 1;
-/** Cyprus product wall-clock for departureDate + departureTime (not server local TZ). */
-export const DEFAULT_RIDE_TIME_ZONE = 'Europe/Nicosia';
+/** Dev default: Asia/Dhaka (matches server TZ). Override with RIDE_TIME_ZONE / TIME_ZONE. */
+export const DEFAULT_RIDE_TIME_ZONE = 'Asia/Dhaka';
 
 const getRideTimeZone = (): string =>
-  process.env.RIDE_TIME_ZONE ||
-  (config.timeZone && config.timeZone !== 'Asia/Dhaka'
-    ? config.timeZone
-    : DEFAULT_RIDE_TIME_ZONE);
+  process.env.RIDE_TIME_ZONE || config.timeZone || DEFAULT_RIDE_TIME_ZONE;
 
 /**
  * Interpret departureDate (YYYY-MM-DD) + departureTime (HH:mm) as a wall clock
- * in the ride timezone (default Europe/Nicosia) and return the UTC Date.
+ * in the ride timezone and return the UTC Date.
  */
 export const getDepartureDateTime = (
   departureDate: string,

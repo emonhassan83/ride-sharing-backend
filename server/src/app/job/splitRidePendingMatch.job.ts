@@ -239,26 +239,9 @@ const notifyMatchedRideDriver = async (ride: any, passenger: any, booking: any) 
 
   const driverId = ride.driverId?.toString();
   if (driverId) {
+    // Ride request: socket only (no FCM push to drivers).
     io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
     await Ride.findByIdAndUpdate(ride._id, { $addToSet: { notifiedDriverIds: driverId } });
-
-    const driver = await User.findById(driverId).select('fcmToken').lean();
-    if (driver?.fcmToken) {
-      sendNotification([driver.fcmToken], {
-        receiver: driverId,
-        message: 'New Split Ride Request!',
-        description: 'A passenger was matched to your split ride.',
-        reference: passenger._id.toString(),
-        modelType: modeType.Passenger,
-        data: {
-          type: 'SPLIT_RIDE_REQUEST',
-          rideId: ride._id.toString(),
-          passengerId: passenger._id.toString(),
-          bookingId: booking._id.toString(),
-          rideType: 'split',
-        },
-      }).catch(() => {});
-    }
     return 1;
   }
 
@@ -433,6 +416,9 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
 
   if (!attachedPassenger) {
     await Ride.findByIdAndDelete(ride._id);
+    console.error(
+      `Solo fallback attach failed | passenger: ${passenger._id} | status may have changed`,
+    );
     return;
   }
 
@@ -471,6 +457,8 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     estimatedDurationMinutes: attachedPassenger.estimatedDurationMinutes || 0,
     status: PASSENGER_STATUS.pending,
     createdAt: attachedPassenger.createdAt,
+    convertedFromSplit: true,
+    matchedVia: 'solo_fallback',
     ...toLuggageFyiView(attachedPassenger),
   };
 
@@ -499,15 +487,38 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     ride._id.toString(),
   );
 
-  io.to(`user:${passenger.userId}`).emit('split-ride:converted-to-solo', {
+  const convertedPayload = {
     rideId: ride._id,
     passengerId: attachedPassenger._id,
     bookingId: booking._id,
     matchedVia: 'solo_fallback',
     rideType: RIDE_TYPE.private,
+    requestedRide: ridePayload,
     message:
-      'No split match found within 1 hour of pickup. Your ride was converted to Solo and sent to drivers.',
-  });
+      'No split match found within 1 hour of pickup. Ride converted to Solo.',
+  };
+
+  // Passenger
+  io.to(`user:${passenger.userId}`).emit(
+    'split-ride:converted-to-solo',
+    convertedPayload,
+  );
+
+  // Drivers who received this Solo request (and any already on notifiedDriverIds)
+  const refreshedRide = await Ride.findById(ride._id)
+    .select('notifiedDriverIds')
+    .lean();
+  const driverIds = new Set<string>(
+    ((refreshedRide as any)?.notifiedDriverIds || []).map((id: any) =>
+      id.toString(),
+    ),
+  );
+  for (const driverId of driverIds) {
+    io.to(`driver:${driverId}`).emit(
+      'split-ride:converted-to-solo',
+      convertedPayload,
+    );
+  }
 
   const user = await User.findById(passenger.userId).select('fcmToken').lean();
   if (user?.fcmToken) {
@@ -531,12 +542,8 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
   );
 };
 
-export const checkSplitRidePendingMatches = async () => {
-  const redis = getRedisClient();
-  const now = new Date();
-  const releaseHours = await getMatchingLastNotifyHours();
-
-  const passengers = await Passenger.find({
+const loadSplitMatchingBacklog = async () => {
+  const authorizedPassengers = await Passenger.find({
     status: PASSENGER_STATUS.split_matching,
     rideId: null,
     paymentStatus: PASSENGER_PAYMENT_STATUS.authorized,
@@ -545,10 +552,95 @@ export const checkSplitRidePendingMatches = async () => {
     .limit(BATCH_SIZE)
     .lean();
 
-  for (const passenger of passengers) {
+  // Repair path: Booking authorized but Passenger.paymentStatus still pending.
+  const readyBookings = await Booking.find({
+    paymentStatus: BOOKING_PAYMENT_STATUS.authorized,
+    $or: [{ rideId: null }, { rideId: { $exists: false } }],
+  })
+    .select('passengerId')
+    .limit(BATCH_SIZE)
+    .lean();
+
+  const bookingPassengerIds = readyBookings
+    .map((b) => b.passengerId)
+    .filter(Boolean);
+
+  let repaired: any[] = [];
+  if (bookingPassengerIds.length) {
+    repaired = await Passenger.find({
+      _id: { $in: bookingPassengerIds },
+      status: PASSENGER_STATUS.split_matching,
+      rideId: null,
+      paymentStatus: { $ne: PASSENGER_PAYMENT_STATUS.authorized },
+    }).lean();
+
+    if (repaired.length) {
+      await Passenger.updateMany(
+        { _id: { $in: repaired.map((p) => p._id) } },
+        { $set: { paymentStatus: PASSENGER_PAYMENT_STATUS.authorized } },
+      );
+      repaired = repaired.map((p) => ({
+        ...p,
+        paymentStatus: PASSENGER_PAYMENT_STATUS.authorized,
+      }));
+    }
+  }
+
+  const byId = new Map<string, any>();
+  for (const p of [...authorizedPassengers, ...repaired]) {
+    byId.set(p._id.toString(), p);
+  }
+  return Array.from(byId.values());
+};
+
+export const checkSplitRidePendingMatches = async () => {
+  const redis = getRedisClient();
+  const now = new Date();
+  const releaseHours = await getMatchingLastNotifyHours();
+
+  const passengers = await loadSplitMatchingBacklog();
+
+  // Prefer riders already inside the Solo window so BATCH_SIZE cannot starve them.
+  passengers.sort((a, b) => {
+    const aH =
+      (getDepartureDateTime(a.departureDate, a.departureTime).getTime() - now.getTime()) /
+      3600000;
+    const bH =
+      (getDepartureDateTime(b.departureDate, b.departureTime).getTime() - now.getTime()) /
+      3600000;
+    const aDue = aH <= releaseHours ? 0 : 1;
+    const bDue = bH <= releaseHours ? 0 : 1;
+    if (aDue !== bDue) return aDue - bDue;
+    return aH - bH;
+  });
+
+  for (const passenger of passengers.slice(0, BATCH_SIZE)) {
     try {
-      const departureDateTime = getDepartureDateTime(passenger.departureDate, passenger.departureTime);
-      const hoursUntilDeparture = (departureDateTime.getTime() - now.getTime()) / 3600000;
+      const departureDateTime = getDepartureDateTime(
+        passenger.departureDate,
+        passenger.departureTime,
+      );
+      const hoursUntilDeparture =
+        (departureDateTime.getTime() - now.getTime()) / 3600000;
+      const inSoloWindow =
+        hoursUntilDeparture <= releaseHours && hoursUntilDeparture > -0.25;
+
+      // Inside 1h window: convert to Solo immediately (don't lose ticks on join races).
+      if (inSoloWindow) {
+        console.log(
+          `Solo fallback due | passenger: ${passenger._id} | hoursUntil: ${hoursUntilDeparture.toFixed(2)}`,
+        );
+        await releaseUnmatchedSplitToSolo(passenger);
+        continue;
+      }
+
+      if (hoursUntilDeparture <= -0.25) {
+        await cancelUnmatchedSplitPassenger(
+          passenger,
+          'departure_passed_unmatched',
+        );
+        continue;
+      }
 
       // 1) Match to an existing paid split ride (Phase 1/2 + time window).
       const match = await findMatchingExistingRide(passenger);
@@ -556,60 +648,75 @@ export const checkSplitRidePendingMatches = async () => {
         const { ride } = match;
         const rideLockId = ride._id.toString();
         const locked = await acquireSplitJoinLock(rideLockId);
-        if (!locked) continue;
+        if (locked) {
+          try {
+            const attachedPassenger = await attachPassengerToRide(
+              passenger._id,
+              ride._id,
+              'auto_existing',
+            );
+            if (attachedPassenger) {
+              const cap = await enforceSplitMaxRidersAfterJoin(
+                ride._id,
+                passenger._id,
+                'detach_to_matching',
+              );
+              if (cap.ok) {
+                const booking = await Booking.findOneAndUpdate(
+                  { passengerId: passenger._id },
+                  { rideId: ride._id, driverId: ride.driverId || null },
+                  { returnDocument: 'after' },
+                );
+                if (booking) {
+                  await redis.del(`split:matching:passenger:${passenger._id}`);
+                  await redis.hset(`ride:request:${ride._id}:${passenger._id}`, {
+                    userId: passenger.userId.toString(),
+                    passengerId: passenger._id.toString(),
+                    rideId: ride._id.toString(),
+                    bookingId: booking._id.toString(),
+                    matchingStatus: 'matched_after_payment',
+                    timestamp: Date.now().toString(),
+                  });
 
-        try {
-          const attachedPassenger = await attachPassengerToRide(
-            passenger._id,
-            ride._id,
-            'auto_existing',
-          );
-          if (!attachedPassenger) continue;
+                  await recalculateSplitFares(
+                    ride._id.toString(),
+                    'passenger_joined',
+                  );
+                  await notifyMatchedRideDriver(
+                    ride,
+                    attachedPassenger.toObject(),
+                    booking,
+                  );
 
-          const cap = await enforceSplitMaxRidersAfterJoin(
-            ride._id,
-            passenger._id,
-            'detach_to_matching',
-          );
-          if (!cap.ok) continue;
+                  getIO().to(`user:${passenger.userId}`).emit('split-ride:matched', {
+                    rideId: ride._id,
+                    passengerId: passenger._id,
+                    bookingId: booking._id,
+                    matchedVia: 'auto_existing',
+                    message:
+                      'Your split ride request has been matched to an existing ride.',
+                  });
+                  continue;
+                }
 
-          const booking = await Booking.findOneAndUpdate(
-            { passengerId: passenger._id },
-            { rideId: ride._id, driverId: ride.driverId || null },
-            { returnDocument: 'after' }
-          );
-          if (!booking) continue;
-
-          await redis.del(`split:matching:passenger:${passenger._id}`);
-          await redis.hset(`ride:request:${ride._id}:${passenger._id}`, {
-            userId: passenger.userId.toString(),
-            passengerId: passenger._id.toString(),
-            rideId: ride._id.toString(),
-            bookingId: booking._id.toString(),
-            matchingStatus: 'matched_after_payment',
-            timestamp: Date.now().toString(),
-          });
-
-          await recalculateSplitFares(ride._id.toString(), 'passenger_joined');
-          await notifyMatchedRideDriver(ride, attachedPassenger.toObject(), booking);
-
-          getIO().to(`user:${passenger.userId}`).emit('split-ride:matched', {
-            rideId: ride._id,
-            passengerId: passenger._id,
-            bookingId: booking._id,
-            matchedVia: 'auto_existing',
-            message: 'Your split ride request has been matched to an existing ride.',
-          });
-          continue;
-        } finally {
-          await releaseSplitJoinLock(rideLockId);
+                // Attach without booking — roll back so Solo/match can retry.
+                await Passenger.findByIdAndUpdate(passenger._id, {
+                  rideId: null,
+                  status: PASSENGER_STATUS.split_matching,
+                  matchedVia: undefined,
+                  matchedAt: undefined,
+                });
+              }
+            }
+          } finally {
+            await releaseSplitJoinLock(rideLockId);
+          }
         }
       }
 
       // 2) Peer-match another backlog rider → create split Ride, then notify drivers.
       const peer = await findMatchingBacklogPeer(passenger);
       if (peer) {
-        // Refresh peer still in backlog (race-safe createPeerMatchedSplitRide).
         const stillPeer = await Passenger.findOne({
           _id: peer._id,
           status: PASSENGER_STATUS.split_matching,
@@ -621,24 +728,12 @@ export const checkSplitRidePendingMatches = async () => {
         }
       }
 
-      // Client rule: ≤1h before pickup → Solo. Also catch late (just past pickup)
-      // so a missed cron tick still converts instead of only cancelling.
-      if (hoursUntilDeparture <= releaseHours && hoursUntilDeparture > -0.25) {
-        await releaseUnmatchedSplitToSolo(passenger);
-        continue;
-      }
-
-      // Past pickup with no match → cancel authorization.
-      if (hoursUntilDeparture <= -0.25) {
-        await cancelUnmatchedSplitPassenger(passenger, 'departure_passed_unmatched');
-        continue;
-      }
-
       await redis.hset(`split:matching:passenger:${passenger._id}`, {
         passengerId: passenger._id.toString(),
         userId: passenger.userId.toString(),
         matchingStatus: 'searching_split_peers',
         lastCheckedAt: Date.now().toString(),
+        hoursUntilDeparture: hoursUntilDeparture.toFixed(2),
       });
     } catch (error) {
       console.error('Split ride pending match job error:', error);

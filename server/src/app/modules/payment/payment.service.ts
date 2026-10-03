@@ -20,8 +20,6 @@ import { Ride } from '../ride/ride.model';
 import { RIDE_TYPE } from '../ride/ride.constant';
 import { getIO } from '../../socket/socket.init';
 import { notifyNearbyDrivers, notifyNearbyDriversForSplitRide } from '../../utils/notifyDrivers.utils';
-import { sendNotification } from '../../utils/sentPushNotification';
-import { modeType } from '../notification/notification.interface';
 import { getRedisClient } from '../../config/redis.config';
 import { recalculateSplitFares } from '../../utils/splitFare.utils';
 import { assertMinimumBookingLeadTime, assertSplitMinimumDistance, getDepartureDateTime } from '../../utils/rideSchedule.utils';
@@ -107,26 +105,9 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
   if (ride.type === RIDE_TYPE.split) {
     const existingDriverId = (ride as any).driverId?.toString();
     if (existingDriverId) {
+      // Ride request: socket only (no FCM push to drivers).
       io.to(`driver:${existingDriverId}`).emit('ride:new-request', ridePayload);
       notified = 1;
-
-      const driverUser = await User.findById(existingDriverId).select('fcmToken').lean();
-      if (driverUser?.fcmToken) {
-        sendNotification([driverUser.fcmToken], {
-          receiver: existingDriverId,
-          message: 'New Split Ride Request!',
-          description: 'A passenger wants to join your split ride.',
-          reference: passenger._id.toString(),
-          modelType: modeType.Passenger,
-          data: {
-            type: 'SPLIT_RIDE_REQUEST',
-            rideId: ride._id.toString(),
-            passengerId: passenger._id.toString(),
-            bookingId: booking._id.toString(),
-            rideType: 'split',
-          },
-        }).catch(() => {});
-      }
 
       await Ride.findByIdAndUpdate(ride._id, {
         $addToSet: { notifiedDriverIds: existingDriverId },
