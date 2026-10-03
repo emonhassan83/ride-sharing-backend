@@ -69,8 +69,8 @@ export function startBackgroundJobs() {
     }
   });
 
-  // 5. Split pending matching (every 5 min)
-  cron.schedule('*/5 * * * *', async () => {
+  // 5. Split pending matching (every 1 min — needed for 1h solo fallback window)
+  cron.schedule('* * * * *', async () => {
     if (splitRidePendingMatchJobRunning) return;
     splitRidePendingMatchJobRunning = true;
     try {

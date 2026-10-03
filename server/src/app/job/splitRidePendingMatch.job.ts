@@ -495,9 +495,36 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
   });
   await redis.zadd(
     'ride:matching:queue',
-    new Date(`${ride.departureDate}T${ride.departureTime}:00`).getTime(),
+    getDepartureDateTime(ride.departureDate, ride.departureTime).getTime(),
     ride._id.toString(),
   );
+
+  io.to(`user:${passenger.userId}`).emit('split-ride:converted-to-solo', {
+    rideId: ride._id,
+    passengerId: attachedPassenger._id,
+    bookingId: booking._id,
+    matchedVia: 'solo_fallback',
+    rideType: RIDE_TYPE.private,
+    message:
+      'No split match found within 1 hour of pickup. Your ride was converted to Solo and sent to drivers.',
+  });
+
+  const user = await User.findById(passenger.userId).select('fcmToken').lean();
+  if (user?.fcmToken) {
+    sendNotification([user.fcmToken], {
+      receiver: passenger.userId,
+      message: 'Converted to Solo Ride',
+      description:
+        'No split match found. Your ride was released to drivers as a Solo trip.',
+      reference: attachedPassenger._id.toString(),
+      modelType: modeType.Passenger,
+      data: {
+        type: 'SPLIT_TO_SOLO',
+        rideId: ride._id.toString(),
+        passengerId: attachedPassenger._id.toString(),
+      },
+    }).catch(() => {});
+  }
 
   console.log(
     `✅ Split unmatched released as Solo | passenger: ${passenger._id} | ride: ${ride._id} | drivers: ${notified}`,
@@ -594,15 +621,16 @@ export const checkSplitRidePendingMatches = async () => {
         }
       }
 
-      // Past pickup with no match → cancel authorization.
-      if (hoursUntilDeparture < 0) {
-        await cancelUnmatchedSplitPassenger(passenger, 'departure_passed_unmatched');
+      // Client rule: ≤1h before pickup → Solo. Also catch late (just past pickup)
+      // so a missed cron tick still converts instead of only cancelling.
+      if (hoursUntilDeparture <= releaseHours && hoursUntilDeparture > -0.25) {
+        await releaseUnmatchedSplitToSolo(passenger);
         continue;
       }
 
-      // Client rule: 1h before pickup, release unmatched backlog to drivers as Solo.
-      if (hoursUntilDeparture <= releaseHours) {
-        await releaseUnmatchedSplitToSolo(passenger);
+      // Past pickup with no match → cancel authorization.
+      if (hoursUntilDeparture <= -0.25) {
+        await cancelUnmatchedSplitPassenger(passenger, 'departure_passed_unmatched');
         continue;
       }
 

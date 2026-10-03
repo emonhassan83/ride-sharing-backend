@@ -1,5 +1,6 @@
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../errors/ApiError';
+import { config } from '../config/env.config';
 import { Setting } from '../modules/settings/settings.model';
 
 export type RideScheduleType = 'private' | 'split';
@@ -10,7 +11,19 @@ export const DEFAULT_SPLIT_MIN_DISTANCE_KM = 20;
 export const DEFAULT_SPLIT_REFUND_RESTRICTION_HOURS = 24;
 export const DEFAULT_PRIVATE_REFUND_RESTRICTION_HOURS = 1;
 export const DEFAULT_MATCHING_LAST_NOTIFY_HOURS = 1;
+/** Cyprus product wall-clock for departureDate + departureTime (not server local TZ). */
+export const DEFAULT_RIDE_TIME_ZONE = 'Europe/Nicosia';
 
+const getRideTimeZone = (): string =>
+  process.env.RIDE_TIME_ZONE ||
+  (config.timeZone && config.timeZone !== 'Asia/Dhaka'
+    ? config.timeZone
+    : DEFAULT_RIDE_TIME_ZONE);
+
+/**
+ * Interpret departureDate (YYYY-MM-DD) + departureTime (HH:mm) as a wall clock
+ * in the ride timezone (default Europe/Nicosia) and return the UTC Date.
+ */
 export const getDepartureDateTime = (
   departureDate: string,
   departureTime: string
@@ -31,20 +44,61 @@ export const getDepartureDateTime = (
     );
   }
 
-  if (rawHour === 24 && minute === 0) {
-    const date = new Date(year, month - 1, day, 0, 0);
-    date.setDate(date.getDate() + 1);
-    return date;
-  }
+  let y = year;
+  let m = month;
+  let d = day;
+  let hour = rawHour;
 
-  if (rawHour < 0 || rawHour > 23 || minute < 0 || minute > 59) {
+  if (rawHour === 24 && minute === 0) {
+    const next = new Date(Date.UTC(year, month - 1, day));
+    next.setUTCDate(next.getUTCDate() + 1);
+    y = next.getUTCFullYear();
+    m = next.getUTCMonth() + 1;
+    d = next.getUTCDate();
+    hour = 0;
+  } else if (rawHour < 0 || rawHour > 23 || minute < 0 || minute > 59) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       'Invalid departureDate or departureTime'
     );
   }
 
-  return new Date(year, month - 1, day, rawHour, minute);
+  const timeZone = getRideTimeZone();
+  // Iteratively align UTC instant so that zoned wall-clock matches Y-M-D H:m.
+  const targetAsUtcMs = Date.UTC(y, m - 1, d, hour, minute, 0);
+  let guess = new Date(targetAsUtcMs);
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  for (let i = 0; i < 4; i++) {
+    const parts = Object.fromEntries(
+      formatter
+        .formatToParts(guess)
+        .filter((p) => p.type !== 'literal')
+        .map((p) => [p.type, p.value]),
+    ) as Record<string, string>;
+    const asUtcMs = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour) % 24,
+      Number(parts.minute),
+      Number(parts.second || 0),
+    );
+    const diff = targetAsUtcMs - asUtcMs;
+    if (diff === 0) break;
+    guess = new Date(guess.getTime() + diff);
+  }
+
+  return guess;
 };
 
 export const getHoursUntilDeparture = (departureDateTime: Date): number =>
