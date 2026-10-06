@@ -1,0 +1,48 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "dependabot/npm_and_yarn/server/axios-1.20.0",
+    "dependabot/npm_and_yarn/server/engine.io-6.6.11",
+    "dependabot/npm_and_yarn/server/grpc/grpc-js-1.14.5",
+    "dependabot/npm_and_yarn/server/nodemailer-10.0.9",
+    "dependabot/npm_and_yarn/worker/axios-1.20.0",
+    "dependabot/npm_and_yarn/worker/fastify/busboy-3.2.2",
+    "dependabot/npm_and_yarn/worker/grpc/grpc-js-1.14.5",
+    "dependabot/npm_and_yarn/worker/moment-2.31.0",
+    "dependabot/npm_and_yarn/worker/nodemailer-10.0.9",
+    "dev/abdullah",
+    "development",
+    "emon/dev",
+    "main"
+  ],
+  "parent": {
+    "dependabot/npm_and_yarn/server/axios-1.20.0": "main",
+    "dependabot/npm_and_yarn/server/engine.io-6.6.11": "main",
+    "dependabot/npm_and_yarn/server/grpc/grpc-js-1.14.5": "main",
+    "dependabot/npm_and_yarn/server/nodemailer-10.0.9": "main",
+    "dependabot/npm_and_yarn/worker/axios-1.20.0": "main",
+    "dependabot/npm_and_yarn/worker/fastify/busboy-3.2.2": "main",
+    "dependabot/npm_and_yarn/worker/grpc/grpc-js-1.14.5": "main",
+    "dependabot/npm_and_yarn/worker/moment-2.31.0": "main",
+    "dependabot/npm_and_yarn/worker/nodemailer-10.0.9": "main",
+    "dev/abdullah": "main",
+    "development": "main",
+    "emon/dev": "main",
+    "main": null
+  },
+  "order": [
+    "main",
+    "dependabot/npm_and_yarn/server/axios-1.20.0",
+    "dependabot/npm_and_yarn/server/engine.io-6.6.11",
+    "dependabot/npm_and_yarn/server/grpc/grpc-js-1.14.5",
+    "dependabot/npm_and_yarn/server/nodemailer-10.0.9",
+    "dependabot/npm_and_yarn/worker/axios-1.20.0",
+    "dependabot/npm_and_yarn/worker/fastify/busboy-3.2.2",
+    "dependabot/npm_and_yarn/worker/grpc/grpc-js-1.14.5",
+    "dependabot/npm_and_yarn/worker/moment-2.31.0",
+    "dependabot/npm_and_yarn/worker/nodemailer-10.0.9",
+    "dev/abdullah",
+    "development",
+    "emon/dev"
+  ]
+}
