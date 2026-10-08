@@ -1,6 +1,7 @@
 import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  ObjectCannedACL,
   PutObjectCommand,
 } from '@aws-sdk/client-s3'
 import httpStatus from 'http-status'
@@ -8,6 +9,25 @@ import path from 'path';
 import { config } from '../config/env.config';
 import { s3Client } from '../config/s3.config';
 import ApiError from '../errors/ApiError';
+
+const { bucket, region, endpoint, publicUrl, forcePathStyle, objectAcl } = config.aws;
+
+/** Public URL for an uploaded object (Hetzner: https://<bucket>.hel1.your-objectstorage.com/<key>). */
+export const getPublicFileUrl = (key: string): string => {
+  if (publicUrl) return `${publicUrl}/${key}`;
+  if (endpoint) {
+    return forcePathStyle
+      ? `https://${endpoint}/${bucket}/${key}`
+      : `https://${bucket}.${endpoint}/${key}`;
+  }
+  return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+};
+
+const aclOption = (): { ACL?: ObjectCannedACL } =>
+  objectAcl && objectAcl !== 'none' ? { ACL: objectAcl as ObjectCannedACL } : {};
+
+const describeError = (error: any): string =>
+  [error?.name || error?.Code, error?.message].filter(Boolean).join(': ') || 'Unknown error';
 
 //upload a single file
 export const uploadToS3 = async (
@@ -18,20 +38,19 @@ export const uploadToS3 = async (
   const finalKey = `${baseName}${ext || ''}`;
 
   const command = new PutObjectCommand({
-    Bucket: config.aws.bucket,
+    Bucket: bucket,
     Key: finalKey,
     Body: file.buffer,
     ContentType: file.mimetype,
+    ...aclOption(),
   });
 
   try {
     await s3Client.send(command);
-
-    const url = `https://${config.aws.bucket}.s3.${config.aws.region}.amazonaws.com/${finalKey}`;
-    return url;
+    return getPublicFileUrl(finalKey);
   } catch (error) {
-    console.log(error);
-    throw new ApiError(httpStatus.BAD_REQUEST, 'File Upload failed');
+    console.error('uploadToS3 error:', error);
+    throw new ApiError(httpStatus.BAD_REQUEST, `File Upload failed (${describeError(error)})`);
   }
 };
 
@@ -39,7 +58,7 @@ export const uploadToS3 = async (
 export const deleteFromS3 = async (key: string) => {
   try {
     const command = new DeleteObjectCommand({
-      Bucket: config.aws.bucket,
+      Bucket: bucket,
       Key: key,
     })
     await s3Client.send(command)
@@ -67,29 +86,30 @@ export const uploadManyToS3 = async (
       const fileKey     = `${folderPath}/${newFileName}`;
 
       const command = new PutObjectCommand({
-        Bucket:      config.aws.bucket as string,
+        Bucket:      bucket,
         Key:         fileKey,
         Body:        file?.buffer,
         ContentType: file.mimetype,
+        ...aclOption(),
       });
 
       await s3Client.send(command);
 
-      const url = `https://${config.aws.bucket}.s3.${config.aws.region}.amazonaws.com/${fileKey}`;
-      return { url, key: newFileName };
+      return { url: getPublicFileUrl(fileKey), key: newFileName };
     });
 
     const uploadedUrls = await Promise.all(uploadPromises);
     return uploadedUrls;
   } catch (error) {
-    throw new Error('File Upload failed');
+    console.error('uploadManyToS3 error:', error);
+    throw new ApiError(httpStatus.BAD_REQUEST, `File Upload failed (${describeError(error)})`);
   }
 };
 
 export const deleteManyFromS3 = async (keys: string[]) => {
   try {
     const deleteParams = {
-      Bucket: config.aws.bucket,
+      Bucket: bucket,
       Delete: {
         Objects: keys.map((key) => ({ Key: key })),
         Quiet: false,

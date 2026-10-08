@@ -72,11 +72,19 @@ export const config = {
     client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL,
   },
 
+  // S3-compatible storage (Hetzner Object Storage via S3_ENDPOINT; AWS when endpoint is empty)
   aws: {
-    accessKeyId: process.env.S3_BUCKET_ACCESS_KEY,
-    secretAccessKey: process.env.S3_BUCKET_SECRET_ACCESS_KEY,
-    region: process.env.AWS_REGION,
-    bucket: process.env.AWS_BUCKET_NAME,
+    accessKeyId: process.env.S3_ACCESS_KEY || process.env.S3_BUCKET_ACCESS_KEY,
+    secretAccessKey: process.env.S3_SECRET_KEY || process.env.S3_BUCKET_SECRET_ACCESS_KEY,
+    region: (process.env.S3_REGION || process.env.AWS_REGION || '').trim(),
+    bucket: (process.env.S3_BUCKET_NAME || process.env.AWS_BUCKET_NAME || '').trim(),
+    endpoint: (process.env.S3_ENDPOINT || '')
+      .trim()
+      .replace(/^https?:\/\//, '')
+      .replace(/\/+$/, ''),
+    publicUrl: (process.env.S3_PUBLIC_URL || '').trim().replace(/\/+$/, ''),
+    forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
+    objectAcl: (process.env.S3_OBJECT_ACL ?? 'public-read').trim(),
   },
 
   twilio: {
