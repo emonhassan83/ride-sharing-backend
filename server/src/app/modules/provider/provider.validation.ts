@@ -28,9 +28,9 @@ const createProviderZodSchema = z.object({
       .trim().optional(),
 
     vatNumber: z
-      .string()
-      .min(3, { message: 'VAT number is required' })
-      .trim(),
+      .string({ message: 'VAT number is required' })
+      .trim()
+      .min(3, { message: 'VAT number is required' }),
 
     ibanNumber: z
       .string()
@@ -63,7 +63,11 @@ const updateProviderZodSchema = z.object({
 
     type: z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]]).optional(),
     companyReg: z.string().trim().optional(),
-    vatNumber: z.string().trim().optional(),
+    vatNumber: z
+      .string()
+      .trim()
+      .min(3, { message: 'VAT number cannot be empty' })
+      .optional(),
     ibanNumber: z.string().trim().optional(),
 
     cnicFront: imageUrlSchema.optional(),

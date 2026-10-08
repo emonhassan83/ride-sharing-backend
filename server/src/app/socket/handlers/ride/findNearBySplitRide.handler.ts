@@ -11,6 +11,8 @@ import { TVehicle } from '../../../modules/vehicle/vehicle.interface';
 import { User } from '../../../modules/user/user.model';
 import { ISplitRideRequest } from '../../interface/ride';
 import {
+  getCandidateDepartureDates,
+  getSplitMatchingTimeWindowMinutes,
   isRequestEligibleForSplitRide,
   requestToMatchCandidate,
 } from '../../../utils/splitMatching.utils';
@@ -139,7 +141,13 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
       type: RIDE_TYPE.split,
       splitFareLocked: { $ne: true },
       status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
-      departureDate,
+      departureDate: {
+        $in: getCandidateDepartureDates(
+          departureDate,
+          departureTime,
+          await getSplitMatchingTimeWindowMinutes(),
+        ),
+      },
       $or: [
         { totalSeats: 0 },
         { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },

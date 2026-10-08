@@ -16,7 +16,6 @@ const vehicleSchema = new Schema<TVehicle>(
     number: {
       type: String,
       required: [true, 'Vehicle number is required'],
-      unique: true,
       trim: true,
       uppercase: true,
     },
@@ -49,6 +48,15 @@ const vehicleSchema = new Schema<TVehicle>(
 
 // Indexes
 vehicleSchema.index({ userId: 1, isDeleted: 1 });
+// Plate must be unique only among active vehicles so a soft-deleted car can be re-registered
+vehicleSchema.index(
+  { number: 1 },
+  {
+    unique: true,
+    name: 'number_active_unique',
+    partialFilterExpression: { isDeleted: false },
+  }
+);
 
 // Soft delete middleware
 vehicleSchema.pre(/^find/, function (this: Query<any, any>) {
@@ -56,3 +64,12 @@ vehicleSchema.pre(/^find/, function (this: Query<any, any>) {
 });
 
 export const Vehicle = mongoose.model<TVehicle>('Vehicle', vehicleSchema);
+
+export const syncVehicleIndexes = async () => {
+  const indexes = await Vehicle.collection.indexes().catch(() => []);
+  const legacy = indexes.find(
+    (idx) => idx.name === 'number_1' && idx.unique && !idx.partialFilterExpression
+  );
+  if (legacy) await Vehicle.collection.dropIndex('number_1');
+  await Vehicle.createIndexes();
+};

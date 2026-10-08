@@ -60,6 +60,20 @@ const settingSeeder = async () => {
     },
     {
       updateOne: {
+        filter: { key: 'platformCommissionPercent' },
+        update: { $set: { key: 'platformCommissionPercent', value: 10 } },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
+        filter: { key: 'splitRideMatchedSurchargePercent' },
+        update: { $set: { key: 'splitRideMatchedSurchargePercent', value: 30 } },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
         filter: { key: 'splitRideMatchedSurchargePercent3' },
         update: { $set: { key: 'splitRideMatchedSurchargePercent3', value: 50 } },
         upsert: true,
@@ -90,7 +104,7 @@ const settingSeeder = async () => {
       updateOne: {
         filter: { key: 'splitRideMatchingTimeWindowMinutes' },
         update: {
-          $setOnInsert: { key: 'splitRideMatchingTimeWindowMinutes', value: 0 },
+          $set: { key: 'splitRideMatchingTimeWindowMinutes', value: 30 },
         },
         upsert: true,
       },

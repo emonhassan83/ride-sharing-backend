@@ -81,6 +81,7 @@ export const calcSplitPassengerFare = async (
   totalKmCharge: number;
   luggageCharge: number;
   holidayTripCharge: number;
+  sixPassengerExtraCharge: number;
   surchargePercent: number;
   surchargeAmount: number;
   minimumFareApplied: boolean;
@@ -145,6 +146,7 @@ export const calcSplitPassengerFare = async (
     totalKmCharge: breakdown.totalKmCharge,
     luggageCharge: breakdown.luggageCharge,
     holidayTripCharge: breakdown.holidaySurcharge,
+    sixPassengerExtraCharge: breakdown.sixPassengerExtraCharge,
     surchargePercent: matchedSurchargePercent,
     surchargeAmount: perPassengerSurcharge,
     minimumFareApplied: fareTotals.minimumFareApplied,

@@ -541,7 +541,15 @@ const deleteUserProfile = async (
       );
     }
 
+    await Vehicle.updateMany(
+      { userId, isDeleted: false },
+      { isDeleted: true, isDefault: false },
+      { session }
+    );
+
     await session.commitTransaction();
+
+    await deleteCache(REDIS_KEYS.VEHICLES_BY_USER(String(userId)));
 
     // invalidate cache
     await deleteCache(REDIS_KEYS.ACCOUNT_DELETION_ALL);

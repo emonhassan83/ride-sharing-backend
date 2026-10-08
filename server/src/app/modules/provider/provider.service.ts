@@ -25,7 +25,7 @@ const insertIntoDB = async (userId: string, payload: TProvider & { type?: string
 
     // Check if verification already exists
     const existingOne = await Provider.findOne({
-      user: user._id,
+      userId: user._id,
     }).session(session);
 
     if (existingOne) {

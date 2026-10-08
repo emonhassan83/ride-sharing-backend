@@ -4,8 +4,8 @@
   splitRideMinDistanceKm: 20,
   splitRidePickupMatchRadiusKm: 10,
   splitRideDestinationMatchRadiusKm: 10,
-  /** 0 = exact same departureTime until PO sets a real window */
-  splitRideMatchingTimeWindowMinutes: 0,
+  /** ±minutes around requested pickup time for split matching (inclusive) */
+  splitRideMatchingTimeWindowMinutes: 30,
   splitRideRefundRestrictionHours: 24,
   privateRideMinBookingHours: 1,
   privateRideRefundRestrictionHours: 1,

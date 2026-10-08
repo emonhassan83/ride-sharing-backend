@@ -7,6 +7,7 @@ import { config } from './app/config/env.config';
 import { connectRedis } from './app/config/redis.config';
 import initializeSocketIO from './app/socket/socket.init';
 import { startBackgroundJobs } from './app/job/jobScheduler';
+import { syncVehicleIndexes } from './app/modules/vehicle/vehicle.model';
 
 // ✅ One server, created once, never reassigned
 const server: Server = createServer(app);
@@ -19,6 +20,10 @@ async function main() {
 
     await mongoose.connect(config.database.mongoUrl as string);
     logger.info(colors.green('🚀 Database connected successfully'));
+
+    await syncVehicleIndexes().catch((err) =>
+      errorLogger.error(`Vehicle index sync failed: ${err?.message || err}`)
+    );
 
     const port =
       typeof config.port === 'number' ? config.port : Number(config.port);

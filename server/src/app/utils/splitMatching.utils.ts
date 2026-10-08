@@ -1,7 +1,8 @@
 /**
  * Split Ride matching eligibility (client §§11–12).
  * Phase 1: pickups within radius. Phase 2: destinations within radius.
- * Time window is configurable (default 0 = exact same departureTime — do not invent a window).
+ * Time window: symmetric ±30 min around requested pickup, boundaries inclusive
+ * (14:00 matches 13:30–14:30; 13:29 / 14:31 do not). Works across midnight.
  */
 import { getRedisClient } from '../config/redis.config';
 import { Setting } from '../modules/settings/settings.model';
@@ -15,8 +16,7 @@ import { getSplitMaxMatchedRiders } from './splitFare.utils';
 
 export const DEFAULT_SPLIT_PICKUP_MATCH_RADIUS_KM = 10;
 export const DEFAULT_SPLIT_DESTINATION_MATCH_RADIUS_KM = 10;
-/** 0 = exact departureTime match only until product owner sets a window. */
-export const DEFAULT_SPLIT_MATCHING_TIME_WINDOW_MINUTES = 0;
+export const DEFAULT_SPLIT_MATCHING_TIME_WINDOW_MINUTES = 30;
 
 export type LatLng = { lat: number; lng: number };
 
@@ -42,11 +42,41 @@ export const getSplitDestinationMatchRadiusKm = async (): Promise<number> =>
     DEFAULT_SPLIT_DESTINATION_MATCH_RADIUS_KM,
   );
 
-export const getSplitMatchingTimeWindowMinutes = async (): Promise<number> =>
-  getNumericSetting(
+/** Legacy stored value 0 (old "exact time" default) falls back to the 30-minute client rule. */
+export const getSplitMatchingTimeWindowMinutes = async (): Promise<number> => {
+  const value = await getNumericSetting(
     'splitRideMatchingTimeWindowMinutes',
     DEFAULT_SPLIT_MATCHING_TIME_WINDOW_MINUTES,
   );
+  return value > 0 ? value : DEFAULT_SPLIT_MATCHING_TIME_WINDOW_MINUTES;
+};
+
+const shiftIsoDate = (isoDate: string, days: number): string => {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().slice(0, 10);
+};
+
+/**
+ * departureDate values to pre-fetch candidates for, so a window crossing midnight
+ * (e.g. 23:50 vs 00:10) still loads the adjacent day. Exact check is passesTimeWindow.
+ */
+export const getCandidateDepartureDates = (
+  departureDate: string,
+  departureTime: string,
+  windowMinutes: number,
+): string[] => {
+  const dates = [departureDate];
+  const [h, min] = String(departureTime).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(min)) return dates;
+
+  const wallMinutes = h * 60 + min;
+  // +60 margin covers DST shifts; over-fetching is harmless.
+  const margin = Math.max(windowMinutes, 0) + 60;
+  if (wallMinutes < margin) dates.push(shiftIsoDate(departureDate, -1));
+  if (wallMinutes > 24 * 60 - margin) dates.push(shiftIsoDate(departureDate, 1));
+  return dates;
+};
 
 export const coordsToLatLng = (coordinates?: number[] | null): LatLng | null => {
   if (!coordinates || coordinates.length < 2) return null;
@@ -71,16 +101,11 @@ export const passesTimeWindow = (
   b: SplitMatchCandidate,
   windowMinutes: number,
 ): boolean => {
-  if (a.departureDate !== b.departureDate) return false;
-
-  if (!windowMinutes || windowMinutes <= 0) {
-    return a.departureTime === b.departureTime;
-  }
-
   try {
     const aDt = getDepartureDateTime(a.departureDate, a.departureTime).getTime();
     const bDt = getDepartureDateTime(b.departureDate, b.departureTime).getTime();
-    return Math.abs(aDt - bDt) <= windowMinutes * 60 * 1000;
+    const windowMs = Math.max(windowMinutes || 0, 0) * 60 * 1000;
+    return Math.abs(aDt - bDt) <= windowMs;
   } catch {
     return false;
   }

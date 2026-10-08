@@ -11,6 +11,10 @@ const validateObjectId = (id: string, label = 'ID') => {
     throw new ApiError(StatusCodes.BAD_REQUEST, `Invalid ${label}`);
 };
 
+const normalizePlate = (number?: string) => number?.trim().toUpperCase();
+
+const isDuplicateKeyError = (error: any) => error?.code === 11000;
+
 const addMultipleCars = async (userId: string, payloads: Partial<TVehicle>[]) => {
   if (!payloads || !payloads.length) {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'No vehicles provided');
@@ -18,15 +22,23 @@ const addMultipleCars = async (userId: string, payloads: Partial<TVehicle>[]) =>
 
   // Normalize plate numbers
   const numbers = payloads
-    .map(p => p.number?.toUpperCase())
+    .map(p => normalizePlate(p.number))
     .filter((n): n is string => !!n);
 
   if (!numbers.length) {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'Valid vehicle numbers are required');
   }
 
-  // Check duplicates in DB
-  const existing = await Vehicle.find({ number: { $in: numbers } });
+  const repeated = numbers.filter((n, i) => numbers.indexOf(n) !== i);
+  if (repeated.length) {
+    throw new ApiError(
+      StatusCodes.CONFLICT,
+      `Duplicate plate numbers in request: ${[...new Set(repeated)].join(', ')}`
+    );
+  }
+
+  // Check duplicates in DB (active vehicles only)
+  const existing = await Vehicle.find({ number: { $in: numbers }, isDeleted: false });
   if (existing.length > 0) {
     throw new ApiError(
       StatusCodes.CONFLICT,
@@ -41,12 +53,16 @@ const addMultipleCars = async (userId: string, payloads: Partial<TVehicle>[]) =>
   const vehicles = payloads.map((p, index) => ({
     ...p,
     userId,
-    number: p.number?.toUpperCase(),
+    number: normalizePlate(p.number),
     isDefault: !hasCars && index === 0, // প্রথম গাড়ি default হবে যদি আগে কোনো গাড়ি না থাকে
   }));
 
   // Bulk insert
-  const inserted = await Vehicle.insertMany(vehicles);
+  const inserted = await Vehicle.insertMany(vehicles).catch((error) => {
+    if (isDuplicateKeyError(error))
+      throw new ApiError(StatusCodes.CONFLICT, 'A car with this plate number already exists');
+    throw error;
+  });
 
   // Invalidate cache
   await deleteCache(REDIS_KEYS.VEHICLES_BY_USER(userId));
@@ -56,9 +72,9 @@ const addMultipleCars = async (userId: string, payloads: Partial<TVehicle>[]) =>
 
 // ── Add a car ───────────────────────────────────────────────
 const addACar = async (userId: string, payload: Partial<TVehicle>) => {
-  const existing = await Vehicle.findOne({
-    number: payload.number?.toUpperCase(),
-  });
+  const number = normalizePlate(payload.number);
+
+  const existing = await Vehicle.findOne({ number, isDeleted: false });
   if (existing)
     throw new ApiError(StatusCodes.CONFLICT, 'A car with this plate number already exists');
 
@@ -66,8 +82,13 @@ const addACar = async (userId: string, payload: Partial<TVehicle>) => {
 
   const vehicle = await Vehicle.create({
     ...payload,
+    number,
     userId,
     isDefault: !hasCars,
+  }).catch((error) => {
+    if (isDuplicateKeyError(error))
+      throw new ApiError(StatusCodes.CONFLICT, 'A car with this plate number already exists');
+    throw error;
   });
 
   // invalidate cache
@@ -108,9 +129,11 @@ const updateACar = async (userId: string, carId: string, payload: Partial<TVehic
   delete (payload as any).isDefault;
 
   if (payload.number) {
+    payload.number = normalizePlate(payload.number);
     const duplicate = await Vehicle.findOne({
-      number: payload.number.toUpperCase(),
+      number: payload.number,
       _id: { $ne: carId },
+      isDeleted: false,
     });
     if (duplicate)
       throw new ApiError(StatusCodes.CONFLICT, 'A car with this plate number already exists');
@@ -120,7 +143,13 @@ const updateACar = async (userId: string, carId: string, payload: Partial<TVehic
     { _id: carId, userId, isDeleted: false },
     payload,
     { returnDocument: 'after', runValidators: true },
-  ).lean();
+  )
+    .lean()
+    .catch((error) => {
+      if (isDuplicateKeyError(error))
+        throw new ApiError(StatusCodes.CONFLICT, 'A car with this plate number already exists');
+      throw error;
+    });
 
   if (!vehicle)
     throw new ApiError(StatusCodes.NOT_FOUND, 'Car not found or does not belong to you');
@@ -160,9 +189,11 @@ const deleteACar = async (userId: string, carId: string) => {
   if (!car)
     throw new ApiError(StatusCodes.NOT_FOUND, 'Car not found or does not belong to you');
 
+  const wasDefault = car.isDefault;
   car.isDeleted = true;
+  car.isDefault = false;
 
-  if (car.isDefault) {
+  if (wasDefault) {
     const next = await Vehicle.findOne({
       userId,
       _id: { $ne: carId },

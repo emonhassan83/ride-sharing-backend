@@ -1,13 +1,27 @@
 export const roundMoney = (value: number): number =>
   Math.round(Number(value || 0) * 100) / 100;
 
-/** Round up to the next EUR 5 (or configurable) bracket. */
+/** Client-mandated +10% initial estimate (PMCrfPR); must never drop out of the fare. */
+export const MANDATORY_INITIAL_ESTIMATE_PERCENT = 10;
+
+export const resolveInitialEstimatePercent = (value?: number | null): number => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : MANDATORY_INITIAL_ESTIMATE_PERCENT;
+};
+
+/**
+ * Ceil to the next EUR 5 (or configurable) bracket. Exact multiples stay unchanged
+ * (60.00 → 60.00, 60.01 → 65.00, 65.00 → 65.00). Works in integer cents to avoid float drift.
+ */
 export const roundUpToFiveBracket = (
   amount: number,
   bracket = 5,
 ): number => {
-  if (amount <= 0) return 0;
-  return Math.ceil(amount / bracket) * bracket;
+  const cents = Math.round(Number(amount || 0) * 100);
+  if (cents <= 0) return 0;
+  const bracketCents = Math.round(Number(bracket) * 100);
+  if (!Number.isFinite(bracketCents) || bracketCents <= 0) return cents / 100;
+  return (Math.ceil(cents / bracketCents) * bracketCents) / 100;
 };
 
 /** Komistra amounts include VAT; extract for display only. */
@@ -162,9 +176,9 @@ export const buildPassengerFareTotals = (
   const isMatchedSplit = isSplit && riders >= 2;
   const actualFare = roundMoney(rawComponentFare);
 
-  // PMCrfPR baked into private + unmatched-split initial upfront.
+  // PMCrfPR (+10% initial estimate) baked into private + unmatched-split initial upfront.
   const afterPmc = roundMoney(
-    actualFare * (1 + Number(platformCommissionPercent || 0) / 100),
+    actualFare * (1 + resolveInitialEstimatePercent(platformCommissionPercent) / 100),
   );
   const initialBracket = roundUpToFiveBracket(afterPmc, fareRoundingBracket);
   const initialUpfront = Math.max(initialBracket, baseFare);
@@ -322,7 +336,9 @@ export const reversePassengerTotalToBase = (params: {
 
   if (rideType === 'private' || rideType === 'split') {
     // Reverse baked PMCrfPR from passenger total (lossy around €5 brackets).
-    return roundMoney(total / (1 + platformCommissionPercent / 100));
+    return roundMoney(
+      total / (1 + resolveInitialEstimatePercent(platformCommissionPercent) / 100),
+    );
   }
 
   return total;

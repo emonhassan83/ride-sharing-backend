@@ -28,7 +28,7 @@ export const buildStoredFareBreakdown = async (
   const platformCommissionPercentage = settingMap.get('platformCommissionPercent') ?? 10;
   const baseFare = settingMap.get('baseFare') ?? 0;
   const defaultSplitRideMatchedSurchargePercent =
-    settingMap.get('splitRideMatchedSurchargePercent') ?? 0;
+    settingMap.get('splitRideMatchedSurchargePercent') ?? 30;
   const fareRoundingBracket = settingMap.get('fareRoundingBracket') ?? 5;
   const fivePassengerExtraChargePercentage =
     settingMap.get('fivePassengerExtraChargePercentage') ?? 0;

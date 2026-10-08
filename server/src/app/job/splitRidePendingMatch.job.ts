@@ -28,6 +28,7 @@ import {
   acquireSplitJoinLock,
   enforceSplitMaxRidersAfterJoin,
   findEligibleExistingSplitRide,
+  getCandidateDepartureDates,
   getSplitDestinationMatchRadiusKm,
   getSplitMatchingTimeWindowMinutes,
   getSplitPickupMatchRadiusKm,
@@ -53,7 +54,13 @@ const findMatchingExistingRide = async (passenger: any) => {
     type: RIDE_TYPE.split,
     splitFareLocked: { $ne: true },
     status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
-    departureDate: passenger.departureDate,
+    departureDate: {
+      $in: getCandidateDepartureDates(
+        passenger.departureDate,
+        passenger.departureTime,
+        await getSplitMatchingTimeWindowMinutes(),
+      ),
+    },
   })
     .sort({ driverId: -1, createdAt: 1 })
     .lean();
@@ -80,7 +87,13 @@ const findMatchingBacklogPeer = async (passenger: any) => {
     status: PASSENGER_STATUS.split_matching,
     rideId: null,
     paymentStatus: PASSENGER_PAYMENT_STATUS.authorized,
-    departureDate: passenger.departureDate,
+    departureDate: {
+      $in: getCandidateDepartureDates(
+        passenger.departureDate,
+        passenger.departureTime,
+        windowMinutes,
+      ),
+    },
     userId: { $ne: passenger.userId },
   })
     .sort({ createdAt: 1 })

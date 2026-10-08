@@ -185,8 +185,11 @@ export async function calculateFareBreakdown(params: {
     regulatedBase += waitingCharge;
   }
 
+  // >4 passengers → 6-seater category: uplift applies to the full regulated base
+  // (initial + km + waiting), not to a single component.
+  const isSixSeaterCategory = Number(requestedSeats) > 4;
   let sixPassengerExtraCharge = 0;
-  if (requestedSeats === 6) {
+  if (isSixSeaterCategory) {
     const beforeMultiplier = regulatedBase;
     const multiplier = 1 + settings.sixPassengerExtraChargePercentage / 100;
     regulatedBase = roundMoney(regulatedBase * multiplier);
@@ -229,10 +232,10 @@ export async function calculateFareBreakdown(params: {
     waitingCharge,
     fivePassengerExtraCharge,
     sixPassengerExtraCharge,
-    fivePassengerExtraChargePercentage:
-      requestedSeats === 5 ? settings.fivePassengerExtraChargePercentage : 0,
-    sixPassengerExtraChargePercentage:
-      requestedSeats === 6 ? settings.sixPassengerExtraChargePercentage : 0,
+    fivePassengerExtraChargePercentage: 0,
+    sixPassengerExtraChargePercentage: isSixSeaterCategory
+      ? settings.sixPassengerExtraChargePercentage
+      : 0,
     baseFare: settings.baseFare,
     actualFare: fareTotals.actualFare,
     fareBeforeFees: fareTotals.fareBeforeFees,
