@@ -79,6 +79,10 @@ export interface TPassenger {
   waitingChargePaid: boolean;
   droppedOffAt: Date;
 
+  pickupDelaySeconds?: number | null;
+  waitThresholdExceeded?: boolean;
+  waitFeeCharged?: boolean;
+
   createdAt: Date;
   updatedAt: Date;
 }

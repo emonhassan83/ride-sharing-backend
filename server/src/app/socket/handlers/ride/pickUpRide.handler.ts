@@ -10,6 +10,7 @@ import eventHandler from '../../utils/eventHandler';
 import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { User } from '../../../modules/user/user.model';
+import { computePickupDelay } from '../../../utils/waitTimeNotice.utils';
 
 export const pickUpRideHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -30,10 +31,14 @@ export const pickUpRideHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io = getIO();
 
-    // Client rule: upfront price is locked — waiting must NOT alter rider fare.
+    // Client rule: upfront price is locked  waiting must NOT alter rider fare.
     const doPickup = async (passenger: any) => {
       const pickedUpAt = new Date();
       const lockedFare = passenger.estimatedFare || passenger.totalFare || 0;
+      const { pickupDelaySeconds, waitThresholdExceeded } = computePickupDelay(
+        passenger.arriveAt,
+        pickedUpAt,
+      );
 
       await Passenger.findByIdAndUpdate(passenger._id, {
         status: PASSENGER_STATUS.picked_up,
@@ -41,6 +46,9 @@ export const pickUpRideHandler = eventHandler<any>(
         waitingCharge: 0,
         waitingChargePaid: false,
         totalFare: lockedFare,
+        pickupDelaySeconds,
+        waitThresholdExceeded,
+        waitFeeCharged: false,
       });
 
       const pickupPayload = {

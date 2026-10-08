@@ -28,6 +28,7 @@ import { getSplitMaxMatchedRiders } from '../../../utils/splitFare.utils';
 import { buildStoredFareBreakdown } from '../../../utils/fareBreakdownResponse.utils';
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 import { toLuggageFyiView } from '../../../utils/luggage.utils';
+import { buildWaitTimeNotice } from '../../../utils/waitTimeNotice.utils';
 
 const ensureRiderInRoom = (userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
@@ -491,7 +492,7 @@ await redis.hset(`ride:active:${rideId}`, {
         driverDetails,
         socket,
         estimatedArrival,
-        { rideFullyAccepted: true, ...price }
+        { rideFullyAccepted: true, ...price, waitTimeNotice: buildWaitTimeNotice() }
       );
 
       io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
@@ -698,6 +699,7 @@ await redis.hset(`ride:active:${rideId}`, {
           rideFullyAccepted: isLastPassenger,
           remainingPassengers: remainingCount,
           ...price,
+          waitTimeNotice: buildWaitTimeNotice(),
         }
       );
 

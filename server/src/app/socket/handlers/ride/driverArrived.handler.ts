@@ -142,28 +142,30 @@ export const driverArrivedHandler = eventHandler<any>(
         }).catch(() => {});
       }
 
-      // Dummy wait notice only — NO charge / NO price change (client rule).
+      // Warning only — NO charge / NO price change (client rule).
       setTimeout(async () => {
         const p = await Passenger.findById(passenger._id);
-        if (!p || p.pickedUpAt) return;
+        if (!p || p.pickedUpAt || p.status !== PASSENGER_STATUS.driver_arrived) return;
+
+        const followUpNotice = buildWaitTimeNotice('follow_up');
 
         io.to(`user:${passenger.userId}`).emit('ride:wait-time-notice', {
           rideId,
           passengerId: passenger._id,
-          ...waitNotice,
+          ...followUpNotice,
         });
 
         io.to(`driver:${driverId}`).emit('ride:wait-time-notice', {
           rideId,
           passengerId: passenger._id,
-          ...waitNotice,
+          ...followUpNotice,
         });
 
         if (riderUser?.fcmToken) {
           sendNotification([riderUser.fcmToken], {
             receiver: passenger.userId,
             message: 'Please Board Soon',
-            description: waitNotice.message,
+            description: followUpNotice.message,
             reference: rideId,
             modelType: modeType.Ride,
           }).catch(() => {});

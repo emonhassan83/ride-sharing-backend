@@ -82,30 +82,32 @@ export async function triggerArrival(
       });
     }
 
-    // Dummy wait notice only — does NOT start a charge or change locked fare.
+    // Warning only — does NOT start a charge or change locked fare.
     setTimeout(async () => {
       const p = await Passenger.findById(passengerId);
-      if (!p || p.pickedUpAt || p.status === PASSENGER_STATUS.picked_up) {
+      if (!p || p.pickedUpAt || p.status !== PASSENGER_STATUS.driver_arrived) {
         return;
       }
+
+      const followUpNotice = buildWaitTimeNotice('follow_up');
 
       io.to(`user:${passenger.userId}`).emit('ride:wait-time-notice', {
         rideId,
         passengerId: passenger._id,
-        ...waitNotice,
+        ...followUpNotice,
       });
 
       io.to(`driver:${driverId}`).emit('ride:wait-time-notice', {
         rideId,
         passengerId: passenger._id,
-        ...waitNotice,
+        ...followUpNotice,
       });
 
       if (riderUser?.fcmToken) {
         sendNotification([riderUser.fcmToken], {
           receiver: passenger.userId,
           message: 'Please Board Soon',
-          description: waitNotice.message,
+          description: followUpNotice.message,
           reference: rideId,
           modelType: modeType.Ride,
         }).catch(() => {});

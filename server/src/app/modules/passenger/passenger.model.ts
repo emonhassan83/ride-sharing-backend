@@ -116,6 +116,11 @@ const passengerSchema = new Schema<TPassenger>(
     waitingStartedAt:  { type: Date,    default: null },
     waitingChargePaid: { type: Boolean, default: false },
     droppedOffAt:      { type: Date },
+
+    // Wait-time audit (warning-only phase; no fee is charged yet)
+    pickupDelaySeconds:    { type: Number,  default: null },
+    waitThresholdExceeded: { type: Boolean, default: false },
+    waitFeeCharged:        { type: Boolean, default: false },
   },
   {
     timestamps: true,
