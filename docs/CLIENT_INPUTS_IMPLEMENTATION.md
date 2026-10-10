@@ -73,10 +73,12 @@ Status as of 10 Oct 2026. Every backend item below was checked against the clien
 
 **Verified (50 km, day tariff):**
 
-| Passengers | Regulated base | After uplift | Total |
-|---|---|---|---|
-| 1–4 | 51.30 | 51.30 | EUR 60 |
-| 5–6 | 51.30 | 71.82 (× 1.40) | EUR 80 |
+| Passengers | Regulated base | 6-seater × 1.40 | +10% initial estimate (× 1.10) | EUR 5 ceil (total) |
+|---|---|---|---|---|
+| 1–4 | 51.30 | n/a | 56.43 | **EUR 60** |
+| 5–6 | 51.30 | 71.82 | 79.00 | **EUR 80** |
+
+Order of steps: regulated base, then × 1.40 if more than 4 passengers, then × 1.10 (+10%, item 4), then round up to the next EUR 5 (item 2), then a EUR 20 minimum. Without the +10% the totals would be EUR 55 and EUR 75.
 
 ## 4. Split Ride Fare Formula (+10% initial estimate)
 
