@@ -15,13 +15,13 @@ Short reference for how passenger `estimatedFare` / `totalFare` is built. Defaul
 | Rounding                      | Round **up** to next €5                             |
 | Minimum fare                  | €20                                                 |
 | VAT                           | 9% **included** (display extract only)              |
-| Luggage / holiday / 5-pax     | Ignored (`0`)                                       |
-| 6-pax                         | +40% on regulated base (private seats)              |
+| Luggage / holiday             | Ignored (`0`)                                       |
+| 5–6 pax (6-seater category)   | +40% on the full regulated base                     |
 | Waiting                       | Only if `waitingMinutes > 0` (estimate usually `0`) |
 
 
 **Regulated base (komistra):**  
-`initialCharge + (distanceKm × perKm) [+ waiting] [+ 6-pax if seats === 6]`
+`(initialCharge + (distanceKm × perKm) [+ waiting]) × 1.40 if seats > 4`
 
 ---
 
