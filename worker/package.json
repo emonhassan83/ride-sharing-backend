@@ -20,7 +20,7 @@
     "bullmq": "^5.79.2",
     "dotenv": "^17.4.2",
     "firebase-admin": "^14.1.0",
-    "handlebars": "^4.7.8",
+    "handlebars": "^4.7.10",
     "helmet": "^8.2.0",
     "ioredis": "^5.11.1",
     "morgan": "^1.12.0",
