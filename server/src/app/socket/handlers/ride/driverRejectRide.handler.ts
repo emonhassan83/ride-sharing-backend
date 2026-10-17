@@ -56,7 +56,7 @@ export const driverRejectRideHandler = eventHandler<any>(
         ? await Passenger.findOne({
             _id: passengerId,
             rideId,
-            status: PASSENGER_STATUS.pending,
+            // status: PASSENGER_STATUS.pending,
           })
         : await Passenger.findOne({ rideId, status: PASSENGER_STATUS.pending });
       if (!passenger) {
@@ -110,7 +110,7 @@ export const driverRejectRideHandler = eventHandler<any>(
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,
-        status: PASSENGER_STATUS.pending,
+        // status: PASSENGER_STATUS.pending,
       });
       if (!passenger)
         return callback?.({

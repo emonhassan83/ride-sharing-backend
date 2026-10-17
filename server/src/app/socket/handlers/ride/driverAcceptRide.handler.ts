@@ -518,7 +518,7 @@ await redis.hset(`ride:active:${rideId}`, {
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,
-        status: PASSENGER_STATUS.pending,
+        // status: PASSENGER_STATUS.pending,
       });
       if (!passenger)
         return callback?.({
