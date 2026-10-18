@@ -1,6 +1,8 @@
 // jobs/rideMatching.job.ts
 import { Ride } from '../modules/ride/ride.model';
 import { Passenger } from '../modules/passenger/passenger.model';
+import { Booking } from '../modules/booking/booking.model';
+import { PAYMENT_STATUS as BOOKING_PAYMENT_STATUS } from '../modules/booking/booking.constant';
 import { RIDE_STATUS } from '../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { getRedisClient } from '../config/redis.config';
@@ -37,6 +39,16 @@ export const startRideMatchingJob = async (): Promise<void> => {
       }).lean();
 
       if (!passenger) continue;
+
+      const paidBooking = await Booking.findOne({
+        passengerId: passenger._id,
+        paymentStatus: {
+          $in: [BOOKING_PAYMENT_STATUS.authorized, BOOKING_PAYMENT_STATUS.paid],
+        },
+      })
+        .select('_id')
+        .lean();
+      if (!paidBooking) continue;
 
       const rider = await User.findById(ride.rideCreatedBy)
         .select('name profileImage')

@@ -14,7 +14,6 @@ import { calcSplitPassengerFare, computeSplitPoolKomistraBase, getSplitMaxMatche
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 import {
   acquireSplitJoinLock,
-  enforceSplitMaxRidersAfterJoin,
   findEligibleExistingSplitRide,
   getCandidateDepartureDates,
   getSplitMatchingTimeWindowMinutes,
@@ -377,7 +376,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
 
       const passenger = await Passenger.create({
         userId,
-        rideId: selectedRide._id,
+        rideId: null,
         pickup: { address: pickup.address, coordinates: [pickup.lng, pickup.lat] },
         destination: { address: destination.address, coordinates: [destination.lng, destination.lat] },
         departureDate,
@@ -406,53 +405,39 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
         smallSuitcase: luggage.smallSuitcase,
         luggageNote: luggage.luggageNote,
         note: note ?? '',
-        status: PASSENGER_STATUS.pending,
+        status: PASSENGER_STATUS.split_matching,
         originalRideIntent: 'split',
-        matchedVia,
-        matchedAt: new Date(),
       });
-
-      const cap = await enforceSplitMaxRidersAfterJoin(
-        selectedRide._id,
-        passenger._id,
-        'cancel_new',
-      );
-      if (!cap.ok) {
-        await Booking.deleteMany({ passengerId: passenger._id });
-        return callback?.({
-          success: false,
-          message: `Split ride allows a maximum of ${cap.maxMatchedRiders} matched riders.`,
-        });
-      }
 
       const booking = await Booking.create({
         passengerId: passenger._id,
-        rideId: selectedRide._id,
+        rideId: null,
         userId,
-        driverId: (selectedRide as any).driverId || undefined,
+        driverId: null,
         totalFare: passenger.estimatedFare,
         amountPaid: 0,
         bookingStatus: BOOKING_STATUS.pending,
         paymentStatus: BOOKING_PAYMENT_STATUS.pending,
       });
 
-      socket.join(`ride:${selectedRide._id}`);
       socket.join(`passenger:${passenger._id}`);
 
       const ttl = Math.max(
         3600,
         Math.floor((departureDateTime.getTime() - Date.now()) / 1000) + 7200
       );
-      await redis.hset(`ride:request:${selectedRide._id}:${passenger._id}`, {
+      const intendedRideId = selectedRide._id.toString();
+      await redis.hset(`split:matching:passenger:${passenger._id}`, {
         userId,
         passengerId: passenger._id.toString(),
-        rideId: selectedRide._id.toString(),
         bookingId: booking._id.toString(),
+        intendedRideId,
+        matchedVia,
         estimatedFare: fareBreakdown.estimatedFare.toString(),
         matchingStatus: 'awaiting_payment',
         timestamp: Date.now().toString(),
       });
-      await redis.expire(`ride:request:${selectedRide._id}:${passenger._id}`, ttl);
+      await redis.expire(`split:matching:passenger:${passenger._id}`, ttl);
 
       const price = toRiderPriceView({
         estimatedFare: fareBreakdown.estimatedFare,
@@ -461,9 +446,11 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       });
 
       const requestedRide = {
-        rideId: selectedRide._id.toString(),
+        rideId: null,
+        intendedRideId,
         passengerId: passenger._id.toString(),
         bookingId: booking._id.toString(),
+        matchingStatus: PASSENGER_STATUS.split_matching,
         ...price,
         availableSeats: selectedRide.totalSeats
           ? selectedRide.totalSeats - activeSeatsBeforeJoin - requestedSeats
@@ -477,12 +464,14 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       return callback?.({
         success: true,
         message: requestedRideId
-          ? 'Joined selected split ride. Please complete payment to notify driver.'
-          : 'Split ride join request created for an available matching ride. Please complete payment to notify driver.',
+          ? 'Split ride reserved. Complete payment to notify the driver.'
+          : 'Matching split ride found. Complete payment to notify the driver.',
         data: {
-          rideId: requestedRide.rideId,
+          rideId: null,
+          intendedRideId,
           passengerId: requestedRide.passengerId,
           bookingId: requestedRide.bookingId,
+          matchingStatus: PASSENGER_STATUS.split_matching,
           matchedVia,
           requestedRide,
           requestedRides: [requestedRide],

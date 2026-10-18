@@ -202,61 +202,82 @@ const getAllIntoDB = async (query: Record<string, unknown>) => {
   return { meta, result };
 };
 
+const PAID_PAYMENT_STATUSES = [
+  PAYMENT_STATUS.authorized,
+  PAYMENT_STATUS.paid,
+] as const;
+
+const isPaidPaymentStatus = (status: unknown) =>
+  PAID_PAYMENT_STATUSES.includes(status as (typeof PAID_PAYMENT_STATUSES)[number]);
+
 const getDriverRides = async (
   userId: string,
   query: Record<string, unknown>
 ) => {
-  // 1. Fetch all rides for the driver that are not pending/cancelled/rejected
-  const driverRides = await Ride.find({
-    driverId: userId,
-    status: {
-      $nin: [
-        RIDE_STATUS.pending,
-        RIDE_STATUS.cancelled,
-        RIDE_STATUS.rejected,
-      ],
-    },
-  }).select('_id');
+  const isPendingList = query.status === RIDE_STATUS.pending;
+  const rideFilter = isPendingList
+    ? {
+        status: RIDE_STATUS.pending,
+        $or: [{ driverId: userId }, { notifiedDriverIds: userId }],
+      }
+    : {
+        driverId: userId,
+        status: query.status
+          ? query.status
+          : {
+              $nin: [
+                RIDE_STATUS.pending,
+                RIDE_STATUS.cancelled,
+                RIDE_STATUS.rejected,
+              ],
+            },
+      };
 
+  const driverRides = await Ride.find(rideFilter).select('_id');
   const driverRideIds = driverRides.map(r => r._id);
 
-  // 2. Fetch all passengers of these rides who are not pending/cancelled/rejected
   const passengers = await Passenger.find({
     rideId: { $in: driverRideIds },
-    status: {
-      $nin: [
-        PASSENGER_STATUS.pending,
-        PASSENGER_STATUS.cancelled,
-        PASSENGER_STATUS.rejected,
-        PASSENGER_STATUS.split_matching,
-      ],
-    },
-  }).select('rideId paymentStatus');
+    status: isPendingList
+      ? {
+          $nin: [
+            PASSENGER_STATUS.cancelled,
+            PASSENGER_STATUS.rejected,
+            PASSENGER_STATUS.split_matching,
+          ],
+        }
+      : {
+          $nin: [
+            PASSENGER_STATUS.pending,
+            PASSENGER_STATUS.cancelled,
+            PASSENGER_STATUS.rejected,
+            PASSENGER_STATUS.split_matching,
+          ],
+        },
+  }).select('_id rideId paymentStatus');
 
-  // 3. Count passengers per ride and check payment status
-  const ridePassengerMap = new Map<string, { count: number; hasPaid: boolean }>();
+  const passengerIds = passengers.map(p => p._id);
+  const bookings = await Booking.find({
+    passengerId: { $in: passengerIds },
+  })
+    .select('passengerId paymentStatus')
+    .lean();
+  const bookingPaymentByPassengerId = new Map(
+    bookings.map(b => [b.passengerId.toString(), b.paymentStatus]),
+  );
+
+  const paidPassengerIds = new Set<string>();
+  const paidRideIds = new Set<string>();
   for (const p of passengers) {
     if (!p.rideId) continue;
-    const rideIdStr = p.rideId.toString();
-    if (!ridePassengerMap.has(rideIdStr)) {
-      ridePassengerMap.set(rideIdStr, { count: 0, hasPaid: false });
-    }
-    const info = ridePassengerMap.get(rideIdStr)!;
-    info.count += 1;
-    if ([PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid].includes(p.paymentStatus as any)) {
-      info.hasPaid = true;
-    }
+    const paymentStatus =
+      bookingPaymentByPassengerId.get(p._id.toString()) ?? p.paymentStatus;
+    if (!isPaidPaymentStatus(paymentStatus)) continue;
+    paidPassengerIds.add(p._id.toString());
+    paidRideIds.add(p.rideId.toString());
   }
 
-  // 4. Identify eligible rides:
-  // - Show if passenger count > 1
-  // - Show if passenger count === 1 and that passenger has authorized/paid payment
-  const eligibleRideIds: string[] = [];
-  for (const [rideIdStr, info] of ridePassengerMap.entries()) {
-    if (info.count > 1 || (info.count === 1 && info.hasPaid)) {
-      eligibleRideIds.push(rideIdStr);
-    }
-  }
+  const eligibleRideIds = Array.from(paidRideIds);
 
   // 5. If no rides are eligible, return empty result with pagination metadata
   if (!eligibleRideIds.length) {
@@ -298,15 +319,8 @@ const getDriverRides = async (
 
   const rideIds = result.map(r => r._id);
   const allPassengers = await Passenger.find({
+    _id: { $in: Array.from(paidPassengerIds) },
     rideId: { $in: rideIds },
-    status: {
-      $nin: [
-        PASSENGER_STATUS.pending,
-        PASSENGER_STATUS.cancelled,
-        PASSENGER_STATUS.rejected,
-        PASSENGER_STATUS.split_matching,
-      ],
-    },
   })
     .populate('userId', 'name')
     .lean();

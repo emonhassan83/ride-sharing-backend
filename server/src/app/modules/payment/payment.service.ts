@@ -17,11 +17,16 @@ import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
 import { PASSENGER_STATUS } from '../passenger/passenger.constant';
 import { Ride } from '../ride/ride.model';
-import { RIDE_TYPE } from '../ride/ride.constant';
+import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
 import { getIO } from '../../socket/socket.init';
 import { notifyNearbyDrivers, notifyNearbyDriversForSplitRide } from '../../utils/notifyDrivers.utils';
 import { getRedisClient } from '../../config/redis.config';
 import { recalculateSplitFares } from '../../utils/splitFare.utils';
+import {
+  acquireSplitJoinLock,
+  enforceSplitMaxRidersAfterJoin,
+  releaseSplitJoinLock,
+} from '../../utils/splitMatching.utils';
 import { assertMinimumBookingLeadTime, assertSplitMinimumDistance, getDepartureDateTime } from '../../utils/rideSchedule.utils';
 import { loadFareSettings } from '../../utils/fareCalculator';
 import {
@@ -37,23 +42,119 @@ const stripe = new Stripe(config.pay?.secretKey as string, {
 const isBookingPaymentReadyForMatching = (status: any): boolean =>
   [PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid].includes(status);
 
-const startRideMatchingAfterPayment = async (bookingId: string): Promise<number> => {
-  const booking = await Booking.findById(bookingId).lean();
-  if (!booking || !isBookingPaymentReadyForMatching((booking as any).paymentStatus)) return 0;
+const attachIntendedSplitRideAfterPayment = async (
+  passenger: any,
+  booking: any,
+) => {
+  const redis = getRedisClient();
+  const intendedRideId = await redis.hget(
+    `split:matching:passenger:${passenger._id}`,
+    'intendedRideId',
+  );
+  if (!intendedRideId) return null;
 
-  const passenger = await Passenger.findById(booking.passengerId).lean();
+  const ride = await Ride.findById(intendedRideId).lean();
+  if (
+    !ride ||
+    (ride as any).splitFareLocked ||
+    ![RIDE_STATUS.pending, RIDE_STATUS.accepted].includes(ride.status as any)
+  ) {
+    return null;
+  }
+
+  const locked = await acquireSplitJoinLock(intendedRideId);
+  if (!locked) return null;
+
+  try {
+    const matchedVia =
+      (await redis.hget(
+        `split:matching:passenger:${passenger._id}`,
+        'matchedVia',
+      )) || 'auto_existing';
+
+    const attached = await Passenger.findOneAndUpdate(
+      {
+        _id: passenger._id,
+        status: PASSENGER_STATUS.split_matching,
+        rideId: null,
+      },
+      {
+        rideId: ride._id,
+        status: PASSENGER_STATUS.pending,
+        matchedVia,
+        matchedAt: new Date(),
+        originalRideIntent: 'split',
+      },
+      { returnDocument: 'after' },
+    );
+    if (!attached) return null;
+
+    const cap = await enforceSplitMaxRidersAfterJoin(
+      ride._id,
+      passenger._id,
+      'detach_to_matching',
+    );
+    if (!cap.ok) return null;
+
+    const updatedBooking = await Booking.findByIdAndUpdate(
+      booking._id,
+      { rideId: ride._id, driverId: (ride as any).driverId || null },
+      { returnDocument: 'after' },
+    );
+    if (!updatedBooking) return null;
+
+    await recalculateSplitFares(ride._id.toString(), 'passenger_joined');
+    await redis.del(`split:matching:passenger:${passenger._id}`);
+    await redis.hset(`ride:request:${ride._id}:${passenger._id}`, {
+      userId: passenger.userId.toString(),
+      passengerId: passenger._id.toString(),
+      rideId: ride._id.toString(),
+      bookingId: updatedBooking._id.toString(),
+      matchingStatus: 'matched_after_payment',
+      timestamp: Date.now().toString(),
+    });
+
+    getIO().to(`user:${passenger.userId}`).emit('split-ride:matched', {
+      rideId: ride._id,
+      passengerId: passenger._id,
+      bookingId: updatedBooking._id,
+      matchedVia,
+      message: 'Your split ride request has been matched. Drivers are being notified.',
+    });
+
+    return {
+      ride,
+      passenger: attached.toObject(),
+      booking: updatedBooking.toObject(),
+    };
+  } finally {
+    await releaseSplitJoinLock(intendedRideId);
+  }
+};
+
+const startRideMatchingAfterPayment = async (bookingId: string): Promise<number> => {
+  let booking: any = await Booking.findById(bookingId).lean();
+  if (!booking || !isBookingPaymentReadyForMatching(booking.paymentStatus)) return 0;
+
+  let passenger: any = await Passenger.findById(booking.passengerId).lean();
   if (!passenger) return 0;
 
   if (passenger.status === PASSENGER_STATUS.split_matching || !booking.rideId) {
-    const redis = getRedisClient();
-    await redis.hset(`split:matching:passenger:${passenger._id}`, {
-      bookingId: booking._id.toString(),
-      passengerId: passenger._id.toString(),
-      userId: booking.userId.toString(),
-      matchingStatus: 'split_matching_authorized',
-      lastCheckedAt: Date.now().toString(),
-    });
-    return 0;
+    const attached = await attachIntendedSplitRideAfterPayment(passenger, booking);
+    if (attached) {
+      passenger = attached.passenger;
+      booking = attached.booking;
+    } else {
+      const redis = getRedisClient();
+      await redis.hset(`split:matching:passenger:${passenger._id}`, {
+        bookingId: booking._id.toString(),
+        passengerId: passenger._id.toString(),
+        userId: booking.userId.toString(),
+        matchingStatus: 'split_matching_authorized',
+        lastCheckedAt: Date.now().toString(),
+      });
+      return 0;
+    }
   }
 
   if (passenger.status !== PASSENGER_STATUS.pending) return 0;
