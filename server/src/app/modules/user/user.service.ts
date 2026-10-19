@@ -21,6 +21,8 @@ import { config } from '../../config/env.config';
 import { Vehicle } from '../vehicle/vehicle.model';
 import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
+import { Passenger } from '../passenger/passenger.model';
+import { PASSENGER_STATUS } from '../passenger/passenger.constant';
 import { Payment } from '../payment/payment.model';
 import { BOOKING_STATUS } from '../booking/booking.constant';
 import StripeService from '../../config/stripe.config';
@@ -484,10 +486,36 @@ const updateLocationFromDB = async (
   return updatedUser;
 };
 
+const ACTIVE_RIDE_STATUSES = [
+  RIDE_STATUS.pending,
+  RIDE_STATUS.accepted,
+  RIDE_STATUS.started,
+];
+
+const ACTIVE_PASSENGER_STATUSES = [
+  PASSENGER_STATUS.pending,
+  PASSENGER_STATUS.split_matching,
+  PASSENGER_STATUS.confirmed,
+  PASSENGER_STATUS.driver_arrived,
+  PASSENGER_STATUS.in_progress,
+  PASSENGER_STATUS.picked_up,
+];
+
 const deleteUserProfile = async (
-  userId: string,
+  targetUserId: string,
+  requester: { userId: string; role: string },
   payload: { reason: string; otherReason?: string }
 ): Promise<TUser | null> => {
+  const isAdmin = requester.role === USER_ROLE.admin;
+  const userId = isAdmin ? targetUserId : requester.userId;
+
+  if (!isAdmin && targetUserId !== requester.userId) {
+    throw new ApiError(
+      StatusCodes.FORBIDDEN,
+      "You don't have permission to delete another user",
+    );
+  }
+
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -497,14 +525,27 @@ const deleteUserProfile = async (
       throw new ApiError(StatusCodes.NOT_FOUND, 'User not found!');
     }
 
-    const activeBooking = await Booking.findOne({
-      userId,
-      bookingStatus: { $in: [BOOKING_STATUS.accepted, BOOKING_STATUS.running] },
-    });
-    if (activeBooking) {
+    const [activeRide, activePassenger, activeBooking] = await Promise.all([
+      Ride.exists({
+        status: { $in: ACTIVE_RIDE_STATUSES },
+        $or: [{ driverId: userId }, { rideCreatedBy: userId }],
+      }),
+      Passenger.exists({
+        userId,
+        status: { $in: ACTIVE_PASSENGER_STATUSES },
+      }),
+      Booking.findOne({
+        userId,
+        bookingStatus: {
+          $in: [BOOKING_STATUS.accepted, BOOKING_STATUS.running],
+        },
+      }).select('_id'),
+    ]);
+
+    if (activeRide || activePassenger || activeBooking) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
-        'Cannot delete profile while having active bookings'
+        'Cannot delete profile while having an active ride',
       );
     }
 

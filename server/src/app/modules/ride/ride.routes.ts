@@ -33,4 +33,6 @@ router.get(
   RideController.getARide
 );
 
+router.delete('/:id', auth(USER_ROLE.admin), RideController.deleteARide);
+
 export const RideRoutes = router;

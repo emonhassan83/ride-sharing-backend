@@ -73,10 +73,21 @@ const getDriverInvoice = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const deleteARide = catchAsync(async (req: Request, res: Response) => {
+  const result = await RideService.deleteARide(req.params.id as string);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Ride deleted successfully',
+    data: result,
+  });
+});
+
 export const RideController = {
   getAllRides,
   getDriverRides,
   getRiderRides,
   getARide,
   getDriverInvoice,
+  deleteARide,
 };

@@ -1,4 +1,4 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose, { Query, Schema } from 'mongoose';
 import { TPassenger, TPassengerModel } from './passenger.interface';
 import {
   FARE_TYPE,
@@ -121,6 +121,8 @@ const passengerSchema = new Schema<TPassenger>(
     pickupDelaySeconds:    { type: Number,  default: null },
     waitThresholdExceeded: { type: Boolean, default: false },
     waitFeeCharged:        { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
   },
   {
     timestamps: true,
@@ -131,6 +133,11 @@ const passengerSchema = new Schema<TPassenger>(
 // Indexes for performance
 passengerSchema.index({ userId: 1, status: 1 });
 passengerSchema.index({ rideId: 1, status: 1 });
+passengerSchema.index({ isDeleted: 1 });
+
+passengerSchema.pre(/^find/, function (this: Query<any, any>) {
+  this.where({ isDeleted: { $ne: true } });
+});
 
 export const Passenger = mongoose.model<TPassenger, TPassengerModel>(
   'Passenger',

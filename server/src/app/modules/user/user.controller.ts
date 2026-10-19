@@ -93,7 +93,14 @@ const updateUserStatus = catchAsync(async (req, res) => {
 });
 
 const deleteUserProfile = catchAsync(async (req, res) => {
-  const result = await UserService.deleteUserProfile(req.user.userId, req.body);
+  const result = await UserService.deleteUserProfile(
+    req.params.userId as string,
+    {
+      userId: req.user.userId,
+      role: req.user.role,
+    },
+    req.body,
+  );
 
   sendResponse(res, {
     code: StatusCodes.OK,

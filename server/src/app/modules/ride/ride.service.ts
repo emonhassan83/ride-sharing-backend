@@ -1,4 +1,5 @@
 import { StatusCodes } from 'http-status-codes';
+import mongoose from 'mongoose';
 import ApiError from '../../errors/ApiError';
 import { Ride } from './ride.model';
 import QueryBuilder from '../../builder/QueryBuilder';
@@ -666,12 +667,49 @@ const getRideById = async (rideId: string) => {
     invoiceOverview,
   };
 };
+
+const deleteARide = async (rideId: string) => {
+  const ride = await Ride.findById(rideId).select('_id');
+  if (!ride) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const deletedAt = new Date();
+    const deletedRide = await Ride.findByIdAndUpdate(
+      rideId,
+      { isDeleted: true, deletedAt },
+      { returnDocument: 'after', session },
+    );
+    if (!deletedRide) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
+    }
+
+    await Passenger.updateMany(
+      { rideId, isDeleted: { $ne: true } },
+      { isDeleted: true, deletedAt },
+      { session },
+    );
+
+    await session.commitTransaction();
+    return deletedRide;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+
 export const RideService = {
   getAllIntoDB,
   getDriverRides,
   getRiderRides,
   getRideById,
   getDriverMonthlyInvoice,
+  deleteARide,
 };
 
 

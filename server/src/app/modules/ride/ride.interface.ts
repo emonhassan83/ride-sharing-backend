@@ -62,6 +62,8 @@ export interface TRide {
   completedAt?: Date;
   cancelledBy: TCancelledBy;
   reNotifiedAt?: Date;
+  isDeleted: boolean;
+  deletedAt?: Date;
 
   createdAt: Date;
   updatedAt: Date;

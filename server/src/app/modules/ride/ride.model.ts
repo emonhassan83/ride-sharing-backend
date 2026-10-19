@@ -1,4 +1,4 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose, { Query, Schema } from 'mongoose';
 import { TRide, TRideModel } from './ride.interface';
 import { CANCELLED_BY, RIDE_STATUS, RIDE_TYPE } from './ride.constant';
 import { generateCryptoString } from '../../utils/generateCryptoString';
@@ -106,6 +106,8 @@ const rideSchema = new Schema<TRide>(
       enum: Object.values(CANCELLED_BY),
     },
     reNotifiedAt: { type: Date },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
   },
   {
     timestamps: true,
@@ -119,6 +121,11 @@ rideSchema.index({ departureDate: 1, departureTime: 1, status: 1 });
 rideSchema.index({ status: 1, createdAt: 1 });
 rideSchema.index({ status: 1, arrivedAt: 1 });
 rideSchema.index({ type: 1, splitFareLocked: 1, departureDate: 1, departureTime: 1 });
+rideSchema.index({ isDeleted: 1 });
+
+rideSchema.pre(/^find/, function (this: Query<any, any>) {
+  this.where({ isDeleted: { $ne: true } });
+});
 
 export const Ride = mongoose.model<TRide, TRideModel>('Ride', rideSchema);
 
