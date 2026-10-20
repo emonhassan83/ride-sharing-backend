@@ -38,8 +38,19 @@ const getANotification = catchAsync(async (req, res) => {
   })
 })
 
+/** Mark all my notifications as read */
 const markAsDoneNotification = catchAsync(async (req, res) => {
-  const result = await NotificationService.markAsDoneFromDB(
+  const result = await NotificationService.markAsDoneFromDB(req.user.userId)
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Notifications marked as read successfully',
+    data: result,
+  })
+})
+
+/** Mark a single notification as read by id */
+const markAsDoneANotification = catchAsync(async (req, res) => {
+  const result = await NotificationService.markAsDoneAFromDB(
     req.params.id as string,
     req.user.userId,
   )
@@ -77,6 +88,7 @@ export const NotificationControllers = {
   getAllNotifications,
   getANotification,
   markAsDoneNotification,
+  markAsDoneANotification,
   deleteANotification,
   deleteAllNotifications
 }

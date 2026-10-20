@@ -1,12 +1,71 @@
 import moment from 'moment';
+import { Types } from 'mongoose';
 import ApiError from '../../errors/ApiError';
-import { TNotification } from './notification.interface';
+import { modeType, TNotification } from './notification.interface';
 import { Notification } from './notification.model';
 import { StatusCodes } from 'http-status-codes';
 import QueryBuilder from '../../builder/QueryBuilder';
 import {
   decrementUnreadCount,
+  setUnreadCountInRedis,
 } from '../../redis/helpers/notification';
+import { Passenger } from '../passenger/passenger.model';
+import { Booking } from '../booking/booking.model';
+
+const RIDE_META_MODEL_TYPES = new Set<string>([
+  modeType.Ride,
+  modeType.Passenger,
+  modeType.Booking,
+]);
+
+const toPlain = (doc: any) =>
+  doc?.toObject ? doc.toObject() : { ...doc };
+
+const resolveRideIdForNotification = async (
+  modelType?: string,
+  reference?: Types.ObjectId | string | null,
+): Promise<string | null> => {
+  if (!modelType || !reference || !RIDE_META_MODEL_TYPES.has(modelType)) {
+    return null;
+  }
+
+  const refId = reference.toString();
+
+  if (modelType === modeType.Ride) {
+    return refId;
+  }
+
+  if (modelType === modeType.Passenger) {
+    const passenger = await Passenger.findById(refId).select('rideId').lean();
+    return passenger?.rideId ? passenger.rideId.toString() : null;
+  }
+
+  if (modelType === modeType.Booking) {
+    const booking = await Booking.findById(refId).select('rideId').lean();
+    return booking?.rideId ? booking.rideId.toString() : null;
+  }
+
+  return null;
+};
+
+const withRideMeta = async (notification: any) => {
+  const plain = toPlain(notification);
+  const rideId = await resolveRideIdForNotification(
+    plain.modelType,
+    plain.reference,
+  );
+
+  if (!RIDE_META_MODEL_TYPES.has(plain.modelType)) {
+    return plain;
+  }
+
+  return {
+    ...plain,
+    meta: {
+      rideId,
+    },
+  };
+};
 
 const createNotificationIntoDB = async (payload: TNotification) => {
   const notification = await Notification.create(payload);
@@ -38,9 +97,11 @@ const getAllNotificationFromDB = async (query: Record<string, unknown>) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Notification not found!');
   }
 
+  const enriched = await Promise.all(result.map((item: any) => withRideMeta(item)));
+
   return {
     meta,
-    result,
+    result: enriched,
   };
 };
 
@@ -50,10 +111,29 @@ const getANotificationFromDB = async (id: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Notification not found!');
   }
 
-  return notification;
+  return withRideMeta(notification);
 };
 
-const markAsDoneFromDB = async (notificationId: string, userId: string) => {
+/** Mark all notifications as read for a user */
+const markAsDoneFromDB = async (userId: string) => {
+  const result = await Notification.updateMany(
+    { receiver: userId },
+    {
+      $set: {
+        read: true,
+      },
+    },
+  );
+
+  if (result.modifiedCount > 0) {
+    await setUnreadCountInRedis(userId, 0);
+  }
+
+  return result;
+};
+
+/** Mark a single notification as read by id */
+const markAsDoneAFromDB = async (notificationId: string, userId: string) => {
   const notification = await Notification.findOne({
     _id: notificationId,
     receiver: userId,
@@ -119,6 +199,7 @@ export const NotificationService = {
   getAllNotificationFromDB,
   getANotificationFromDB,
   markAsDoneFromDB,
+  markAsDoneAFromDB,
   deleteANotificationFromDB,
   deleteAllNotificationsFromDB,
 };

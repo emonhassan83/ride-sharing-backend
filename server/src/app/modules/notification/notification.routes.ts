@@ -19,10 +19,18 @@ router.delete(
   NotificationControllers.deleteANotification
 );
 
+// Mark all as read
+router.patch(
+  '/',
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  NotificationControllers.markAsDoneNotification
+);
+
+// Mark one as read by notification id
 router.patch(
   '/:id',
   auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
-  NotificationControllers.markAsDoneNotification
+  NotificationControllers.markAsDoneANotification
 );
 
 router.get(
