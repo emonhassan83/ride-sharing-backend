@@ -13,18 +13,6 @@ const createNotification = catchAsync(async (req, res) => {
   })
 })
 
-const sentGeneralNotification = catchAsync(async (req, res) => {
-  const result = await NotificationService.sendGeneralNotificationIntoDB(
-    req.body,
-  )
-
-  sendResponse(res, {
-    code: StatusCodes.CREATED,
-    message: 'General notification create successfully!',
-    data: result,
-  })
-})
-
 const getAllNotifications = catchAsync(async (req, res) => {
   const query = {
     ...req.query,
@@ -51,7 +39,10 @@ const getANotification = catchAsync(async (req, res) => {
 })
 
 const markAsDoneNotification = catchAsync(async (req, res) => {
-  const result = await NotificationService.markAsDoneFromDB(req?.user?.userId)
+  const result = await NotificationService.markAsDoneFromDB(
+    req.params.id as string,
+    req.user.userId,
+  )
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Notification marked as read successfully',
@@ -83,7 +74,6 @@ const deleteAllNotifications = catchAsync(async (req, res) => {
 
 export const NotificationControllers = {
   createNotification,
-  sentGeneralNotification,
   getAllNotifications,
   getANotification,
   markAsDoneNotification,

@@ -16,7 +16,7 @@ const createSupportZodSchema = z.object({
 
     booking: z
       .string()
-      .regex(/^[0-9a-fA-F]{24}$/, { message: 'Invalid Booking ID' })
+      .min(1, { message: 'Booking ID cannot be empty' })
       .optional()
       .nullable(),
 

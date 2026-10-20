@@ -3,11 +3,9 @@ import ApiError from '../../errors/ApiError';
 import { TNotification } from './notification.interface';
 import { Notification } from './notification.model';
 import { StatusCodes } from 'http-status-codes';
-import { User } from '../user/user.model';
 import QueryBuilder from '../../builder/QueryBuilder';
 import {
   decrementUnreadCount,
-  setUnreadCountInRedis,
 } from '../../redis/helpers/notification';
 
 const createNotificationIntoDB = async (payload: TNotification) => {
@@ -24,34 +22,6 @@ const createNotificationIntoDB = async (payload: TNotification) => {
   }
 
   return notification;
-};
-
-const sendGeneralNotificationIntoDB = async (payload: TNotification) => {
-  const { message, description, ...othersData } = payload;
-
-  const userIds = (await User.distinct('_id', { role: 'user' })).map(id =>
-    id.toString(),
-  );
-  const notifications = userIds.map(userId => ({
-    receiver: userId,
-    message,
-    description,
-    ...othersData,
-  }));
-
-  const notification = await Notification.insertMany(notifications);
-  if (!notification) {
-    throw new ApiError(StatusCodes.CONFLICT, 'Notification not created!');
-  }
-
-  //@ts-ignore
-  const io = global?.socketio;
-  if (io) {
-    const ver = 'notification::' + payload?.receiver;
-    io.emit(ver, { ...payload, createdAt: moment().format('YYYY-MM-DD') });
-  }
-
-  // return
 };
 
 // get my notifications
@@ -83,22 +53,25 @@ const getANotificationFromDB = async (id: string) => {
   return notification;
 };
 
-const markAsDoneFromDB = async (userId: string) => {
-  const result = await Notification.updateMany(
-    { receiver: userId },
-    {
-      $set: {
-        read: true,
-      },
-    },
-  );
-
-  // Set unread count in redis to 0 if any notifications were marked as read
-  if (result.modifiedCount > 0) {
-    await setUnreadCountInRedis(userId, 0);
+const markAsDoneFromDB = async (notificationId: string, userId: string) => {
+  const notification = await Notification.findOne({
+    _id: notificationId,
+    receiver: userId,
+  });
+  if (!notification) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Notification not found!');
   }
 
-  return result;
+  if (notification.read) {
+    return notification;
+  }
+
+  notification.read = true;
+  await notification.save();
+
+  await decrementUnreadCount(userId);
+
+  return notification;
 };
 
 const deleteANotificationFromDB = async (id: string) => {
@@ -143,7 +116,6 @@ const deleteAllNotificationsFromDB = async (userId: string) => {
 
 export const NotificationService = {
   createNotificationIntoDB,
-  sendGeneralNotificationIntoDB,
   getAllNotificationFromDB,
   getANotificationFromDB,
   markAsDoneFromDB,

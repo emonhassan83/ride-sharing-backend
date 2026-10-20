@@ -22,11 +22,12 @@ const create = async (userId: string, payload: Partial<TSupport>) => {
   }
 
   if (payload.booking) {
-    const booking = await Booking.findOne({ id: String(payload.booking) });
+    const booking = await Booking.findOne({ id: String(payload.booking) }).select('_id id');
     if (!booking) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found with this ID');
     }
-    payload.booking = booking._id;
+    // Store booking short id (Booking.id), not MongoDB _id
+    payload.booking = booking.id;
   }
 
   payload.user = author._id;

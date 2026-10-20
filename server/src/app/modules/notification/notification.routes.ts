@@ -20,7 +20,7 @@ router.delete(
 );
 
 router.patch(
-  '/',
+  '/:id',
   auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
   NotificationControllers.markAsDoneNotification
 );

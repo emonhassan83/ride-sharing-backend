@@ -668,10 +668,27 @@ const getRideById = async (rideId: string) => {
   };
 };
 
+const ACTIVE_RIDE_STATUSES_FOR_DELETE = [
+  RIDE_STATUS.pending,
+  RIDE_STATUS.accepted,
+  RIDE_STATUS.started,
+] as const;
+
 const deleteARide = async (rideId: string) => {
-  const ride = await Ride.findById(rideId).select('_id');
+  const ride = await Ride.findById(rideId).select('_id status');
   if (!ride) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
+  }
+
+  if (
+    ACTIVE_RIDE_STATUSES_FOR_DELETE.includes(
+      ride.status as (typeof ACTIVE_RIDE_STATUSES_FOR_DELETE)[number],
+    )
+  ) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'Cannot delete an active ride',
+    );
   }
 
   const session = await mongoose.startSession();

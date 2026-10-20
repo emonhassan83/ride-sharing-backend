@@ -31,9 +31,9 @@ const supportSchema = new Schema<TSupport>(
       trim: true,
     },
     booking: {
-      type: Schema.Types.ObjectId,
-      ref: 'Booking',
+      type: String,
       default: null,
+      trim: true,
     },
     reason: {
       type: String,

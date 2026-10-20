@@ -8,7 +8,7 @@ export interface TSupport {
   name: string
   phone: string
   email: string
-  booking: Types.ObjectId;
+  booking?: string;
   reason: string;
   contractBy: TContractBy
   status: TSupportStatus;
