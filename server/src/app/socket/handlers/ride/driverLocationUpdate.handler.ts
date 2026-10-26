@@ -83,7 +83,24 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     const eta = await calculateETAForRide(rideId, lat, lng, ride.status);
 
     // ── 5. Broadcast to ride room ─────────────────────────────────────────────
-    io.to(`ride:${rideId}`).emit('ride:live-update', {
+    const activePassengers = await Passenger.find({
+      rideId,
+      status: {
+        $in: [
+          PASSENGER_STATUS.confirmed,
+          PASSENGER_STATUS.driver_arrived,
+          PASSENGER_STATUS.in_progress,
+          PASSENGER_STATUS.picked_up,
+        ],
+      },
+    })
+      .select('userId')
+      .lean();
+    const riderRooms = [
+      ...new Set(activePassengers.map(({ userId }) => `user:${userId.toString()}`)),
+    ];
+
+    io.to([`ride:${rideId}`, ...riderRooms]).emit('ride:live-update', {
       driverId,
       lat,
       lng,
