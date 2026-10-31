@@ -378,7 +378,7 @@ const getRiderRides = async (
         },
   })
     .select(
-      'rideId pickup destination requestedSeats status estimatedFare paymentStatus departureDate departureTime largeSuitcase smallSuitcase luggageNote luggageCounts note',
+      'rideId pickup destination requestedSeats status estimatedFare paymentStatus departureDate departureTime largeSuitcase smallSuitcase luggageNote luggageCounts note createdAt',
     )
     .lean();
 
@@ -452,6 +452,7 @@ const getRiderRides = async (
         destination: p.destination,
         departureDate: p.departureDate,
         departureTime: p.departureTime,
+        createdAt: (p as any).createdAt || null,
         ...toLuggageFyiView(p),
 
         bookingId: booking?._id || null,
@@ -467,6 +468,20 @@ const getRiderRides = async (
       };
     })
     .filter(Boolean);
+
+  const sortRaw = String(query.sort || 'desc').toLowerCase();
+  const sortAsc =
+    sortRaw === 'asc' ||
+    sortRaw === 'createdat' ||
+    sortRaw === 'createdat:asc' ||
+    sortRaw === 'created_at' ||
+    sortRaw === 'created_at:asc';
+
+  result.sort((a: any, b: any) => {
+    const aTime = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return sortAsc ? aTime - bTime : bTime - aTime;
+  });
 
   const page = parseInt(String(query.page || 1));
   const limit = parseInt(String(query.limit || 10));
