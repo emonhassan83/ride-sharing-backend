@@ -47,7 +47,7 @@ const settingSeeder = async () => {
     {
       updateOne: {
         filter: { key: 'splitRideMinDistanceKm' },
-        update: { $set: { key: 'splitRideMinDistanceKm', value: 20 } },
+        update: { $set: { key: 'splitRideMinDistanceKm', value: 0 } },
         upsert: true,
       },
     },

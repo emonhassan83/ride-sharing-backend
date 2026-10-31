@@ -1,7 +1,7 @@
 ﻿export const DEFAULT_GENERAL_SETTINGS = {
   bookingMaxDaysAhead: 30,
   splitRideMinBookingHours: 3,
-  splitRideMinDistanceKm: 20,
+  splitRideMinDistanceKm: 0,
   splitRidePickupMatchRadiusKm: 10,
   splitRideDestinationMatchRadiusKm: 10,
   /** ±minutes around requested pickup time for split matching (inclusive) */

@@ -65,7 +65,7 @@ const getSettingGenerals = async () => {
   if (!byKey.get('splitRideMinDistanceKm')) {
     const updated = await Setting.findOneAndUpdate(
       { key: 'splitRideMinDistanceKm' },
-      { $setOnInsert: { key: 'splitRideMinDistanceKm', value: 20 } },
+      { $setOnInsert: { key: 'splitRideMinDistanceKm', value: 0 } },
       { upsert: true, returnDocument: 'after' },
     ).select('-__v').lean();
     if (updated) byKey.set('splitRideMinDistanceKm', updated);

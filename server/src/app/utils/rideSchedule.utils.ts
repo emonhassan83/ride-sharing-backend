@@ -7,7 +7,7 @@ export type RideScheduleType = 'private' | 'split';
 
 export const DEFAULT_SPLIT_MIN_BOOKING_HOURS = 3;
 export const DEFAULT_PRIVATE_MIN_BOOKING_HOURS = 1;
-export const DEFAULT_SPLIT_MIN_DISTANCE_KM = 20;
+export const DEFAULT_SPLIT_MIN_DISTANCE_KM = 0;
 export const DEFAULT_SPLIT_REFUND_RESTRICTION_HOURS = 24;
 export const DEFAULT_PRIVATE_REFUND_RESTRICTION_HOURS = 1;
 export const DEFAULT_MATCHING_LAST_NOTIFY_HOURS = 1;
@@ -137,8 +137,23 @@ export const getMinBookingLeadHours = async (
   );
 };
 
-export const getSplitMinDistanceKm = async (): Promise<number> =>
-  getNumericSetting('splitRideMinDistanceKm', DEFAULT_SPLIT_MIN_DISTANCE_KM);
+export const getSplitMinDistanceKm = async (): Promise<number> => {
+  const setting = await Setting.findOne({ key: 'splitRideMinDistanceKm' }).lean();
+  let value = Number(setting?.value);
+  if (!Number.isFinite(value) || value < 0) {
+    value = DEFAULT_SPLIT_MIN_DISTANCE_KM;
+  }
+  // Migrate legacy default (20km) → no minimum route length (0km).
+  if (value === 20) {
+    await Setting.findOneAndUpdate(
+      { key: 'splitRideMinDistanceKm' },
+      { $set: { value: DEFAULT_SPLIT_MIN_DISTANCE_KM } },
+      { upsert: true },
+    );
+    return DEFAULT_SPLIT_MIN_DISTANCE_KM;
+  }
+  return value;
+};
 
 export const getMatchingLastNotifyHours = async (): Promise<number> =>
   getNumericSetting('matchingLastNotifyHours', DEFAULT_MATCHING_LAST_NOTIFY_HOURS);
