@@ -19,7 +19,11 @@ import { PASSENGER_STATUS } from '../passenger/passenger.constant';
 import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
 import { getIO } from '../../socket/socket.init';
-import { notifyNearbyDrivers, notifyNearbyDriversForSplitRide } from '../../utils/notifyDrivers.utils';
+import {
+  emitNewRideRequestToDriver,
+  notifyNearbyDrivers,
+  notifyNearbyDriversForSplitRide,
+} from '../../utils/notifyDrivers.utils';
 import { getRedisClient } from '../../config/redis.config';
 import { recalculateSplitFares } from '../../utils/splitFare.utils';
 import {
@@ -206,8 +210,13 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
   if (ride.type === RIDE_TYPE.split) {
     const existingDriverId = (ride as any).driverId?.toString();
     if (existingDriverId) {
-      // Ride request: socket only (no FCM push to drivers).
-      io.to(`driver:${existingDriverId}`).emit('ride:new-request', ridePayload);
+      await emitNewRideRequestToDriver(
+        io,
+        redis,
+        existingDriverId,
+        ride._id.toString(),
+        ridePayload,
+      );
       notified = 1;
 
       await Ride.findByIdAndUpdate(ride._id, {

@@ -18,7 +18,11 @@ import { modeType } from '../modules/notification/notification.interface';
 import { RIDE_STATUS, RIDE_TYPE } from '../modules/ride/ride.constant';
 import { Ride } from '../modules/ride/ride.model';
 import { User } from '../modules/user/user.model';
-import { notifyNearbyDrivers, notifyNearbyDriversForSplitRide } from '../utils/notifyDrivers.utils';
+import {
+  emitNewRideRequestToDriver,
+  notifyNearbyDrivers,
+  notifyNearbyDriversForSplitRide,
+} from '../utils/notifyDrivers.utils';
 import {
   getDepartureDateTime,
   getMatchingLastNotifyHours,
@@ -252,8 +256,13 @@ const notifyMatchedRideDriver = async (ride: any, passenger: any, booking: any) 
 
   const driverId = ride.driverId?.toString();
   if (driverId) {
-    // Ride request: socket only (no FCM push to drivers).
-    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    await emitNewRideRequestToDriver(
+      io,
+      redis,
+      driverId,
+      ride._id.toString(),
+      ridePayload,
+    );
     await Ride.findByIdAndUpdate(ride._id, { $addToSet: { notifiedDriverIds: driverId } });
     return 1;
   }

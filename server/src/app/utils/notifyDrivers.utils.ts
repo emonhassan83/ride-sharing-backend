@@ -6,20 +6,85 @@ import { Ride } from '../modules/ride/ride.model';
 import { hasDriverRideAtDateTime } from './geo.utils';
 import { Vehicle } from '../modules/vehicle/vehicle.model';
 import { isVehicleType } from './luggage.utils';
+import { sendNotification } from './sentPushNotification';
+import { modeType } from '../modules/notification/notification.interface';
+import { Notification } from '../modules/notification/notification.model';
 
-/** Private rides: match online drivers whose default vehicle is the requested type. */
+/** Socket (if online) + in-app notification + FCM push for a new ride request. */
+export async function emitNewRideRequestToDriver(
+  io: any,
+  redis: any,
+  driverId: string,
+  rideId: string,
+  ridePayload: any,
+): Promise<void> {
+  const isOnline = await redis.sismember('users:online', driverId);
+  if (isOnline) {
+    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+  }
+
+  const rideType = String(ridePayload?.rideType || '');
+  const notificationPayload = {
+    receiver: driverId,
+    message: 'New Ride Request',
+    description:
+      rideType === 'split'
+        ? 'A new split ride request is available.'
+        : 'A new private ride request is available.',
+    reference: rideId,
+    modelType: modeType.Ride,
+    data: {
+      type: 'NEW_RIDE_REQUEST',
+      rideId: String(rideId),
+      passengerId: String(ridePayload?._id || ''),
+      rideType,
+    },
+  };
+
+  const persistInApp = async () => {
+    await Notification.create({
+      receiver: driverId,
+      message: notificationPayload.message,
+      description: notificationPayload.description,
+      reference: rideId,
+      modelType: modeType.Ride,
+    });
+  };
+
+  try {
+    const driver = await User.findById(driverId).select('fcmToken').lean();
+    let persisted = false;
+
+    if (driver?.fcmToken) {
+      const response = await sendNotification(
+        [driver.fcmToken],
+        notificationPayload,
+      );
+      // sendNotification only writes Notification when FCM successCount > 0
+      persisted = !!(response && (response as any).successCount > 0);
+    }
+
+    if (!persisted) {
+      await persistInApp();
+    }
+  } catch (error) {
+    console.error(`Notify new-ride-request failed for driver ${driverId}:`, error);
+    try {
+      await persistInApp();
+    } catch {
+      /* ignore fallback errors */
+    }
+  }
+}
+
+/** Private rides: drivers whose default vehicle matches the requested type (online + offline). */
 async function privateMatchingDriverIds(
   ridePayload: any,
-  redis: any,
 ): Promise<Set<string> | null> {
   if (ridePayload?.rideType !== 'private') return null;
   if (!isVehicleType(ridePayload.vehicleType)) return null;
 
-  const onlineIds = (await redis.smembers('users:online')) as string[];
-  if (!onlineIds?.length) return new Set();
-
   const vehicles = await Vehicle.find({
-    userId: { $in: onlineIds },
     isDeleted: false,
     isDefault: true,
     seats: ridePayload.vehicleType === '6-seater' ? { $gte: 6 } : { $gte: 4, $lte: 5 },
@@ -142,7 +207,7 @@ export async function notifyNearbyDrivers(
   const rideType = ridePayload.rideType as string;
   const requestedSeats = (ridePayload.requestedSeats as number) || 1;
   const notifyMode = options?.notifyMode || 'nearby';
-  const privateDriverIds = await privateMatchingDriverIds(ridePayload, redis);
+  const privateDriverIds = await privateMatchingDriverIds(ridePayload);
 
   if (notifyMode === 'all_eligible') {
     const eligibleDrivers = await User.find({
@@ -173,11 +238,7 @@ export async function notifyNearbyDrivers(
       const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
       if (!shouldNotify) continue;
 
-      // Ride requests: socket only (no FCM push).
-      const isKnownOnline = await redis.sismember('users:online', driverId);
-      if (!isKnownOnline) continue;
-
-      io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+      await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
       notifiedIds.push(driverId);
       notifiedCount++;
     }
@@ -203,7 +264,7 @@ export async function notifyNearbyDrivers(
 
   const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
 
-  // Online drivers — availability check + socket only (no FCM)
+  // Online drivers — availability + socket + in-app + FCM
   for (const [driverId] of onlineDrivers) {
     if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
     if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
@@ -224,12 +285,15 @@ export async function notifyNearbyDrivers(
     );
     if (!availability.available) continue;
 
-    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
+    if (!shouldNotify) continue;
+
+    await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
     notifiedIds.push(driverId);
     notifiedCount++;
   }
 
-  // Offline / redis-online but not in geo: socket only if currently online
+  // Offline / not in geo: still send FCM (socket only if online)
   const offlineDrivers = await User.find({
     role: USER_ROLE.provider,
     isDeleted: false,
@@ -269,10 +333,10 @@ export async function notifyNearbyDrivers(
       continue;
     }
 
-    const isKnownOnline = await redis.sismember('users:online', driverId);
-    if (!isKnownOnline) continue;
+    const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
+    if (!shouldNotify) continue;
 
-    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
     notifiedIds.push(driverId);
     notifiedCount++;
   }
@@ -359,12 +423,15 @@ export async function notifyNearbyDriversForSplitRide(
     const location = await getDriverCurrentLocation(redis, driverId, dbDriver);
     if (location && !isNearRoute(location.lat, location.lng)) continue;
 
-    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
+    if (!shouldNotify) continue;
+
+    await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
     notifiedIds.push(driverId);
     notifiedCount++;
   }
 
-  // Offline split drivers — socket only if currently online
+  // Offline split drivers — FCM always; socket only if online
   const offlineDrivers = await User.find({
     role: USER_ROLE.provider,
     isDeleted: false,
@@ -408,10 +475,7 @@ export async function notifyNearbyDriversForSplitRide(
     const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
     if (!shouldNotify) continue;
 
-    const isKnownOnline = await redis.sismember('users:online', driverId);
-    if (!isKnownOnline) continue;
-
-    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
     notifiedIds.push(driverId);
     notifiedCount++;
   }

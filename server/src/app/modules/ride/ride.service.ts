@@ -293,6 +293,15 @@ const getDriverRides = async (
     };
   }
 
+  const sortRaw = String(query.sort || 'desc').toLowerCase();
+  const sortAsc =
+    sortRaw === 'asc' ||
+    sortRaw === 'createdat' ||
+    sortRaw === 'createdat:asc' ||
+    sortRaw === 'created_at' ||
+    sortRaw === 'created_at:asc';
+  query.sort = sortAsc ? 'createdAt' : '-createdAt';
+
   const rideQuery = new QueryBuilder(
     Ride.find({
       _id: { $in: eligibleRideIds },
