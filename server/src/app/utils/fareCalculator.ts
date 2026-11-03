@@ -7,6 +7,7 @@ import {
   resolveSplitMatchedSurchargePercent,
   roundMoney,
 } from './fareMath.utils';
+import { formatRideLocalDate } from './rideSchedule.utils';
 
 export interface FareBreakdown {
   initialCharge: number;
@@ -110,8 +111,8 @@ async function getCyprusPublicHolidays(year: number): Promise<string[]> {
 }
 
 export async function isPublicHoliday(date: Date): Promise<boolean> {
-  const year = date.getFullYear();
-  const dateStr = date.toISOString().split('T')[0];
+  const dateStr = formatRideLocalDate(date);
+  const year = Number(dateStr.slice(0, 4));
 
   const holidays = await getCyprusPublicHolidays(year);
   return holidays.includes(dateStr);

@@ -10,6 +10,9 @@ import { getIO } from '../socket/socket.init';
 import { notifyNearbyDrivers } from '../utils/notifyDrivers.utils';
 import { User } from '../modules/user/user.model';
 import { toLuggageFyiView } from '../utils/luggage.utils';
+import { notifyUserPush } from '../utils/notifyUser.utils';
+import { modeType } from '../modules/notification/notification.interface';
+import { formatRideLocalDate } from '../utils/rideSchedule.utils';
 
 export const startRideMatchingJob = async (): Promise<void> => {
   try {
@@ -24,8 +27,8 @@ export const startRideMatchingJob = async (): Promise<void> => {
     const phase2Rides = await Ride.find({
       status: RIDE_STATUS.pending,
       departureDate: {
-        $gte: in47h.toISOString().split('T')[0],
-        $lte: in48h.toISOString().split('T')[0],
+        $gte: formatRideLocalDate(in47h),
+        $lte: formatRideLocalDate(in48h),
       },
     }).lean();
 
@@ -106,8 +109,8 @@ export const startRideMatchingJob = async (): Promise<void> => {
     const phase3Rides = await Ride.find({
       status: RIDE_STATUS.pending,
       departureDate: {
-        $gte: in23h.toISOString().split('T')[0],
-        $lte: in24h.toISOString().split('T')[0],
+        $gte: formatRideLocalDate(in23h),
+        $lte: formatRideLocalDate(in24h),
       },
     }).lean();
 
@@ -121,6 +124,11 @@ export const startRideMatchingJob = async (): Promise<void> => {
         cancelledAt: new Date(),
       });
 
+      const cancelledPassengers = await Passenger.find({
+        rideId: ride._id,
+        status: PASSENGER_STATUS.pending,
+      }).select('_id userId');
+
       await Passenger.updateMany(
         { rideId: ride._id, status: PASSENGER_STATUS.pending },
         {
@@ -129,10 +137,30 @@ export const startRideMatchingJob = async (): Promise<void> => {
         }
       );
 
-      io.to(`user:${ride.rideCreatedBy}`).emit('ride:cancelled-no-driver', {
-        rideId: ride._id,
-        message: 'No driver accepted your ride within 24 hours of departure. Your ride has been cancelled.',
-      });
+      const cancelMessage =
+        'No driver accepted your ride within 24 hours of departure. Your ride has been cancelled.';
+
+      for (const p of cancelledPassengers) {
+        const userId = p.userId?.toString();
+        if (!userId) continue;
+
+        io.to(`user:${userId}`).emit('ride:cancelled-no-driver', {
+          rideId: ride._id,
+          message: cancelMessage,
+        });
+
+        await notifyUserPush({
+          userId,
+          message: 'Ride Cancelled — No Driver',
+          description: cancelMessage,
+          reference: ride._id.toString(),
+          modelType: modeType.Ride,
+          data: {
+            type: 'RIDE_CANCELLED_NO_DRIVER',
+            rideId: String(ride._id),
+          },
+        });
+      }
 
       await redis.set(`ride:final-check:${ride._id}`, '1', 'EX', 25 * 3600);
 

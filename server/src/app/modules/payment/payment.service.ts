@@ -256,7 +256,11 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
     matchingStatus: notified > 0 ? 'notified' : 'scheduled_pending',
     lastNotifiedAt: notified > 0 ? Date.now().toString() : '',
   });
-  await redis.zadd('ride:matching:queue', new Date(`${ride.departureDate}T${ride.departureTime}:00`).getTime(), ride._id.toString());
+  await redis.zadd(
+    'ride:matching:queue',
+    getDepartureDateTime(ride.departureDate, ride.departureTime).getTime(),
+    ride._id.toString(),
+  );
 
   return notified;
 };

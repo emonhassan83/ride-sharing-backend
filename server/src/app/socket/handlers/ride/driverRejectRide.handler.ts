@@ -12,6 +12,7 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { recalculateSplitFares } from '../../../utils/splitFare.utils';
+import { getDepartureDateTime } from '../../../utils/rideSchedule.utils';
 
 export const driverRejectRideHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -34,7 +35,10 @@ export const driverRejectRideHandler = eventHandler<any>(
     // ── Helper: add driver to rejected list ───────────────────────────────────
     const markRejected = async () => {
       await redis.sadd(`ride:rejected:${rideId}`, driverId);
-      const departureMs = new Date(`${ride.departureDate}T${ride.departureTime}:00`).getTime();
+      const departureMs = getDepartureDateTime(
+        ride.departureDate,
+        ride.departureTime,
+      ).getTime();
       const ttlSeconds = Math.max(
         1800,
         Math.floor((departureMs - Date.now()) / 1000) + 7200

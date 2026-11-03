@@ -4,7 +4,7 @@ const { createLogger, format, transports } = require('winston');
 const { combine, timestamp, label, printf } = format;
 import { config } from './env.config';
 
-const TIME_ZONE = config.timeZone || 'Asia/Dhaka';
+const TIME_ZONE = config.timeZone || 'Europe/Nicosia';
 
 const myFormat = printf(
   ({
@@ -18,7 +18,7 @@ const myFormat = printf(
     label: string;
     timestamp: Date;
   }) => {
-    // Convert UTC timestamp to Asia/Dhaka time zone for display
+    // Convert UTC timestamp to Cyprus (Europe/Nicosia) for display
     const date = new Date(timestamp);
     const options: Intl.DateTimeFormatOptions = {
       timeZone: TIME_ZONE,

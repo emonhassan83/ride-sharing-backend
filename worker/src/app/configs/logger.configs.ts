@@ -4,11 +4,11 @@ import DailyRotateFile from 'winston-daily-rotate-file';
 import { createLogger, format, transports } from 'winston';
 const { combine, timestamp, label, printf } = format;
 
-const TIME_ZONE = env.timeZone || 'Asia/Dhaka';
+const TIME_ZONE = env.timeZone || 'Europe/Nicosia';
 
 const myFormat = printf((info) => {
   const { level, message, label, timestamp } = info;
-  // Convert UTC timestamp to Asia/Dhaka time zone for display
+  // Convert UTC timestamp to Cyprus (Europe/Nicosia) for display
   const date = new Date(String(timestamp));
   const options: Intl.DateTimeFormatOptions = {
     timeZone: TIME_ZONE,

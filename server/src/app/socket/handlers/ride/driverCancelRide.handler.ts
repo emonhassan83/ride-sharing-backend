@@ -19,13 +19,20 @@ import { User } from '../../../modules/user/user.model';
 import { Payment } from '../../../modules/payment/payment.model';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { modeType } from '../../../modules/notification/notification.interface';
-import { sendNotification } from '../../../utils/sentPushNotification';
+import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { refundToWallet } from '../../../utils/splitFare.utils';
 
-// �\u20AC�\u20AC Helper: cancel single passenger booking + refund + notify �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+const ACTIVE_PASSENGER_STATUSES = [
+  PASSENGER_STATUS.confirmed,
+  PASSENGER_STATUS.driver_arrived,
+  PASSENGER_STATUS.in_progress,
+  PASSENGER_STATUS.picked_up,
+];
+
+// Helper: cancel single passenger booking + refund + notify
 const cancelBookingWithRefund = async (
   passengerId: any,
   rideId: string,
@@ -34,69 +41,68 @@ const cancelBookingWithRefund = async (
   io: any,
 ) => {
   const booking = await Booking.findOne({ passengerId });
-  if (!booking) return { refundAmount: 0, userId: null };
-  const paymentForAuthorization = await Payment.findOne({ booking: booking._id });
-  const hasAuthorizedHold =
-    paymentForAuthorization &&
-    [PAYMENT_STATUS.authorized, PAYMENT_STATUS.requires_reauthorization].includes(
-      paymentForAuthorization.status as any
-    );
-
-  if (hasAuthorizedHold) {
-    await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
-  }
-
-  const paidAmount = hasAuthorizedHold ? 0 : booking.amountPaid ?? 0;
-
-  booking.bookingStatus = BOOKING_STATUS.cancelled;
-  booking.refundAmount = paidAmount;
-  if (paidAmount > 0) {
-    booking.paymentStatus = PAYMENT_STATUS.refunded;
-  } else if (hasAuthorizedHold) {
-    booking.paymentStatus = PAYMENT_STATUS.cancelled_authorization as any;
-  }
-  await booking.save();
-
   const passenger = await Passenger.findById(passengerId)
     .select('userId')
     .lean();
 
-  if (paidAmount > 0 && passenger?.userId) {
-    // 1. Find and update the payment record
-    const payment = await Payment.findOne({ booking: booking._id, status: PAYMENT_STATUS.paid });
-    if (payment) {
-      payment.status = PAYMENT_STATUS.refunded as any;
-      payment.isPaid = false;
-      await payment.save();
+  let paidAmount = 0;
+  let payment: any = null;
 
-      // Deduct driver (provider) earning from driver's wallet
-      if (payment.providerEarning && payment.providerEarning > 0) {
-        await User.findByIdAndUpdate(driverId, {
-          $inc: { wallet: -payment.providerEarning }
-        });
-        console.log(`💰 Deducted driver earning: �\u20AC${payment.providerEarning} from driver: ${driverId}`);
-      }
+  if (booking) {
+    const paymentForAuthorization = await Payment.findOne({ booking: booking._id });
+    const hasAuthorizedHold =
+      paymentForAuthorization &&
+      [PAYMENT_STATUS.authorized, PAYMENT_STATUS.requires_reauthorization].includes(
+        paymentForAuthorization.status as any
+      );
+
+    if (hasAuthorizedHold) {
+      await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
     }
 
-    // 2. Create Refund document
-    await Refund.create({
-      user: passenger.userId,
-      ride: rideId,
-      type: REFUND_TYPE.cancel_ride,
-      paymentIntentId: booking.transactionId || payment?.transactionId || '',
-      amount: paidAmount,
-      reason: `Driver cancelled: ${reason}`,
-      note: `Ride ${rideId} cancelled by driver`,
-      status: REFUND_STATUS.confirmed,
-    });
+    paidAmount = hasAuthorizedHold ? 0 : booking.amountPaid ?? 0;
 
-    // 3. Refund to passenger's wallet
-    await refundToWallet(
-      passenger.userId.toString(),
-      paidAmount,
-      'driver_cancelled',
-      io,
-    );
+    booking.bookingStatus = BOOKING_STATUS.cancelled;
+    booking.refundAmount = paidAmount;
+    if (paidAmount > 0) {
+      booking.paymentStatus = PAYMENT_STATUS.refunded;
+    } else if (hasAuthorizedHold) {
+      booking.paymentStatus = PAYMENT_STATUS.cancelled_authorization as any;
+    }
+    await booking.save();
+
+    if (paidAmount > 0 && passenger?.userId) {
+      payment = await Payment.findOne({ booking: booking._id, status: PAYMENT_STATUS.paid });
+      if (payment) {
+        payment.status = PAYMENT_STATUS.refunded as any;
+        payment.isPaid = false;
+        await payment.save();
+
+        if (payment.providerEarning && payment.providerEarning > 0) {
+          await User.findByIdAndUpdate(driverId, {
+            $inc: { wallet: -payment.providerEarning }
+          });
+        }
+      }
+
+      await Refund.create({
+        user: passenger.userId,
+        ride: rideId,
+        type: REFUND_TYPE.cancel_ride,
+        paymentIntentId: booking.transactionId || payment?.transactionId || '',
+        amount: paidAmount,
+        reason: `Driver cancelled: ${reason}`,
+        note: `Ride ${rideId} cancelled by driver`,
+        status: REFUND_STATUS.confirmed,
+      });
+
+      await refundToWallet(
+        passenger.userId.toString(),
+        paidAmount,
+        'driver_cancelled',
+        io,
+      );
+    }
   }
 
   const refundAmount = paidAmount;
@@ -106,29 +112,29 @@ const cancelBookingWithRefund = async (
       : 'Your ride has been cancelled by the driver.';
 
   if (passenger?.userId) {
-    io.to(`user:${passenger.userId}`).emit('ride:cancelled-by-driver', {
+    const userId = passenger.userId.toString();
+
+    io.to(`user:${userId}`).emit('ride:cancelled-by-driver', {
       rideId,
-      passengerId,
+      passengerId: passengerId?.toString?.() || passengerId,
       reason: reason || 'Driver cancelled',
       refundAmount,
       message: notifyMessage,
     });
 
-    const riderUser = await User.findById(passenger.userId)
-      .select('fcmToken')
-      .lean();
-
-    if (riderUser?.fcmToken) {
-      sendNotification([riderUser.fcmToken], {
-        receiver: passenger.userId,
-        message: 'Ride Cancelled by Driver',
-        description: notifyMessage,
-        reference: rideId,
-        modelType: modeType.Ride,
-      }).catch((err: any) =>
-        console.warn(`FCM failed for passenger ${passengerId}:`, err),
-      );
-    }
+    await notifyUserPush({
+      userId,
+      message: 'Ride Cancelled by Driver',
+      description: notifyMessage,
+      reference: rideId,
+      modelType: modeType.Ride,
+      data: {
+        type: 'RIDE_CANCELLED_BY_DRIVER',
+        rideId: String(rideId),
+        passengerId: String(passengerId),
+        refundAmount,
+      },
+    });
   }
 
   return { refundAmount, userId: passenger?.userId };
@@ -144,13 +150,7 @@ const cancelEntireRide = async (
 ) => {
   const activePassengers = await Passenger.find({
     rideId,
-    status: {
-      $in: [
-        PASSENGER_STATUS.confirmed,
-        PASSENGER_STATUS.in_progress,
-        PASSENGER_STATUS.driver_arrived,
-      ],
-    },
+    status: { $in: ACTIVE_PASSENGER_STATUSES },
   }).select('_id userId requestedSeats');
 
   let totalRefunded = 0
@@ -232,23 +232,11 @@ export const driverCancelRideHandler = eventHandler<any>(
         ? await Passenger.findOne({
             _id: passengerId,
             rideId,
-            status: {
-              $in: [
-                PASSENGER_STATUS.confirmed,
-                PASSENGER_STATUS.in_progress,
-                PASSENGER_STATUS.driver_arrived,
-              ],
-            },
+            status: { $in: ACTIVE_PASSENGER_STATUSES },
           })
         : await Passenger.findOne({
             rideId,
-            status: {
-              $in: [
-                PASSENGER_STATUS.confirmed,
-                PASSENGER_STATUS.in_progress,
-                PASSENGER_STATUS.driver_arrived,
-              ],
-            },
+            status: { $in: ACTIVE_PASSENGER_STATUSES },
           });
 
       if (!passenger)
@@ -320,17 +308,11 @@ export const driverCancelRideHandler = eventHandler<any>(
         });
       }
 
-      // ✅ Case 2: passengerId আছে �\u20AC� শুধু সেই passenger cancel করো
+      // Case 2: passengerId আছে — শুধু সেই passenger cancel করো
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,
-        status: {
-          $in: [
-            PASSENGER_STATUS.confirmed,
-            PASSENGER_STATUS.in_progress,
-            PASSENGER_STATUS.driver_arrived,
-          ],
-        },
+        status: { $in: ACTIVE_PASSENGER_STATUSES },
       });
 
       if (!passenger)
@@ -364,12 +346,12 @@ export const driverCancelRideHandler = eventHandler<any>(
         -(passenger.requestedSeats || 1),
       );
 
-      // Notify remaining co-passengers (all active passengers except current)
+      // Remaining active passengers except the one just cancelled
       const remainingPassengers = await Passenger.find({
         rideId,
         _id: { $ne: passenger._id },
-        status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
-      }).select('userId');
+        status: { $in: ACTIVE_PASSENGER_STATUSES },
+      }).select('_id userId requestedSeats malePassengers femalePassengers');
 
       const updatedRide = await Ride.findById(rideId)
         .select('bookedSeats totalSeats')
@@ -377,37 +359,63 @@ export const driverCancelRideHandler = eventHandler<any>(
       const remainingSeats =
         (updatedRide?.totalSeats ?? 0) - (updatedRide?.bookedSeats ?? 0);
 
-      for (const p of remainingPassengers) {
-        io.to(`user:${p.userId}`).emit('ride:co-passenger-cancelled', {
-          rideId,
-          cancelledPassengerId: passenger._id,
-          remainingSeats,
-          message: 'A passenger has been removed by the driver.',
-        });
-
-        const coUser = await User.findById(p.userId).select('fcmToken').lean();
-        if (coUser?.fcmToken) {
-          sendNotification([coUser.fcmToken], {
-            receiver: p.userId,
-            message: 'Passenger Removed',
-            description: 'A passenger has been removed from your split ride by the driver.',
-            reference: rideId,
-            modelType: modeType.Ride,
-          }).catch(() => {});
-        }
-      }
-
-      // ✅ No passengers left → cancel entire ride
+      // ≤1 left → cancel whole ride + refund/notify remaining passenger(s)
       let rideCancelled = false;
       if (remainingPassengers.length <= 1) {
+        for (const p of remainingPassengers) {
+          await cancelBookingWithRefund(
+            p._id,
+            rideId,
+            driverId,
+            reason || 'Only one passenger remaining. Ride cancelled.',
+            io,
+          );
+          await Passenger.findByIdAndUpdate(p._id, {
+            status: PASSENGER_STATUS.cancelled,
+            cancellationReason:
+              remainingPassengers.length === 0
+                ? 'No passengers left'
+                : 'Only one passenger remaining. Ride cancelled.',
+            cancelledBy: CANCELLED_BY.driver,
+          });
+        }
+
         await Ride.findByIdAndUpdate(rideId, {
           status: RIDE_STATUS.cancelled,
-          cancellationReason: remainingPassengers.length === 0 ? 'No passengers left' : 'Only one passenger remaining. Ride cancelled.',
+          cancellationReason:
+            remainingPassengers.length === 0
+              ? 'No passengers left'
+              : 'Only one passenger remaining. Ride cancelled.',
           cancelledBy: CANCELLED_BY.driver,
           cancelledAt: new Date(),
         });
         await redisCleanup();
         rideCancelled = true;
+      } else {
+        // Notify co-passengers that one rider was removed
+        for (const p of remainingPassengers) {
+          const userId = p.userId.toString();
+          io.to(`user:${userId}`).emit('ride:co-passenger-cancelled', {
+            rideId,
+            cancelledPassengerId: passenger._id,
+            remainingSeats,
+            message: 'A passenger has been removed by the driver.',
+          });
+
+          await notifyUserPush({
+            userId,
+            message: 'Passenger Removed',
+            description:
+              'A passenger has been removed from your split ride by the driver.',
+            reference: rideId,
+            modelType: modeType.Ride,
+            data: {
+              type: 'CO_PASSENGER_REMOVED_BY_DRIVER',
+              rideId: String(rideId),
+              cancelledPassengerId: String(passenger._id),
+            },
+          });
+        }
       }
 
       return callback?.({
@@ -416,7 +424,7 @@ export const driverCancelRideHandler = eventHandler<any>(
           ? 'Only one passenger remaining. Ride cancelled.'
           : 'Passenger cancelled from split ride.',
         data: {
-          remainingPassengers: remainingPassengers.length,
+          remainingPassengers: rideCancelled ? 0 : remainingPassengers.length,
           rideCancelled,
           refundAmount,
         },

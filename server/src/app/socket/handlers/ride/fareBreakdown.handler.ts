@@ -5,8 +5,12 @@ import { roundTo2 } from '../../../utils/number.utils';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
-import { assertSplitMinimumDistance } from '../../../utils/rideSchedule.utils';
-import { getDepartureDateTime } from '../../../utils/rideSchedule.utils';
+import {
+  assertSplitMinimumDistance,
+  formatRideLocalDate,
+  getDepartureDateTime,
+  getRideLocalTimeParts,
+} from '../../../utils/rideSchedule.utils';
 import { RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 import { normalizeAndAssertLuggage, toLuggageFyiView } from '../../../utils/luggage.utils';
@@ -45,11 +49,16 @@ export const fareBreakdownHandler = eventHandler<any>(
       vehicleType,
     });
 
-    // Validate 30-min booking slots when time is provided.
-    let departureDateTime = departureDate ? new Date(departureDate) : new Date();
-    if (departureDate && departureTime) {
-      departureDateTime = getDepartureDateTime(departureDate, departureTime);
-    }
+    // Cyprus wall-clock when date+time provided; otherwise "now" in Europe/Nicosia.
+    const now = new Date();
+    const nowParts = getRideLocalTimeParts(now);
+    const fallbackTime = `${String(nowParts.hour).padStart(2, '0')}:${String(nowParts.minute).padStart(2, '0')}`;
+    const resolvedDepartureTime = departureTime || fallbackTime;
+    const resolvedDepartureDate = departureDate || formatRideLocalDate(now);
+    const departureDateTime = getDepartureDateTime(
+      resolvedDepartureDate,
+      resolvedDepartureTime,
+    );
 
     let actualDistance = 0;
     let actualDuration = 0;
@@ -76,7 +85,7 @@ export const fareBreakdownHandler = eventHandler<any>(
     const fareBreakdown = await calculateFareBreakdown({
       distanceKm: actualDistance,
       departureDate: departureDateTime,
-      departureTime: departureTime || new Date().toLocaleTimeString(),
+      departureTime: resolvedDepartureTime,
       luggageCount: 0, // FYI only — never billed
       requestedSeats,
       rideType: type,
@@ -104,8 +113,8 @@ export const fareBreakdownHandler = eventHandler<any>(
           vehicleType: luggage.vehicleClass,
         },
         rideDetails: {
-          bookingDate: departureDate || new Date().toISOString().split('T')[0],
-          bookingTime: departureTime || new Date().toLocaleTimeString(),
+          bookingDate: resolvedDepartureDate,
+          bookingTime: resolvedDepartureTime,
           pickup,
           destination,
           rideType: type,

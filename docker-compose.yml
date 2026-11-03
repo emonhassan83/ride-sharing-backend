@@ -64,8 +64,9 @@ services:
       - ./server/.env
     environment:
       - NODE_ENV=development
-      - TZ=Asia/Dhaka
-      - TIME_ZONE=Asia/Dhaka
+      - TZ=Europe/Nicosia
+      - TIME_ZONE=Europe/Nicosia
+      - RIDE_TIME_ZONE=Europe/Nicosia
     volumes:
       - ./server/src:/app/src
     healthcheck:

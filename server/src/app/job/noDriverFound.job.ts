@@ -7,7 +7,7 @@ import { Ride } from '../modules/ride/ride.model';
 import { User } from '../modules/user/user.model';
 import { Setting } from '../modules/settings/settings.model';
 import { modeType } from '../modules/notification/notification.interface';
-import { sendNotification } from '../utils/sentPushNotification';
+import { notifyUserPush } from '../utils/notifyUser.utils';
 import { notifyNearbyDrivers } from '../utils/notifyDrivers.utils';
 import { getIO } from '../socket/socket.init';
 import { Booking } from '../modules/booking/booking.model';
@@ -16,7 +16,7 @@ import { Refund } from '../modules/refund/refund.model';
 import { BOOKING_STATUS, PAYMENT_STATUS } from '../modules/booking/booking.constant';
 import { REFUND_STATUS, REFUND_TYPE } from '../modules/refund/refund.constant';
 import { refundToWallet } from '../utils/splitFare.utils';
-import { getDepartureDateTime } from '../utils/rideSchedule.utils';
+import { formatRideLocalDate, getDepartureDateTime } from '../utils/rideSchedule.utils';
 import { toLuggageFyiView } from '../utils/luggage.utils';
 import Stripe from 'stripe';
 import { config } from '../config/env.config';
@@ -64,7 +64,7 @@ export const checkNoDriverFound = async () => {
   const finalRematchHours = lastNotifyHours;
   const notifyThrottleSeconds = Math.max(renotifyIntervalMinutes, 1) * 60;
   const reNotifyBefore = new Date(now.getTime() + notifyHours * 3600000);
-  const reNotifyBeforeLocal = `${reNotifyBefore.getFullYear()}-${String(reNotifyBefore.getMonth() + 1).padStart(2, '0')}-${String(reNotifyBefore.getDate()).padStart(2, '0')}`;
+  const reNotifyBeforeLocal = formatRideLocalDate(reNotifyBefore);
   const gracePeriodCutoff = new Date(now.getTime() - 30 * 1000);
 
   const pendingRides = await Ride.find({
@@ -180,23 +180,24 @@ export const checkNoDriverFound = async () => {
       lastNotifiedAt: now.getTime().toString(),
     });
 
-    const riderUser = await User.findById((ride as any).rideCreatedBy)
-      .select('fcmToken')
-      .lean();
-
-    io.to(`user:${(ride as any).rideCreatedBy}`).emit('ride:re-matching', {
+    const creatorId = (ride as any).rideCreatedBy?.toString();
+    io.to(`user:${creatorId}`).emit('ride:re-matching', {
       rideId: ride._id,
       message: `We're still looking for a driver. ${notified} driver(s) notified.`,
     });
 
-    if (riderUser?.fcmToken && notified > 0) {
-      sendNotification([riderUser.fcmToken], {
-        receiver: (ride as any).rideCreatedBy,
+    if (creatorId && notified > 0) {
+      await notifyUserPush({
+        userId: creatorId,
         message: 'Still Searching for a Driver',
         description: `We're still trying to find a driver for your ride. ${notified} driver(s) have been notified.`,
         reference: ride._id.toString(),
         modelType: modeType.Ride,
-      }).catch(() => {});
+        data: {
+          type: 'RIDE_RE_MATCHING',
+          rideId: String(ride._id),
+        },
+      });
     }
   }
 
@@ -317,22 +318,29 @@ export const checkNoDriverFound = async () => {
   }
 
   for (const p of cancelledPassengers) {
-    io.to(`user:${p.userId}`).emit('ride:no-driver-found', {
+    const userId = p.userId?.toString();
+    if (!userId) continue;
+
+    const description =
+      'No driver accepted your ride before pickup time. Your booking has been cancelled.';
+
+    io.to(`user:${userId}`).emit('ride:no-driver-found', {
       rideId: p.rideId,
-      message: 'No driver accepted your ride before pickup time. Booking has been cancelled.',
+      message: description,
       retryAfter: 5,
     });
 
-    const riderUser = await User.findById(p.userId).select('fcmToken').lean();
-    if (riderUser?.fcmToken) {
-      sendNotification([riderUser.fcmToken], {
-        receiver: p.userId,
-        message: 'Ride Cancelled  No Driver Found',
-        description: `No driver accepted your ride before pickup time. Your booking has been cancelled.`,
-        reference: p.rideId?.toString() || '',
-        modelType: modeType.Ride,
-      }).catch(() => {});
-    }
+    await notifyUserPush({
+      userId,
+      message: 'Ride Cancelled — No Driver Found',
+      description,
+      reference: p.rideId?.toString() || '',
+      modelType: modeType.Ride,
+      data: {
+        type: 'RIDE_CANCELLED_NO_DRIVER',
+        rideId: String(p.rideId || ''),
+      },
+    });
   }
 
   const multi = redis.multi();

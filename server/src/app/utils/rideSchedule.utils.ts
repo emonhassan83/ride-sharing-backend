@@ -11,11 +11,52 @@ export const DEFAULT_SPLIT_MIN_DISTANCE_KM = 0;
 export const DEFAULT_SPLIT_REFUND_RESTRICTION_HOURS = 24;
 export const DEFAULT_PRIVATE_REFUND_RESTRICTION_HOURS = 1;
 export const DEFAULT_MATCHING_LAST_NOTIFY_HOURS = 1;
-/** Dev default: Asia/Dhaka (matches server TZ). Override with RIDE_TIME_ZONE / TIME_ZONE. */
-export const DEFAULT_RIDE_TIME_ZONE = 'Asia/Dhaka';
+/** Production market: Cyprus. Override with RIDE_TIME_ZONE / TIME_ZONE. */
+export const DEFAULT_RIDE_TIME_ZONE = 'Europe/Nicosia';
 
-const getRideTimeZone = (): string =>
+export const getRideTimeZone = (): string =>
   process.env.RIDE_TIME_ZONE || config.timeZone || DEFAULT_RIDE_TIME_ZONE;
+
+/** YYYY-MM-DD in the ride timezone (Cyprus by default). */
+export const formatRideLocalDate = (date: Date = new Date()): string => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: getRideTimeZone(),
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+      .formatToParts(date)
+      .filter((p) => p.type !== 'literal')
+      .map((p) => [p.type, p.value]),
+  ) as Record<string, string>;
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
+/** HH:mm[:ss] wall-clock parts in the ride timezone. */
+export const getRideLocalTimeParts = (
+  date: Date,
+): { hour: number; minute: number; second: number } => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: getRideTimeZone(),
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(date)
+      .filter((p) => p.type !== 'literal')
+      .map((p) => [p.type, p.value]),
+  ) as Record<string, string>;
+
+  return {
+    hour: Number(parts.hour) % 24,
+    minute: Number(parts.minute),
+    second: Number(parts.second || 0),
+  };
+};
 
 /**
  * Interpret departureDate (YYYY-MM-DD) + departureTime (HH:mm) as a wall clock

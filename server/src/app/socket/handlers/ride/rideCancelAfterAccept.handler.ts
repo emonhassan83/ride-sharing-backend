@@ -12,7 +12,7 @@ import { Payment } from '../../../modules/payment/payment.model';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { REFUND_STATUS, REFUND_TYPE } from '../../../modules/refund/refund.constant';
 import { modeType } from '../../../modules/notification/notification.interface';
-import { sendNotification } from '../../../utils/sentPushNotification';
+import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
@@ -24,7 +24,7 @@ import {
   transferRideOwnership,
 } from '../../../utils/splitFare.utils';
 
-// �\u20AC�\u20AC Helper: notify driver (socket + FCM) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+// Helper: notify driver (socket + FCM + in-app)
 const notifyDriver = async (
   io:        any,
   driverId:  string,
@@ -32,24 +32,23 @@ const notifyDriver = async (
   message:   string,
   extra?:    Record<string, any>,
 ) => {
-  // Socket
   io.to(`driver:${driverId}`).emit('ride:cancelled-by-rider', {
     rideId,
     message,
     ...extra,
   });
 
-  // FCM push
-  const driver = await User.findById(driverId).select('fcmToken').lean();
-  if (driver?.fcmToken) {
-    sendNotification([driver.fcmToken], {
-      receiver:    driverId,
-      message:     'Ride Cancelled by Rider',
-      description: message,
-      reference:   rideId,
-      modelType:   modeType.Ride,
-    }).catch(() => {});
-  }
+  await notifyUserPush({
+    userId: driverId,
+    message: 'Ride Cancelled by Rider',
+    description: message,
+    reference: rideId,
+    modelType: modeType.Ride,
+    data: {
+      type: 'RIDE_CANCELLED_BY_RIDER',
+      rideId: String(rideId),
+    },
+  });
 };
 
 export const rideCancelAfterAcceptHandler = eventHandler<any>(
@@ -81,13 +80,29 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         _id:    passengerId,
         rideId,
         userId,
-        status: { $in: [PASSENGER_STATUS.confirmed, PASSENGER_STATUS.driver_arrived, PASSENGER_STATUS.pending] },
+        status: {
+          $in: [
+            PASSENGER_STATUS.pending,
+            PASSENGER_STATUS.confirmed,
+            PASSENGER_STATUS.driver_arrived,
+            PASSENGER_STATUS.in_progress,
+            PASSENGER_STATUS.picked_up,
+          ],
+        },
       });
     } else {
       passenger = await Passenger.findOne({
         rideId,
         userId,
-        status: { $in: [PASSENGER_STATUS.confirmed, PASSENGER_STATUS.driver_arrived, PASSENGER_STATUS.pending] },
+        status: {
+          $in: [
+            PASSENGER_STATUS.pending,
+            PASSENGER_STATUS.confirmed,
+            PASSENGER_STATUS.driver_arrived,
+            PASSENGER_STATUS.in_progress,
+            PASSENGER_STATUS.picked_up,
+          ],
+        },
       });
     }
 
@@ -344,31 +359,33 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       );
     }
 
-    // ✅ Notify co-passengers �\u20AC� ride:co-passenger-cancelled (riders listen to this)
+    // Notify co-passengers — ride:co-passenger-cancelled
     const others = await Passenger.find({
       rideId,
       _id:    { $ne: passenger._id },
       status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
-    }).select('userId fcmToken');
+    }).select('userId');
 
     for (const p of others) {
-      io.to(`user:${p.userId}`).emit('ride:co-passenger-cancelled', {
+      const coUserId = p.userId.toString();
+      io.to(`user:${coUserId}`).emit('ride:co-passenger-cancelled', {
         rideId,
         cancelledPassengerId: passenger._id,
         message:              'Another passenger cancelled their booking.',
       });
 
-      // FCM to co-passengers
-      const coUser = await User.findById(p.userId).select('fcmToken').lean();
-      if (coUser?.fcmToken) {
-        sendNotification([coUser.fcmToken], {
-          receiver:    p.userId,
-          message:     'Co-passenger Cancelled',
-          description: 'Another passenger has cancelled. Your fare may be updated.',
-          reference:   rideId,
-          modelType:   modeType.Ride,
-        }).catch(() => {});
-      }
+      await notifyUserPush({
+        userId: coUserId,
+        message: 'Co-passenger Cancelled',
+        description: 'Another passenger has cancelled. Your fare may be updated.',
+        reference: rideId,
+        modelType: modeType.Ride,
+        data: {
+          type: 'CO_PASSENGER_CANCELLED',
+          rideId: String(rideId),
+          cancelledPassengerId: String(passenger._id),
+        },
+      });
     }
 
     return callback?.({

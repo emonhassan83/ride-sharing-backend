@@ -1,3 +1,5 @@
+import { getRideLocalTimeParts } from './rideSchedule.utils';
+
 export const roundMoney = (value: number): number =>
   Math.round(Number(value || 0) * 100) / 100;
 
@@ -69,10 +71,9 @@ export const isDayFareTime = (departureTime: string): boolean => {
 };
 
 export const isDayFareDateTime = (dateTime: Date): boolean => {
-  const totalSeconds =
-    dateTime.getHours() * 3600 +
-    dateTime.getMinutes() * 60 +
-    dateTime.getSeconds();
+  // Cyprus (ride) wall-clock — not process/server local getHours()
+  const { hour, minute, second } = getRideLocalTimeParts(dateTime);
+  const totalSeconds = hour * 3600 + minute * 60 + second;
   return totalSeconds >= 6 * 3600 && totalSeconds < 20 * 3600 + 30 * 60;
 };
 
