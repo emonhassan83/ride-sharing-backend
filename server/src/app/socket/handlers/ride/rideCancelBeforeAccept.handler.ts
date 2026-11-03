@@ -13,7 +13,7 @@ import { transferRideOwnership } from '../../../utils/splitFare.utils';
 
 const notifyDriverCancelled = async (
   io: any,
-  driverId: string | undefined | null,
+  driverId: { toString(): string } | string | undefined | null,
   rideId: string,
   message: string,
 ) => {
