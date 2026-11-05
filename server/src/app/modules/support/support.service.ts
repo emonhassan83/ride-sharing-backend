@@ -7,12 +7,7 @@ import { TSupportStatus } from './support.constant';
 import { User } from '../user/user.model';
 import { Booking } from '../booking/booking.model';
 import { getEmailQueueInstance } from '../../utils/queueHelper';
-import {
-  getCache,
-  setCache,
-  deleteCache,
-  deleteCachePattern,
-} from '../../redis/helpers';
+import { deleteCache, deleteCachePattern } from '../../redis/helpers';
 import { REDIS_KEYS } from '../../redis/keys';
 
 const create = async (userId: string, payload: Partial<TSupport>) => {
@@ -43,38 +38,25 @@ const create = async (userId: string, payload: Partial<TSupport>) => {
 };
 
 const getAll = async (query: Record<string, any>) => {
-  const cacheKey = REDIS_KEYS.SUPPORT_ALL;
-
-  // 1. Try cache
-  const cached = await getCache<any>(cacheKey);
-  if (cached) {
-    console.log('✅ Cache hit for support tickets');
-    return cached;
-  }
-
-  console.log('📡 Cache miss for support tickets, fetching from DB...');
+  // Do NOT cache list responses — status / page / limit must always hit DB.
+  // (Previously SUPPORT_ALL cached one unfiltered page and broke filters.)
 
   const supportModel = new QueryBuilder(
     Support.find().populate([
       { path: 'user', select: 'name phone email profileImage' },
     ]),
-    query
+    query,
   )
-    .search(['id'])
+    .search(['id', 'name', 'email', 'phone', 'booking', 'reason'])
     .filter()
-    .paginate()
     .sort()
+    .paginate()
     .fields();
 
   const data = await supportModel.modelQuery;
   const meta = await supportModel.countTotal();
 
-  const response = { data, meta };
-
-  // 2. Set cache
-  await setCache(cacheKey, response);
-
-  return response;
+  return { data, meta };
 };
 
 const sentSupportMessage = async (id: string, payload: TSupportMessage) => {

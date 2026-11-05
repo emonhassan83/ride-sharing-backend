@@ -1099,37 +1099,62 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
   const filter: any = {
     status: PAYMENT_STATUS.paid,
     isPaid: true,
+    isDeleted: { $ne: true },
   };
 
-  // â”€â”€ Date Range Filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Date range
   if (query.dateFrom || query.dateTo) {
     filter.createdAt = {};
     if (query.dateFrom) {
-      filter.createdAt.$gte = new Date(query.dateFrom + 'T00:00:00.000Z');
+      filter.createdAt.$gte = new Date(`${query.dateFrom}T00:00:00.000Z`);
     }
     if (query.dateTo) {
-      filter.createdAt.$lte = new Date(query.dateTo + 'T23:59:59.999Z');
+      filter.createdAt.$lte = new Date(`${query.dateTo}T23:59:59.999Z`);
     }
   }
 
-  // â”€â”€ Amount Range Filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (query.minAmount || query.maxAmount) {
+  // Amount range — treat "0" as valid; ignore empty / NaN
+  const minAmountRaw = query.minAmount;
+  const maxAmountRaw = query.maxAmount;
+  const minAmount =
+    minAmountRaw !== undefined && minAmountRaw !== null && minAmountRaw !== ''
+      ? Number(minAmountRaw)
+      : undefined;
+  const maxAmount =
+    maxAmountRaw !== undefined && maxAmountRaw !== null && maxAmountRaw !== ''
+      ? Number(maxAmountRaw)
+      : undefined;
+
+  if (
+    (minAmount !== undefined && !Number.isNaN(minAmount)) ||
+    (maxAmount !== undefined && !Number.isNaN(maxAmount))
+  ) {
     filter.amount = {};
-    if (query.minAmount) filter.amount.$gte = Number(query.minAmount);
-    if (query.maxAmount) filter.amount.$lte = Number(query.maxAmount);
+    if (minAmount !== undefined && !Number.isNaN(minAmount)) {
+      filter.amount.$gte = minAmount;
+    }
+    if (maxAmount !== undefined && !Number.isNaN(maxAmount)) {
+      filter.amount.$lte = maxAmount;
+    }
   }
 
-  console.log('ðŸ” Final Filter Applied:', JSON.stringify(filter, null, 2));
+  // Strip range helpers so QueryBuilder never treats them as document fields
+  const {
+    minAmount: _min,
+    maxAmount: _max,
+    dateFrom: _from,
+    dateTo: _to,
+    ...builderQuery
+  } = query;
 
-  // QueryBuilder-> search, sort, paginate, fields
   const paymentModel = new QueryBuilder(
     Payment.find(filter).populate([
       { path: 'user', select: 'name profileImage' },
     ]),
-    query
+    builderQuery,
   )
     .search(['transactionId', 'id'])
-    // .filter()
+    .filter()
     .sort()
     .paginate()
     .fields();

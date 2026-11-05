@@ -24,12 +24,30 @@ class QueryBuilder<T> {
   filter() {
     const queryObj = { ...this.query }
 
-    // Remove special fields
-    const excludeFields = ['searchTerm', 'sort', 'limit', 'page', 'fields']
+    // Remove special / range / pagination fields (not direct document paths)
+    const excludeFields = [
+      'searchTerm',
+      'sort',
+      'limit',
+      'page',
+      'fields',
+      'minAmount',
+      'maxAmount',
+      'dateFrom',
+      'dateTo',
+    ]
     excludeFields.forEach((el) => delete queryObj[el])
 
+    // Drop empty values so `?status=` does not break filtering
+    Object.keys(queryObj).forEach((key) => {
+      const value = queryObj[key]
+      if (value === '' || value === undefined || value === null) {
+        delete queryObj[key]
+      }
+    })
+
     if (Object.keys(queryObj).length > 0) {
-      this.modelQuery = this.modelQuery.find(queryObj as any)  // ← any
+      this.modelQuery = this.modelQuery.find(queryObj as any)
     }
 
     return this
