@@ -1138,12 +1138,32 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
     }
   }
 
-  // Strip range helpers so QueryBuilder never treats them as document fields
+  // Search: transactionId / payment id / user name (e.g. RavenOrg)
+  const searchTerm =
+    typeof query.searchTerm === 'string' ? query.searchTerm.trim() : '';
+  if (searchTerm) {
+    const matchedUsers = await User.find({
+      name: { $regex: searchTerm, $options: 'i' },
+      isDeleted: { $ne: true },
+    })
+      .select('_id')
+      .lean();
+
+    const userIds = matchedUsers.map((u) => u._id);
+    filter.$or = [
+      { transactionId: { $regex: searchTerm, $options: 'i' } },
+      { id: { $regex: searchTerm, $options: 'i' } },
+      ...(userIds.length ? [{ user: { $in: userIds } }] : []),
+    ];
+  }
+
+  // Strip helpers so QueryBuilder never treats them as document fields
   const {
     minAmount: _min,
     maxAmount: _max,
     dateFrom: _from,
     dateTo: _to,
+    searchTerm: _search,
     ...builderQuery
   } = query;
 
@@ -1153,7 +1173,6 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
     ]),
     builderQuery,
   )
-    .search(['transactionId', 'id'])
     .filter()
     .sort()
     .paginate()
