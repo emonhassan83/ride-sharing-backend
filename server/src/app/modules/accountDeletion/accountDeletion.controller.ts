@@ -10,7 +10,8 @@ const getAllDeletions = catchAsync(async (req: Request, res: Response) => {
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'All account deletions retrieved',
-    data: result,
+    pagination: result.meta,
+    data: result.data,
   });
 });
 
