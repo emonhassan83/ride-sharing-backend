@@ -1,4 +1,4 @@
-﻿// utils/splitFare.utils.ts
+// utils/splitFare.utils.ts
 import { getRedisClient } from '../config/redis.config';
 import { Passenger } from '../modules/passenger/passenger.model';
 import { Ride } from '../modules/ride/ride.model';
@@ -485,11 +485,34 @@ export const recalculateSplitFares = async (
           booking.amountPaid = 0;
           await booking.save();
         }
-      } else if (diff < 0) {
+      } else if (!payment || payment.status === PAYMENT_RECORD_STATUS.unpaid) {
+        if (payment) {
+          payment.amount = newFare.estimatedFare;
+          payment.platformCommission = nextPlatformCommission;
+          payment.providerEarning = nextProviderEarning;
+          await payment.save();
+        }
+        if (booking) {
+          booking.totalFare = newFare.estimatedFare;
+          await booking.save();
+        }
+      } else if (payment.status === PAYMENT_RECORD_STATUS.paid && diff < 0) {
         const refundAmount = Math.abs(diff);
         const refundReason = `fare_recalculate_${reason}`;
 
-        // Captured/legacy payments still get wallet refund for split adjustment.
+        payment.amount = newFare.estimatedFare;
+        payment.platformCommission = nextPlatformCommission;
+        payment.providerEarning = nextProviderEarning;
+        await payment.save();
+
+        if (booking) {
+          booking.totalFare = newFare.estimatedFare;
+          booking.amountPaid = newFare.estimatedFare;
+          booking.refundAmount = Math.round(((booking.refundAmount || 0) + refundAmount) * 100) / 100;
+          await booking.save();
+        }
+
+        // Captured/legacy payments get wallet refund for split adjustment.
         await Refund.create({
           user: passenger.userId,
           ride: rideId,
@@ -506,7 +529,7 @@ export const recalculateSplitFares = async (
           refundReason,
           io
         );
-      } else {
+      } else if (payment.status === PAYMENT_RECORD_STATUS.paid && diff > 0) {
         // Captured/legacy fare increase -> existing wallet/card recovery path.
         const result = await chargeUser(
           passenger.userId.toString(),
@@ -549,9 +572,15 @@ export const recalculateSplitFares = async (
       }
     }
 
-    // Update ride surcharge
+    const exactBookedSeats = activePassengers.reduce(
+      (sum: number, p: any) => sum + (Number(p.requestedSeats) || 1),
+      0,
+    );
+
+    // Update ride surcharge and exact bookedSeats
     await Ride.findByIdAndUpdate(rideId, {
       currentSurchargePercent: newSurchargePercent,
+      bookedSeats: exactBookedSeats,
     });
     console.log(
       `✅ Recalculated | ride: ${rideId} | reason: ${reason} | riders: ${activeRiderCount} | surcharge: ${newSurchargePercent}%`

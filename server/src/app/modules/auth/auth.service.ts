@@ -22,8 +22,48 @@ import { OtpRedisService } from '../../redis/helpers/otp';
 import twilio from 'twilio';
 import jwt, { Secret } from 'jsonwebtoken';
 import { getEmailQueueInstance } from '../../utils/queueHelper';
+import { Provider } from '../provider/provider.model';
+import { Vehicle } from '../vehicle/vehicle.model';
+import { UserLocation } from '../savedPlaces/savedPlaces.model';
+import { Notification } from '../notification/notification.model';
+import { deleteCache } from '../../redis/helpers';
+import { REDIS_KEYS } from '../../redis/keys';
+import { getRedisClient } from '../../config/redis.config';
+import { getIO, onlineUsers } from '../../socket/socket.init';
 
 const OTP_EXPIRE = 60 * 5; // 5 minutes in seconds
+
+const clearFcmTokenFromOtherUsers = async (fcmToken?: string | null, excludeUserId?: any) => {
+  if (!fcmToken) return;
+  const filter: any = { fcmToken };
+  if (excludeUserId) {
+    filter._id = { $ne: excludeUserId };
+  }
+  await User.updateMany(filter, { $set: { fcmToken: null } });
+};
+
+const purgeDeletedUserRelations = async (userId: any) => {
+  const uid = String(userId);
+  await Promise.all([
+    Provider.deleteMany({ userId }),
+    Vehicle.deleteMany({ userId }),
+    UserLocation.deleteMany({ user: userId }),
+    Notification.deleteMany({ receiver: userId }),
+    deleteCache(REDIS_KEYS.SAVED_PLACES_BY_USER(uid)).catch(() => {}),
+    deleteCache(REDIS_KEYS.VEHICLES_BY_USER(uid)).catch(() => {}),
+  ]);
+  try {
+    const redis = getRedisClient();
+    await Promise.all([
+      redis.srem('users:online', uid),
+      redis.zrem('drivers:location', uid),
+      redis.del(`driver:${uid}:details`),
+      redis.del(`driver:${uid}:current`),
+    ]);
+  } catch {
+    // ignore redis cleanup error
+  }
+};
 
 const createUser = async (payload: any) => {
   const { email, phone, fcmToken, type: _providerType, ...rest } = payload;
@@ -52,20 +92,46 @@ const createUser = async (payload: any) => {
       throw new ApiError(StatusCodes.FORBIDDEN, message);
     }
 
-    // 2. Soft deleted user — recreate
+    // 2. Soft deleted user — clean old relations & recreate fresh state
     if (existingUser.isDeleted) {
-      existingUser.set({ ...rest, email, phone, fcmToken, isDeleted: false });
+      await purgeDeletedUserRelations(existingUser._id);
+      await clearFcmTokenFromOtherUsers(fcmToken, existingUser._id);
+      existingUser.set({
+        ...rest,
+        email,
+        phone,
+        fcmToken: fcmToken || null,
+        isDeleted: false,
+        deletedAt: null as any,
+        profileImage: null,
+        address: null,
+        type: null,
+        isKycVerified: false,
+        isProfileComplete: false,
+        isOnline: false,
+        documents: null,
+        isSignUpOtpVerified: false,
+        isLoginOTPVerified: false,
+        isResetPasswordVerified: false,
+        status:
+          payload.role === USER_ROLE.provider
+            ? USER_STATUS.pending
+            : payload.status || USER_STATUS.active,
+      });
       const user = await existingUser.save();
       return user;
     }
 
     // 3. Unverified user — update fields and re-save
     if (!existingUser.isSignUpOtpVerified) {
+      await clearFcmTokenFromOtherUsers(fcmToken, existingUser._id);
       existingUser.set({ ...rest, email, phone, fcmToken });
       const user = await existingUser.save();
       return user;
     }
   }
+
+  await clearFcmTokenFromOtherUsers(fcmToken);
 
   const finalPayload = {
     ...rest,
@@ -112,11 +178,24 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
     }
 
     if (user.isDeleted) {
+      await purgeDeletedUserRelations(user._id);
+      await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
+      const isProvider = (payload.role || user.role) === USER_ROLE.provider;
       const updatedUser = await User.findByIdAndUpdate(
         user._id,
         {
           ...updateData,
+          role: payload.role || user.role,
           isDeleted: false,
+          deletedAt: null,
+          profileImage: payload.photoUrl || null,
+          address: null,
+          type: null,
+          isKycVerified: false,
+          isProfileComplete: false,
+          isOnline: false,
+          documents: null,
+          status: isProvider ? USER_STATUS.pending : USER_STATUS.active,
           verification: { otp: 0, expiresAt: new Date(), status: true },
           expireAt: null,
         },
@@ -133,11 +212,13 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
       return generateTokens(updatedUser as any);
     }
 
+    await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
     await User.findByIdAndUpdate(user._id, updateData, { returnDocument: 'after' });
     return generateTokens(user as any);
   }
 
   // ================== NEW USER CREATION ==================
+  await clearFcmTokenFromOtherUsers(payload.fcmToken);
   const isProvider = payload.role === USER_ROLE.provider;
 
   const newUser = await User.create({
@@ -185,11 +266,24 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
     }
 
     if (user.isDeleted) {
+      await purgeDeletedUserRelations(user._id);
+      await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
+      const isProvider = (payload.role || user.role) === USER_ROLE.provider;
       const updatedUser = await User.findByIdAndUpdate(
         user._id,
         {
           ...updateData,
+          role: payload.role || user.role,
           isDeleted: false,
+          deletedAt: null,
+          profileImage: payload.photoUrl || null,
+          address: null,
+          type: null,
+          isKycVerified: false,
+          isProfileComplete: false,
+          isOnline: false,
+          documents: null,
+          status: isProvider ? USER_STATUS.pending : USER_STATUS.active,
           verification: { otp: 0, expiresAt: new Date(), status: true },
           expireAt: null,
         },
@@ -206,11 +300,13 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
       return generateTokens(updatedUser);
     }
 
+    await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
     await User.findByIdAndUpdate(user._id, updateData, { returnDocument: 'after' });
     return generateTokens(user as any);
   }
 
   // ================== NEW USER CREATION ==================
+  await clearFcmTokenFromOtherUsers(payload.fcmToken);
   const isProvider = payload.role === USER_ROLE.provider;
 
   const newUser = await User.create({
@@ -281,6 +377,7 @@ const loginWithEmail = async (payload: TLoginWithEmail) => {
   const updateData: any = {};
 
   if (fcmToken) {
+    await clearFcmTokenFromOtherUsers(fcmToken, user._id);
     updateData.fcmToken = fcmToken;
   }
 
@@ -329,6 +426,7 @@ const loginWithPhone = async (payload: TLoginWithPhone) => {
   const updateData: any = {};
 
   if (fcmToken) {
+    await clearFcmTokenFromOtherUsers(fcmToken, user._id);
     updateData.fcmToken = fcmToken;
   }
 
@@ -572,9 +670,38 @@ const logoutUser = async (userId: string) => {
     {
       isLoginOTPVerified: false,
       fcmToken: null,
+      isOnline: false,
     },
     { returnDocument: 'after' }
   );
+
+  const uid = String(userId);
+  await deleteCache(REDIS_KEYS.VEHICLES_BY_USER(uid)).catch(() => {});
+
+  try {
+    const redis = getRedisClient();
+    await Promise.all([
+      redis.srem('users:online', uid),
+      redis.zrem('drivers:location', uid),
+      redis.del(`driver:${uid}:details`),
+    ]);
+  } catch {
+    // ignore redis error
+  }
+
+  try {
+    const activeSocket = onlineUsers[uid];
+    if (activeSocket) {
+      activeSocket.leave(`user:${uid}`);
+      activeSocket.leave(`driver:${uid}`);
+      delete onlineUsers[uid];
+    }
+    const io = getIO();
+    io.in(`user:${uid}`).socketsLeave(`user:${uid}`);
+    io.in(`driver:${uid}`).socketsLeave(`driver:${uid}`);
+  } catch {
+    // ignore socket error
+  }
 
   return null;
 };

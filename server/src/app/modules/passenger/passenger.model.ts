@@ -110,9 +110,10 @@ const passengerSchema = new Schema<TPassenger>(
     fallbackReason: { type: String },
 
     // ── Trip tracking ─────────────────────────────────────────────────────────
-    arriveAt:          { type: Date },
-    arrivedNotified:   { type: Boolean, default: false },
-    pickedUpAt:        { type: Date },
+    arriveAt:           { type: Date },
+    arrivedNotified:    { type: Boolean, default: false },
+    isStartOtpVerified: { type: Boolean, default: false },
+    pickedUpAt:         { type: Date },
     waitingStartedAt:  { type: Date,    default: null },
     waitingChargePaid: { type: Boolean, default: false },
     droppedOffAt:      { type: Date },

@@ -10,6 +10,8 @@ import { Ride } from '../modules/ride/ride.model';
 import { USER_ROLE } from '../modules/user/user.constant';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { RIDE_STATUS } from '../modules/ride/ride.constant';
+import { getRedisClient } from '../config/redis.config';
+import { Vehicle } from '../modules/vehicle/vehicle.model';
 
 let ioInstance: Server | null = null;
 
@@ -38,10 +40,57 @@ const initializeSocketIO = (server: HttpServer) => {
       tSocket.join(`user:${userId}`);
       onlineUsers[userId] = tSocket;
 
-      // ── Driver room ───────────────────────────────────────────────────────
+      // ── Driver room & restore online state on reconnect ──────────────────
+      const redis = getRedisClient();
       if (userRole === USER_ROLE.provider) {
         tSocket.join(`driver:${userId}`);
         console.log(`✅ Driver joined room: driver:${userId}`);
+
+        const dbDriver = await User.findById(userId)
+          .select('name profileImage phone avgRating isOnline location')
+          .lean();
+
+        if (dbDriver?.isOnline) {
+          await redis.sadd('users:online', userId);
+          await redis.del(`driver:${userId}:reconnecting`);
+
+          const coords = dbDriver.location?.coordinates;
+          if (
+            coords &&
+            Array.isArray(coords) &&
+            coords.length === 2 &&
+            (coords[0] !== 0 || coords[1] !== 0)
+          ) {
+            await redis.geoadd('drivers:location', coords[0], coords[1], userId);
+          }
+
+          const existingDetails = await redis.hgetall(`driver:${userId}:details`);
+          if (!existingDetails || !existingDetails.driverId) {
+            const vehicle = await Vehicle.findOne({
+              userId,
+              isDefault: true,
+              isDeleted: false,
+            }).lean();
+            await redis.hset(`driver:${userId}:details`, {
+              driverId: userId,
+              name: dbDriver.name ?? '',
+              photo: dbDriver.profileImage ?? '',
+              phone: dbDriver.phone ?? '',
+              rating: (dbDriver.avgRating ?? 5.0).toString(),
+              vehicleId: vehicle?._id?.toString() ?? '',
+              vehicleName: vehicle?.name ?? '',
+              vehicleNumber: vehicle?.number ?? '',
+              vehicleModel: vehicle?.name ?? '',
+              totalSeats: (vehicle?.seats ?? 4).toString(),
+              status: 'online',
+              lastLat: (coords?.[1] ?? 0).toString(),
+              lastLng: (coords?.[0] ?? 0).toString(),
+              onlineAt: Date.now().toString(),
+            });
+          }
+        }
+      } else {
+        await redis.sadd('users:online', userId);
       }
 
       // ── Rejoin active ride room ───────────────────────────────────────────
@@ -94,16 +143,6 @@ const initializeSocketIO = (server: HttpServer) => {
         console.log(`✅ Driver rejoined room: ride:${activeRide._id}`);
       }
 
-      // ── Disconnect handler ────────────────────────────────────────────────
-      socket.on('disconnect', async () => {
-        delete onlineUsers[userId];
-        await User.findByIdAndUpdate(userId, {
-          isOnline:     false,
-          lastOnlineAt: new Date(),
-        });
-        console.log(`❌ User disconnected: ${userId}`);
-      });
-
       registerSocketEvents(tSocket);
     } catch (err: any) {
       console.error('Connection error:', err.message);
@@ -118,5 +157,7 @@ export const getIO = (): Server => {
   if (!ioInstance) throw new Error('Socket.IO not initialized');
   return ioInstance;
 };
+
+export { onlineUsers };
 
 export default initializeSocketIO;

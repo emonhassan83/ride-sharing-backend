@@ -106,7 +106,10 @@ export const driverCompleteTripHandler = eventHandler<any>(
       await Passenger.findByIdAndUpdate(passenger._id, { status: PASSENGER_STATUS.completed });
 
       const booking = await Booking.findOneAndUpdate(
-        { passengerId: passenger._id },
+        {
+          passengerId: passenger._id,
+          bookingStatus: { $ne: BOOKING_STATUS.cancelled },
+        },
         { totalFare, amountPaid: totalFare, bookingStatus: BOOKING_STATUS.completed },
         { returnDocument: 'after' }
       );

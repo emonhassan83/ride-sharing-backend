@@ -10,18 +10,36 @@ import { sendNotification } from './sentPushNotification';
 import { modeType } from '../modules/notification/notification.interface';
 import { Notification } from '../modules/notification/notification.model';
 
-/** Socket (if online) + in-app notification + FCM push for a new ride request. */
+/** Socket + in-app notification + FCM push for a new ride request (ONLINE drivers only). */
 export async function emitNewRideRequestToDriver(
   io: any,
   redis: any,
   driverId: string,
   rideId: string,
   ridePayload: any,
-): Promise<void> {
-  const isOnline = await redis.sismember('users:online', driverId);
-  if (isOnline) {
-    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+): Promise<boolean> {
+  const driver = await User.findById(driverId)
+    .select('fcmToken isOnline isDeleted status isKycVerified')
+    .lean();
+
+  if (
+    !driver ||
+    driver.isDeleted ||
+    !driver.isOnline ||
+    driver.status !== USER_STATUS.active ||
+    !driver.isKycVerified
+  ) {
+    return false;
   }
+
+  try {
+    await redis.sadd('users:online', driverId);
+  } catch {
+    /* ignore redis error */
+  }
+
+  io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+  io.to(`user:${driverId}`).emit('ride:new-request', ridePayload);
 
   const rideType = String(ridePayload?.rideType || '');
   const notificationPayload = {
@@ -52,7 +70,6 @@ export async function emitNewRideRequestToDriver(
   };
 
   try {
-    const driver = await User.findById(driverId).select('fcmToken').lean();
     let persisted = false;
 
     if (driver?.fcmToken) {
@@ -60,7 +77,6 @@ export async function emitNewRideRequestToDriver(
         [driver.fcmToken],
         notificationPayload,
       );
-      // sendNotification only writes Notification when FCM successCount > 0
       persisted = !!(response && (response as any).successCount > 0);
     }
 
@@ -75,19 +91,21 @@ export async function emitNewRideRequestToDriver(
       /* ignore fallback errors */
     }
   }
+
+  return true;
 }
 
-/** Private rides: drivers whose default vehicle matches the requested type (online + offline). */
+/** Private rides: drivers whose active vehicle can accommodate the requested vehicleType. */
 async function privateMatchingDriverIds(
   ridePayload: any,
 ): Promise<Set<string> | null> {
   if (ridePayload?.rideType !== 'private') return null;
   if (!isVehicleType(ridePayload.vehicleType)) return null;
 
+  const minSeats = ridePayload.vehicleType === '6-seater' ? 6 : 4;
   const vehicles = await Vehicle.find({
     isDeleted: false,
-    isDefault: true,
-    seats: ridePayload.vehicleType === '6-seater' ? { $gte: 6 } : { $gte: 4, $lte: 5 },
+    seats: { $gte: minSeats },
   })
     .select('userId')
     .lean();
@@ -186,7 +204,7 @@ async function markDriverNotifiedOnce(
   return !!updatedRide;
 }
 
-// â”€â”€ Notify nearby drivers (private ride) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Notify nearby online drivers (private / solo ride) ──────────────────────
 export async function notifyNearbyDrivers(
   rideId: string,
   pickup: ILatLng,
@@ -196,85 +214,95 @@ export async function notifyNearbyDrivers(
   passengerId?: string,
   radiusKm = 10,
   targetDriverIds?: string[],
-  options?: { notifyMode?: 'nearby' | 'all_eligible' }
+  _options?: { notifyMode?: 'nearby' | 'all_eligible' }
 ): Promise<number> {
   let notifiedCount = 0;
   const notifiedIds: string[] = [];
 
-  // â”€â”€ Required for availability check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const departureDate = ridePayload.departureDate as string;
   const departureTime = ridePayload.departureTime as string;
   const rideType = ridePayload.rideType as string;
   const requestedSeats = (ridePayload.requestedSeats as number) || 1;
-  const notifyMode = options?.notifyMode || 'nearby';
   const privateDriverIds = await privateMatchingDriverIds(ridePayload);
 
-  if (notifyMode === 'all_eligible') {
-    const eligibleDrivers = await User.find({
+  type GeoResult = Array<[string, string]>;
+  let redisOnlineDrivers: GeoResult = [];
+  try {
+    redisOnlineDrivers = (await redis.georadius(
+      'drivers:location',
+      pickup.lng,
+      pickup.lat,
+      radiusKm,
+      'km',
+      'WITHDIST'
+    )) as GeoResult;
+  } catch {
+    redisOnlineDrivers = [];
+  }
+
+  const candidateDriverIds = new Set<string>(
+    redisOnlineDrivers.map(([id]) => String(id))
+  );
+
+  // Also include online drivers from DB within radiusKm in case Redis geo entry expired/reconnected
+  try {
+    const dbOnlineNearby = await User.find({
       role: USER_ROLE.provider,
       isDeleted: false,
       status: USER_STATUS.active,
       isKycVerified: true,
-      ...(targetDriverIds?.length ? { _id: { $in: targetDriverIds } } : {}),
+      isOnline: true,
+      location: {
+        $nearSphere: {
+          $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
+          $maxDistance: radiusKm * 1000,
+        },
+      },
     })
-      .select('_id')
+      .select('_id location')
       .lean();
 
-    for (const driver of eligibleDrivers) {
-      const driverId = driver._id.toString();
-      if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
-      const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
-      if (rejected) continue;
-
-      const availability = await hasDriverRideAtDateTime(
-        driverId,
-        departureDate,
-        departureTime,
-        rideType,
-        requestedSeats
-      );
-      if (!availability.available) continue;
-
-      const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
-      if (!shouldNotify) continue;
-
-      await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
-      notifiedIds.push(driverId);
-      notifiedCount++;
+    for (const d of dbOnlineNearby) {
+      const id = d._id.toString();
+      candidateDriverIds.add(id);
+      const coords = d.location?.coordinates;
+      if (coords && coords.length === 2 && (coords[0] !== 0 || coords[1] !== 0)) {
+        await redis
+          .geoadd('drivers:location', coords[0], coords[1], id)
+          .catch(() => {});
+      }
     }
-
-    if (notifiedIds.length) {
-      await Ride.findByIdAndUpdate(rideId, {
-        $addToSet: { notifiedDriverIds: { $each: notifiedIds } },
-      });
-    }
-
-    return notifiedCount;
+  } catch {
+    /* ignore geo query error */
   }
 
-  type GeoResult = Array<[string, string]>;
-  const onlineDrivers = (await redis.georadius(
-    'drivers:location',
-    pickup.lng,
-    pickup.lat,
-    radiusKm,
-    'km',
-    'WITHDIST'
-  )) as GeoResult;
+  if (targetDriverIds?.length) {
+    for (const tid of targetDriverIds) {
+      candidateDriverIds.add(String(tid));
+    }
+  }
 
-  const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
-
-  // Online drivers — availability + socket + in-app + FCM
-  for (const [driverId] of onlineDrivers) {
+  for (const driverId of candidateDriverIds) {
     if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
     if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
+
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
     const driverDoc = await User.findById(driverId)
-      .select('isKycVerified _id')
+      .select('isKycVerified isOnline isDeleted status _id')
       .lean();
-    if (!driverDoc?.isKycVerified) continue;
+
+    // Strictly only notify ONLINE, active, KYC-verified drivers
+    if (
+      !driverDoc ||
+      driverDoc.isDeleted ||
+      !driverDoc.isOnline ||
+      driverDoc.status !== USER_STATUS.active ||
+      !driverDoc.isKycVerified
+    ) {
+      continue;
+    }
 
     const availability = await hasDriverRideAtDateTime(
       driverId,
@@ -288,57 +316,17 @@ export async function notifyNearbyDrivers(
     const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
     if (!shouldNotify) continue;
 
-    await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
-    notifiedIds.push(driverId);
-    notifiedCount++;
-  }
-
-  // Offline / not in geo: still send FCM (socket only if online)
-  const offlineDrivers = await User.find({
-    role: USER_ROLE.provider,
-    isDeleted: false,
-    status: USER_STATUS.active,
-    isKycVerified: true,
-    location: {
-      $nearSphere: {
-        $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
-        $maxDistance: radiusKm * 1000,
-      },
-    },
-  })
-    .select('_id location')
-    .lean();
-
-  for (const driver of offlineDrivers) {
-    const driverId = driver._id.toString();
-    if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
-    if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
-    if (onlineDriverIds.has(driverId)) continue;
-
-    const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
-    if (rejected) continue;
-
-    const availability = await hasDriverRideAtDateTime(
+    const sent = await emitNewRideRequestToDriver(
+      io,
+      redis,
       driverId,
-      departureDate,
-      departureTime,
-      rideType,
-      requestedSeats
+      rideId,
+      ridePayload
     );
-
-    if (!availability.available) {
-      console.log(
-        `Skipping offline driver ${driverId} — ${availability.reason}`
-      );
-      continue;
+    if (sent) {
+      notifiedIds.push(driverId);
+      notifiedCount++;
     }
-
-    const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
-    if (!shouldNotify) continue;
-
-    await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
-    notifiedIds.push(driverId);
-    notifiedCount++;
   }
 
   if (notifiedIds.length) {
@@ -350,7 +338,7 @@ export async function notifyNearbyDrivers(
   return notifiedCount;
 }
 
-// â”€â”€ Notify nearby drivers (split ride â€” route corridor) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Notify nearby online drivers (split ride — route corridor) ──────────────
 export async function notifyNearbyDriversForSplitRide(
   rideId: string,
   routeGeometry: { type: string; coordinates: number[][] } | null,
@@ -363,7 +351,6 @@ export async function notifyNearbyDriversForSplitRide(
   let notifiedCount = 0;
   const notifiedIds: string[] = [];
 
-  // â”€â”€ Required for availability check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const departureDate = ridePayload.departureDate as string;
   const departureTime = ridePayload.departureTime as string;
   const requestedSeats = (ridePayload.requestedSeats as number) || 1;
@@ -383,23 +370,75 @@ export async function notifyNearbyDriversForSplitRide(
   };
 
   type GeoResult = Array<[string, string]>;
-  const onlineDrivers = (await redis.georadius(
-    'drivers:location',
-    pickup.lng,
-    pickup.lat,
-    15,
-    'km',
-    'WITHDIST'
-  )) as GeoResult;
+  let redisOnlineDrivers: GeoResult = [];
+  try {
+    redisOnlineDrivers = (await redis.georadius(
+      'drivers:location',
+      pickup.lng,
+      pickup.lat,
+      15,
+      'km',
+      'WITHDIST'
+    )) as GeoResult;
+  } catch {
+    redisOnlineDrivers = [];
+  }
 
-  const onlineDriverIds = new Set(onlineDrivers.map(([id]) => id));
+  const candidateDriverIds = new Set<string>(
+    redisOnlineDrivers.map(([id]) => String(id))
+  );
 
-  // â”€â”€ Online drivers â€” availability + route check + socket + FCM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  for (const [driverId] of onlineDrivers) {
+  // Also include online drivers from DB within 15km in case Redis geo entry expired/reconnected
+  try {
+    const dbOnlineNearby = await User.find({
+      role: USER_ROLE.provider,
+      isDeleted: false,
+      status: USER_STATUS.active,
+      isKycVerified: true,
+      isOnline: true,
+      location: {
+        $nearSphere: {
+          $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
+          $maxDistance: 15000,
+        },
+      },
+    })
+      .select('_id location')
+      .lean();
+
+    for (const d of dbOnlineNearby) {
+      const id = d._id.toString();
+      candidateDriverIds.add(id);
+      const coords = d.location?.coordinates;
+      if (coords && coords.length === 2 && (coords[0] !== 0 || coords[1] !== 0)) {
+        await redis
+          .geoadd('drivers:location', coords[0], coords[1], id)
+          .catch(() => {});
+      }
+    }
+  } catch {
+    /* ignore geo query error */
+  }
+
+  for (const driverId of candidateDriverIds) {
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
     if (rejected) continue;
 
-    // âœ… Availability check for split ride
+    const dbDriver = await User.findById(driverId)
+      .select('_id location isKycVerified isOnline isDeleted status')
+      .lean();
+
+    // Strictly only notify ONLINE, active, KYC-verified drivers
+    if (
+      !dbDriver ||
+      dbDriver.isDeleted ||
+      !dbDriver.isOnline ||
+      dbDriver.status !== USER_STATUS.active ||
+      !dbDriver.isKycVerified
+    ) {
+      continue;
+    }
+
     const availability = await hasDriverRideAtDateTime(
       driverId,
       departureDate,
@@ -407,18 +446,7 @@ export async function notifyNearbyDriversForSplitRide(
       'split',
       requestedSeats
     );
-
-    if (!availability.available) {
-      console.log(
-        `â­ï¸ Skipping online split driver ${driverId} â€” ${availability.reason}`
-      );
-      continue;
-    }
-
-    const dbDriver = await User.findById(driverId)
-      .select('_id location isKycVerified')
-      .lean();
-    if (!dbDriver?.isKycVerified) continue;
+    if (!availability.available) continue;
 
     const location = await getDriverCurrentLocation(redis, driverId, dbDriver);
     if (location && !isNearRoute(location.lat, location.lng)) continue;
@@ -426,58 +454,17 @@ export async function notifyNearbyDriversForSplitRide(
     const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
     if (!shouldNotify) continue;
 
-    await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
-    notifiedIds.push(driverId);
-    notifiedCount++;
-  }
-
-  // Offline split drivers — FCM always; socket only if online
-  const offlineDrivers = await User.find({
-    role: USER_ROLE.provider,
-    isDeleted: false,
-    status: USER_STATUS.active,
-    isKycVerified: true,
-    location: {
-      $nearSphere: {
-        $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
-        $maxDistance: 15000,
-      },
-    },
-  })
-    .select('_id location')
-    .lean();
-
-  for (const driver of offlineDrivers) {
-    const driverId = driver._id.toString();
-    if (onlineDriverIds.has(driverId)) continue;
-
-    const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
-    if (rejected) continue;
-
-    const availability = await hasDriverRideAtDateTime(
+    const sent = await emitNewRideRequestToDriver(
+      io,
+      redis,
       driverId,
-      departureDate,
-      departureTime,
-      'split',
-      requestedSeats
+      rideId,
+      ridePayload
     );
-
-    if (!availability.available) {
-      console.log(
-        `Skipping offline split driver ${driverId} — ${availability.reason}`
-      );
-      continue;
+    if (sent) {
+      notifiedIds.push(driverId);
+      notifiedCount++;
     }
-
-    const location = await getDriverCurrentLocation(redis, driverId, driver);
-    if (location && !isNearRoute(location.lat, location.lng)) continue;
-
-    const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
-    if (!shouldNotify) continue;
-
-    await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
-    notifiedIds.push(driverId);
-    notifiedCount++;
   }
 
   if (notifiedIds.length) {
@@ -488,6 +475,3 @@ export async function notifyNearbyDriversForSplitRide(
 
   return notifiedCount;
 }
-
-
-

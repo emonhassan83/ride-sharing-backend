@@ -26,6 +26,9 @@ import { PASSENGER_STATUS } from '../passenger/passenger.constant';
 import { Payment } from '../payment/payment.model';
 import { BOOKING_STATUS } from '../booking/booking.constant';
 import StripeService from '../../config/stripe.config';
+import { UserLocation } from '../savedPlaces/savedPlaces.model';
+import { getRedisClient } from '../../config/redis.config';
+import { getIO, onlineUsers } from '../../socket/socket.init';
 
 const getAllUsersFromDB = async (query: Record<string, unknown>) => {
   const usersQuery = new QueryBuilder(
@@ -561,12 +564,24 @@ const deleteUserProfile = async (
       { session }
     );
 
-    // Soft delete user
+    // Soft delete user and reset profile/KYC state so re-registration starts fresh
     const deletedUser = await User.findByIdAndUpdate(
       userId,
       {
         isDeleted: true,
         deletedAt: new Date(),
+        profileImage: null,
+        address: null,
+        type: null,
+        isKycVerified: false,
+        isProfileComplete: false,
+        isOnline: false,
+        documents: null,
+        fcmToken: null,
+        isSignUpOtpVerified: false,
+        isLoginOTPVerified: false,
+        isResetPasswordVerified: false,
+        status: user.role === USER_ROLE.provider ? 'pending' : 'active',
       },
       {
         returnDocument: 'after',
@@ -582,19 +597,49 @@ const deleteUserProfile = async (
       );
     }
 
-    await Vehicle.updateMany(
-      { userId, isDeleted: false },
-      { isDeleted: true, isDefault: false },
-      { session }
-    );
+    // Remove related records (Provider KYC, Vehicles, Saved Places, Notifications)
+    await Promise.all([
+      Provider.deleteMany({ userId }, { session }),
+      Vehicle.deleteMany({ userId }, { session }),
+      UserLocation.deleteMany({ user: userId }, { session }),
+      Notification.deleteMany({ receiver: userId }, { session }),
+    ]);
 
     await session.commitTransaction();
 
-    await deleteCache(REDIS_KEYS.VEHICLES_BY_USER(String(userId)));
+    const uid = String(userId);
+    await Promise.all([
+      deleteCache(REDIS_KEYS.SAVED_PLACES_BY_USER(uid)).catch(() => {}),
+      deleteCache(REDIS_KEYS.VEHICLES_BY_USER(uid)).catch(() => {}),
+      deleteCache(REDIS_KEYS.ACCOUNT_DELETION_ALL).catch(() => {}),
+      deleteCachePattern('accountDeletion:*').catch(() => {}),
+    ]);
 
-    // invalidate cache
-    await deleteCache(REDIS_KEYS.ACCOUNT_DELETION_ALL);
-    await deleteCachePattern('accountDeletion:*');
+    try {
+      const redis = getRedisClient();
+      await Promise.all([
+        redis.srem('users:online', uid),
+        redis.zrem('drivers:location', uid),
+        redis.del(`driver:${uid}:details`),
+        redis.del(`driver:${uid}:current`),
+      ]);
+    } catch {
+      // ignore redis cleanup error
+    }
+
+    try {
+      const activeSocket = onlineUsers[uid];
+      if (activeSocket) {
+        activeSocket.leave(`user:${uid}`);
+        activeSocket.leave(`driver:${uid}`);
+        delete onlineUsers[uid];
+      }
+      const io = getIO();
+      io.in(`user:${uid}`).socketsLeave(`user:${uid}`);
+      io.in(`driver:${uid}`).socketsLeave(`driver:${uid}`);
+    } catch {
+      // ignore socket cleanup error
+    }
 
     return deletedUser;
   } catch (error: any) {

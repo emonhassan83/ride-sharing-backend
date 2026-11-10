@@ -23,6 +23,19 @@ router.get(
   RideController.getDriverInvoice
 );
 
+// Ride Start OTP authorization (send OTP to passenger & verify before starting ride)
+router.post(
+  '/send-start-otp',
+  auth([USER_ROLE.provider, USER_ROLE.user, USER_ROLE.admin]),
+  RideController.sendStartOtp
+);
+
+router.post(
+  '/verify-start-otp',
+  auth([USER_ROLE.provider, USER_ROLE.user, USER_ROLE.admin]),
+  RideController.verifyStartOtp
+);
+
 // Get available all ride
 router.get('/', auth(USER_ROLE.admin), RideController.getAllRides);
 

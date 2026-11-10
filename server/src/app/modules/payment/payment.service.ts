@@ -236,6 +236,10 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
     }
   } else {
     const pickupCoords = (ride as any).pickup.coordinates;
+    const reqMeta = await redis.hgetall(`ride:request:${ride._id}`);
+    const selectedDriverId = reqMeta?.selectedDriverId?.trim();
+    const targetDriverIds = selectedDriverId ? [selectedDriverId] : undefined;
+
     notified = await notifyNearbyDrivers(
       ride._id.toString(),
       { lat: pickupCoords[1], lng: pickupCoords[0] },
@@ -244,8 +248,7 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
       io,
       passenger._id.toString(),
       10,
-      undefined,
-      { notifyMode: 'all_eligible' }
+      targetDriverIds,
     );
   }
 

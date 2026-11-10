@@ -233,17 +233,28 @@ export const driverAcceptRideHandler = eventHandler<any>(
     const io = getIO();
 
     // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Driver details from Redis (fallback to DB if TTL expired) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+    // Check driver online status in DB first (offline drivers cannot accept rides)
+    const driverUserCheck = await User.findById(driverId)
+      .select('name email phone avgRating profileImage status isDeleted isOnline')
+      .lean();
+
+    if (!driverUserCheck || driverUserCheck.isDeleted) {
+      return callback?.({
+        success: false,
+        message: 'Driver not found or unavailable.',
+      });
+    }
+
+    if (!driverUserCheck.isOnline) {
+      return callback?.({
+        success: false,
+        message: 'You are currently offline. Please go online to accept rides.',
+      });
+    }
+
     let driverDetails = await redis.hgetall(`driver:${driverId}:details`);
     if (!driverDetails || !Object.keys(driverDetails).length) {
-      const driverUser = await User.findById(driverId)
-        .select('name email phone avgRating profileImage status isDeleted')
-        .lean();
-
-      if (!driverUser || driverUser.isDeleted)
-        return callback?.({
-          success: false,
-          message: 'Driver not found or unavailable.',
-        });
+      const driverUser = driverUserCheck;
 
       const driverVehicle = await Vehicle.findOne({
         userId: driverId,
@@ -585,7 +596,9 @@ await redis.hset(`ride:active:${rideId}`, {
         if (ride.totalSeats === 0) rideUpdate.totalSeats = vehicleTotalSeats;
         assignedThisRide = true;
       }
-      if (isLastPassenger) rideUpdate.status = RIDE_STATUS.accepted;
+      // Mark ride as accepted as soon as a driver accepts the first passenger
+      // so noDriverFound job does not cancel/refund an accepted split ride.
+      rideUpdate.status = RIDE_STATUS.accepted;
 
       if (Object.keys(rideUpdate).length) {
         const assignedRide = await Ride.findOneAndUpdate(
@@ -612,14 +625,23 @@ await redis.hset(`ride:active:${rideId}`, {
         }
       }
 
+      await redis.zrem('ride:matching:queue', ride._id.toString());
+
       booking.userId = passenger.userId as any;
       booking.driverId = driverId as any;
       booking.totalFare = passenger.estimatedFare;
       booking.bookingStatus = BOOKING_STATUS.accepted;
       await booking.save();
+
+      const activePassengersAfterAccept = await getActiveSplitPassengersOnRide(ride._id);
+      const exactBookedSeats = activePassengersAfterAccept.reduce(
+        (sum: number, p: any) => sum + (Number(p.requestedSeats) || 1),
+        0,
+      );
+
       await Ride.findByIdAndUpdate(ride._id, {
+        $set: { bookedSeats: exactBookedSeats },
         $inc: {
-          bookedSeats: passenger.requestedSeats || 1,
           malePassengers: passenger.malePassengers || 0,
           femalePassengers: passenger.femalePassengers || 0,
         },

@@ -19,6 +19,10 @@ import {
   computeDriverPayoutFromPassengerTotal,
   roundMoney as roundMoneyPrecise,
 } from '../../utils/fareMath.utils';
+import {
+  sendRideStartOtp,
+  verifyRideStartOtp,
+} from '../../utils/rideStartOtp.utils';
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -751,6 +755,8 @@ export const RideService = {
   getRideById,
   getDriverMonthlyInvoice,
   deleteARide,
+  sendRideStartOtp,
+  verifyRideStartOtp,
 };
 
 

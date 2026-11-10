@@ -492,8 +492,6 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     io,
     attachedPassenger._id.toString(),
     10,
-    undefined,
-    { notifyMode: 'all_eligible' },
   );
 
   await redis.hset(`ride:request:${ride._id}`, {
@@ -644,13 +642,21 @@ export const checkSplitRidePendingMatches = async () => {
       );
       const hoursUntilDeparture =
         (departureDateTime.getTime() - now.getTime()) / 3600000;
+      const createdAtMs = passenger.createdAt
+        ? new Date(passenger.createdAt).getTime()
+        : now.getTime();
+      const hoursSinceCreated = Math.max(0, (now.getTime() - createdAtMs) / 3600000);
+      const hasSearchedMinDuration =
+        hoursSinceCreated >= releaseHours || hoursUntilDeparture <= 0.25;
       const inSoloWindow =
-        hoursUntilDeparture <= releaseHours && hoursUntilDeparture > -0.25;
+        hoursUntilDeparture <= releaseHours &&
+        hoursUntilDeparture > -0.25 &&
+        hasSearchedMinDuration;
 
-      // Inside 1h window: convert to Solo immediately (don't lose ticks on join races).
+      // Convert to Solo only after minimum search duration (or within 15m of pickup).
       if (inSoloWindow) {
         console.log(
-          `Solo fallback due | passenger: ${passenger._id} | hoursUntil: ${hoursUntilDeparture.toFixed(2)}`,
+          `Solo fallback due | passenger: ${passenger._id} | hoursUntil: ${hoursUntilDeparture.toFixed(2)} | searchedHours: ${hoursSinceCreated.toFixed(2)}`,
         );
         await releaseUnmatchedSplitToSolo(passenger);
         continue;

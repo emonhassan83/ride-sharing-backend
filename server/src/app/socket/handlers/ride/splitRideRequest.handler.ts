@@ -1,4 +1,4 @@
-﻿// handlers/ride/splitRideRequest.handler.ts
+// handlers/ride/splitRideRequest.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Passenger } from '../../../modules/passenger/passenger.model';
@@ -23,7 +23,11 @@ import {
 } from '../../../utils/splitMatching.utils';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
-import { assertMinimumBookingLeadTime, assertSplitMinimumDistance } from '../../../utils/rideSchedule.utils';
+import {
+  assertMinimumBookingLeadTime,
+  assertSplitMinimumDistance,
+  getDepartureDateTime,
+} from '../../../utils/rideSchedule.utils';
 import { normalizeAndAssertLuggage } from '../../../utils/luggage.utils';
 
 export const joinSplitRideRequestHandler = eventHandler<any>(
@@ -61,11 +65,14 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       requestedSeats,
     });
 
-    const { departureDateTime } = await assertMinimumBookingLeadTime(
-      departureDate,
-      departureTime,
-      RIDE_TYPE.split
-    );
+    const departureDateTime = getDepartureDateTime(departureDate, departureTime);
+    if (departureDateTime.getTime() <= Date.now()) {
+      await assertMinimumBookingLeadTime(
+        departureDate,
+        departureTime,
+        RIDE_TYPE.split
+      );
+    }
 
     const matchRequest = requestToMatchCandidate({
       pickup: { lat: pickup.lat, lng: pickup.lng },
@@ -178,6 +185,11 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     }
 
     if (!selectedRide) {
+      await assertMinimumBookingLeadTime(
+        departureDate,
+        departureTime,
+        RIDE_TYPE.split
+      );
       const fareBreakdown = await calcSplitPassengerFare(
         actualDistance,
         requestedSeats,

@@ -74,6 +74,7 @@ export interface TPassenger {
 
   arriveAt: Date;
   arrivedNotified: boolean;
+  isStartOtpVerified?: boolean;
   pickedUpAt: Date;
   waitingStartedAt: Date; // in minute
   waitingChargePaid: boolean;

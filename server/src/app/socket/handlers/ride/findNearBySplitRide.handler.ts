@@ -9,6 +9,8 @@ import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { TUser } from '../../../modules/user/user.interface';
 import { TVehicle } from '../../../modules/vehicle/vehicle.interface';
 import { User } from '../../../modules/user/user.model';
+import { Passenger } from '../../../modules/passenger/passenger.model';
+import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { ISplitRideRequest } from '../../interface/ride';
 import {
   getCandidateDepartureDates,
@@ -19,6 +21,7 @@ import {
 import {
   assertMinimumBookingLeadTime,
   assertSplitMinimumDistance,
+  getDepartureDateTime,
 } from '../../../utils/rideSchedule.utils';
 import {
   normalizeAndAssertLuggage,
@@ -61,8 +64,10 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
         message: 'departureDate and departureTime are required',
       });
 
-    // Same business gates as automatic / join matching.
-    await assertMinimumBookingLeadTime(departureDate, departureTime, RIDE_TYPE.split);
+    const requestedDeparture = getDepartureDateTime(departureDate, departureTime);
+    if (requestedDeparture.getTime() <= Date.now()) {
+      await assertMinimumBookingLeadTime(departureDate, departureTime, RIDE_TYPE.split);
+    }
 
     let routeDistanceKm = 0;
     try {
@@ -150,6 +155,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
       },
       $or: [
         { totalSeats: 0 },
+        { totalSeats: { $exists: false } },
         { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },
       ],
     })
@@ -168,7 +174,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
       });
       if (!eligibility.ok) continue;
 
-      const vehicleSeats = Number((ride as any).vehicleId?.seats) || 0;
+      const vehicleSeats = Number((ride as any).vehicleId?.seats) || Number(ride.totalSeats) || 0;
       if (!vehicleFitsParty(vehicleSeats, requestedSeats)) continue;
 
       eligibleRides.push({
@@ -184,6 +190,18 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
         const vehicle = ride.vehicleId as (TVehicle & { _id: any }) | null;
 
         const hasDriver = !!(driver && vehicle);
+        const ridePassengers = await Passenger.find({
+          rideId: ride._id,
+          status: {
+            $in: [
+              PASSENGER_STATUS.pending,
+              PASSENGER_STATUS.confirmed,
+              PASSENGER_STATUS.driver_arrived,
+            ],
+          },
+        })
+          .populate('userId', 'name profileImage phone gender avgRating')
+          .lean();
 
         let driverLocation: { lat: number; lng: number } | null =
           driverLocationMap[driver?._id?.toString()] ?? null;
@@ -235,6 +253,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
           status: ride.status,
           matchedRiders,
           availableSeats,
+          passengers: ridePassengers,
           pickup: {
             address: ride.pickup?.address ?? null,
             lat: ride.pickup?.coordinates?.[1],

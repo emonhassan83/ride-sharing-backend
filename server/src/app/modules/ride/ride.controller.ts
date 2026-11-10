@@ -83,6 +83,37 @@ const deleteARide = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const sendStartOtp = catchAsync(async (req: Request, res: Response) => {
+  const result = await RideService.sendRideStartOtp({
+    rideId: req.body?.rideId || (req.params?.id as string),
+    passengerId: req.body?.passengerId,
+    requesterId: req.user?.userId as string,
+    requesterRole: req.user?.role as string,
+  });
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Ride start OTP sent to passenger notification and email successfully.',
+    data: result,
+  });
+});
+
+const verifyStartOtp = catchAsync(async (req: Request, res: Response) => {
+  const result = await RideService.verifyRideStartOtp({
+    rideId: req.body?.rideId || (req.params?.id as string),
+    passengerId: req.body?.passengerId,
+    otp: req.body?.otp,
+    requesterId: req.user?.userId as string,
+    requesterRole: req.user?.role as string,
+  });
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Ride start OTP verified successfully. Ride is approved to start.',
+    data: result,
+  });
+});
+
 export const RideController = {
   getAllRides,
   getDriverRides,
@@ -90,4 +121,6 @@ export const RideController = {
   getARide,
   getDriverInvoice,
   deleteARide,
+  sendStartOtp,
+  verifyStartOtp,
 };

@@ -18,9 +18,9 @@ import { driverLocationUpdateHandler } from './handlers/ride/driverLocationUpdat
 import { driverAcceptRideHandler } from './handlers/ride/driverAcceptRide.handler';
 import { driverRejectRideHandler } from './handlers/ride/driverRejectRide.handler';
 import { driverCancelRideHandler } from './handlers/ride/driverCancelRide.handler';
-import { driverArrivedHandler } from './handlers/ride/driverArrived.handler';
+import { driverArrivedHandler } from './handlers/ride/driverArrivedClean.handler';
 import { driverStartTripHandler } from './handlers/ride/driverStartTrip.handler';
-import { pickUpRideHandler } from './handlers/ride/pickUpRide.handler';
+import { pickUpRideHandler } from './handlers/ride/pickUpRideClean.handler';
 import { driverDropOffPassengerHandler } from './handlers/ride/driverDropOffPassenger.handler';
 import { driverCompleteTripHandler } from './handlers/ride/driverCompleteTrip.handler';
 
@@ -37,6 +37,10 @@ import { joinSplitRideRequestHandler } from './handlers/ride/splitRideRequest.ha
 // Disconnect handler
 import disconnectHandler from './handlers/disconnect.handler';
 import { getRidePassengersHandler } from './handlers/ride/getRidePassengers.handler';
+import {
+  sendRideStartOtp,
+  verifyRideStartOtp,
+} from '../utils/rideStartOtp.utils';
 
 export const registerSocketEvents = (socket: Socket) => {
   const tSocket = socket as TSocket; // Cast to TSocket
@@ -89,6 +93,47 @@ export const registerSocketEvents = (socket: Socket) => {
   tSocket.on('driver:arrived-pickup', (data, callback) =>
     driverArrivedHandler.call(tSocket, data, callback)
   );
+  tSocket.on('driver:send-start-otp', async (data, callback) => {
+    try {
+      const result = await sendRideStartOtp({
+        rideId: data?.rideId,
+        passengerId: data?.passengerId,
+        requesterId: tSocket.auth?._id?.toString(),
+        requesterRole: tSocket.auth?.role,
+      });
+      callback?.({
+        success: true,
+        message: 'Ride start OTP sent to passenger notification and email successfully.',
+        data: result,
+      });
+    } catch (err: any) {
+      callback?.({
+        success: false,
+        message: err?.message || 'Failed to send ride start OTP',
+      });
+    }
+  });
+  tSocket.on('driver:verify-start-otp', async (data, callback) => {
+    try {
+      const result = await verifyRideStartOtp({
+        rideId: data?.rideId,
+        passengerId: data?.passengerId,
+        otp: data?.otp,
+        requesterId: tSocket.auth?._id?.toString(),
+        requesterRole: tSocket.auth?.role,
+      });
+      callback?.({
+        success: true,
+        message: 'Ride start OTP verified successfully. Ride is approved to start.',
+        data: result,
+      });
+    } catch (err: any) {
+      callback?.({
+        success: false,
+        message: err?.message || 'Failed to verify ride start OTP',
+      });
+    }
+  });
   tSocket.on('driver:start-trip', (data, callback) =>
     driverStartTripHandler.call(tSocket, data, callback)
   );

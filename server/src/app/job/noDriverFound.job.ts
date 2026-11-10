@@ -69,6 +69,7 @@ export const checkNoDriverFound = async () => {
 
   const pendingRides = await Ride.find({
     status: RIDE_STATUS.pending,
+    $or: [{ driverId: { $exists: false } }, { driverId: null }],
     departureDate: { $lte: reNotifyBeforeLocal },
     createdAt: { $lte: gracePeriodCutoff },
   })
@@ -162,8 +163,6 @@ export const checkNoDriverFound = async () => {
       io,
       passenger._id.toString(),
       10,
-      undefined,
-      { notifyMode: 'all_eligible' }
     );
 
     await Ride.findByIdAndUpdate(ride._id, {
@@ -203,9 +202,41 @@ export const checkNoDriverFound = async () => {
 
   if (!cancelRideIds.length) return;
 
+  // Filter out any ride that was accepted by a driver or already has confirmed passengers
+  const trulyUnassignedRides = await Ride.find({
+    _id: { $in: cancelRideIds },
+    status: RIDE_STATUS.pending,
+    $or: [{ driverId: { $exists: false } }, { driverId: null }],
+  })
+    .select('_id')
+    .lean();
+
+  const confirmedRideIds = await Passenger.distinct('rideId', {
+    rideId: { $in: trulyUnassignedRides.map((r) => r._id) },
+    status: {
+      $in: [
+        PASSENGER_STATUS.confirmed,
+        PASSENGER_STATUS.driver_arrived,
+        PASSENGER_STATUS.in_progress,
+        PASSENGER_STATUS.picked_up,
+        PASSENGER_STATUS.completed,
+      ],
+    },
+  });
+  const confirmedSet = new Set(confirmedRideIds.map((id: any) => String(id)));
+  const finalCancelRideIds = trulyUnassignedRides
+    .map((r) => r._id.toString())
+    .filter((id) => !confirmedSet.has(id));
+
+  if (!finalCancelRideIds.length) return;
+
   // Bulk cancel rides only after pickup time has passed and no driver accepted.
   await Ride.updateMany(
-    { _id: { $in: cancelRideIds }, status: RIDE_STATUS.pending },
+    {
+      _id: { $in: finalCancelRideIds },
+      status: RIDE_STATUS.pending,
+      $or: [{ driverId: { $exists: false } }, { driverId: null }],
+    },
     {
       status: RIDE_STATUS.cancelled,
       cancellationReason: 'no_driver_found',
@@ -215,8 +246,8 @@ export const checkNoDriverFound = async () => {
   );
 
   const bookingsToRefund = await Booking.find({
-    rideId: { $in: cancelRideIds },
-    bookingStatus: { $ne: BOOKING_STATUS.cancelled },
+    rideId: { $in: finalCancelRideIds },
+    bookingStatus: { $nin: [BOOKING_STATUS.cancelled, BOOKING_STATUS.completed] },
   });
 
   for (const booking of bookingsToRefund) {
@@ -286,7 +317,7 @@ export const checkNoDriverFound = async () => {
   }
 
   await Passenger.updateMany(
-    { rideId: { $in: cancelRideIds }, status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.completed] } },
+    { rideId: { $in: finalCancelRideIds }, status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.completed] } },
     {
       status: PASSENGER_STATUS.cancelled,
       cancellationReason: 'no_driver_found',
@@ -295,12 +326,12 @@ export const checkNoDriverFound = async () => {
   );
 
   const cancelledPassengers = await Passenger.find(
-    { rideId: { $in: cancelRideIds }, cancellationReason: 'no_driver_found' },
+    { rideId: { $in: finalCancelRideIds }, cancellationReason: 'no_driver_found' },
     'userId rideId'
   ).lean();
 
   const ridesToRemove = pendingRides.filter((ride) =>
-    cancelRideIds.includes(ride._id.toString()),
+    finalCancelRideIds.includes(ride._id.toString()),
   );
   for (const ride of ridesToRemove) {
     const driverIds = new Set<string>(
@@ -344,13 +375,13 @@ export const checkNoDriverFound = async () => {
   }
 
   const multi = redis.multi();
-  for (const rideId of cancelRideIds) {
+  for (const rideId of finalCancelRideIds) {
     multi.zrem('ride:matching:queue', rideId);
     multi.del(`ride:request:${rideId}`);
     multi.del(`ride:matching:renotify:${rideId}`);
   }
   await multi.exec();
 
-  console.log(`?? No driver found after pickup: cancelled ${cancelRideIds.length} ride(s)`);
+  console.log(`?? No driver found after pickup: cancelled ${finalCancelRideIds.length} ride(s)`);
 };
 

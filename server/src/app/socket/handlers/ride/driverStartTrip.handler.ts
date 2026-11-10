@@ -16,10 +16,15 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { lockSplitRideFare } from '../../../utils/splitFare.utils';
+import {
+  isPassengerStartOtpVerified,
+  sendRideStartOtp,
+  verifyRideStartOtp,
+} from '../../../utils/rideStartOtp.utils';
 
 export const driverStartTripHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    const { rideId } = data;
+    const { rideId, passengerId, otp } = data;
     const driverId = socket.auth?._id?.toString();
 
     if (!driverId || !rideId)
@@ -47,7 +52,9 @@ export const driverStartTripHandler = eventHandler<any>(
 
     const passengers = await Passenger.find({
       rideId,
-      status: PASSENGER_STATUS.confirmed,
+      status: {
+        $in: [PASSENGER_STATUS.confirmed, PASSENGER_STATUS.driver_arrived],
+      },
     });
 
     if (!passengers.length)
@@ -55,6 +62,59 @@ export const driverStartTripHandler = eventHandler<any>(
         success: false,
         message: 'No confirmed passengers found',
       });
+
+    // ── Passenger OTP authorization check (SPLIT-051 & SPLIT-065) ─────────────
+    if (otp) {
+      try {
+        await verifyRideStartOtp({
+          rideId: String(rideId),
+          passengerId: passengerId ? String(passengerId) : undefined,
+          otp,
+          requesterId: driverId,
+          requesterRole: 'provider',
+        });
+      } catch (otpErr: any) {
+        return callback?.({
+          success: false,
+          requiresOtp: true,
+          message:
+            otpErr?.message ||
+            'Invalid or expired ride start OTP. Please verify the passenger OTP.',
+        });
+      }
+    }
+
+    for (const passenger of passengers) {
+      const verified = await isPassengerStartOtpVerified(
+        String(rideId),
+        passenger._id.toString(),
+        passenger,
+      );
+      if (!verified) {
+        try {
+          await sendRideStartOtp({
+            rideId: String(rideId),
+            passengerId: passenger._id.toString(),
+            requesterId: driverId,
+            requesterRole: 'provider',
+          });
+        } catch {
+          /* ignore send error if already sent */
+        }
+
+        return callback?.({
+          success: false,
+          requiresOtp: true,
+          message:
+            'Passenger OTP authorization is required to start the ride. An OTP has been sent to the passenger via notification and email.',
+          data: {
+            rideId: ride._id,
+            passengerId: passenger._id,
+            requiresOtp: true,
+          },
+        });
+      }
+    }
 
     if (ride.type === RIDE_TYPE.split) {
       await lockSplitRideFare(rideId, 'trip_start', io);
@@ -123,6 +183,9 @@ export const driverStartTripHandler = eventHandler<any>(
     // ── Update passengers + bookings ──────────────────────────────────────────
     for (const passenger of passengers) {
       passenger.status = PASSENGER_STATUS.in_progress;
+      if (!passenger.pickedUpAt) {
+        passenger.pickedUpAt = new Date();
+      }
       await passenger.save();
 
       await Booking.findOneAndUpdate(
@@ -139,7 +202,7 @@ export const driverStartTripHandler = eventHandler<any>(
         message: 'Your ride has started. Enjoy the trip!',
       });
 
-      // ✅ FCM push — trip started
+      // FCM push — trip started (only fires after passenger OTP authorization)
       const riderUser = await User.findById(passenger.userId)
         .select('fcmToken')
         .lean();
