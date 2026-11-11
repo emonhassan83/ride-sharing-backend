@@ -43,7 +43,7 @@ export const pickUpRideHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io = getIO();
 
-    // Client rule: upfront price is locked — waiting must NOT alter rider fare.
+    // Client rule: upfront price is locked - waiting must NOT alter rider fare.
     const doPickup = async (passenger: any) => {
       const pickedUpAt = new Date();
       const lockedFare = passenger.estimatedFare || passenger.totalFare || 0;

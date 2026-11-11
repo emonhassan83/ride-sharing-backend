@@ -5,6 +5,7 @@ import { TSocket } from '../interface/index.interface';
 import { USER_ROLE } from '../../modules/user/user.constant';
 import { User } from '../../modules/user/user.model';
 import onlineUsers from '../utils/onlineUsers';
+import { clearAllActiveChatsForUser } from '../../queues/chatPush.queue';
 
 const disconnectHandler = async (socket: TSocket) => {
   try {
@@ -21,6 +22,9 @@ const disconnectHandler = async (socket: TSocket) => {
 
     const redis = getRedisClient();
     const io    = getIO();
+
+    // ── 0. Clear active chat presence keys (chat:active:<chatId>:<userId>) ───
+    await clearAllActiveChatsForUser(userId);
 
     // ── 1. Remove from onlineUsers map ────────────────────────────────────────
     delete onlineUsers[userId];

@@ -6,6 +6,11 @@ import ApiError from '../errors/ApiError';
 import catchAsync from '../utils/catchAsync';
 import { config } from '../config/env.config';
 import { TUserRole, USER_ROLE } from '../modules/user/user.constant';
+import {
+  hasExplicitRequestLanguage,
+  normalizeLanguage,
+  setCurrentContextLanguage,
+} from '../i18n/i18n';
 
 const auth = (allowedRoles: string | TUserRole[] = 'common') =>
   catchAsync(async (req: Request, res: Response, next: NextFunction) => {
@@ -36,7 +41,7 @@ const auth = (allowedRoles: string | TUserRole[] = 'common') =>
 
     // Fetch user from DB
     const user = await User.findById(decoded.userId)
-      .select('role status isDeleted')
+      .select('role status isDeleted language')
       .lean();
 
     if (!user) {
@@ -45,6 +50,20 @@ const auth = (allowedRoles: string | TUserRole[] = 'common') =>
 
     if (user.isDeleted) {
       throw new ApiError(StatusCodes.FORBIDDEN, 'Your account has been deleted');
+    }
+
+    // Sync language between request header and user DB profile
+    const reqLang = (req as any).language;
+    if (hasExplicitRequestLanguage() && reqLang) {
+      if (user.language !== reqLang) {
+        User.findByIdAndUpdate(user._id, { language: reqLang }).catch(() => {});
+      }
+    } else if (user.language) {
+      const dbLang = normalizeLanguage(user.language);
+      (req as any).language = dbLang;
+      res.locals.language = dbLang;
+      res.setHeader('Content-Language', dbLang);
+      setCurrentContextLanguage(dbLang);
     }
 
     // Attach user to request
@@ -80,8 +99,14 @@ const auth = (allowedRoles: string | TUserRole[] = 'common') =>
         // Safely clear sensitive fields from body (if body exists)
         if (req.body) {
           delete req.body.status;
-          delete req.body.role;
           delete req.body.isDeleted;
+          if (
+            req.body.role &&
+            (req.body.role === USER_ROLE.admin ||
+              ![USER_ROLE.user, USER_ROLE.provider].includes(req.body.role))
+          ) {
+            delete req.body.role;
+          }
         }
       }
       // else if (user.role !== USER_ROLE.admin) {

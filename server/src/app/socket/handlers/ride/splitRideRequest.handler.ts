@@ -164,8 +164,9 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
           ),
         },
         $or: [
-          { totalSeats: 0 },
-          { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },
+          { totalSeats: { $in: [0, null] } },
+          { totalSeats: { $exists: false } },
+          { $expr: { $gte: [{ $subtract: [{ $ifNull: ['$totalSeats', 4] }, { $ifNull: ['$bookedSeats', 0] }] }, requestedSeats] } },
         ],
       })
         .sort({ driverId: -1, createdAt: 1 })

@@ -37,7 +37,11 @@ export const driverLocationUpdateHandler = eventHandler<any>(
     await Promise.all([
       redis.set(`driver:${driverId}:current`, locationData, 'EX', 300),
       saveDriverLocation(driverId, lat, lng),
+      redis.sadd('users:online', driverId).catch(() => {}),
     ]);
+
+    socket.join(`driver:${driverId}`);
+    socket.join(`user:${driverId}`);
 
     // ── 2. Find driver's active ride ──────────────────────────────────────────
     const activeRideId = await redis.get(`driver:${driverId}:activeRide`);

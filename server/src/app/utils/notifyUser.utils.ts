@@ -2,6 +2,7 @@ import { User } from '../modules/user/user.model';
 import { Notification } from '../modules/notification/notification.model';
 import { modeType } from '../modules/notification/notification.interface';
 import { sendNotification } from './sentPushNotification';
+import { normalizeLanguage, sanitizeText, translateText } from '../i18n/i18n';
 
 type NotifyUserInput = {
   userId: string;
@@ -18,27 +19,37 @@ type NotifyUserInput = {
 export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
   const { userId, message, description, reference, modelType, data } = input;
 
-  const notificationPayload = {
-    receiver: userId,
-    message,
-    description,
-    reference,
-    modelType,
-    ...(data ? { data } : {}),
-  };
+  try {
+    const user = await User.findById(userId)
+      .select('fcmToken language')
+      .lean();
+    const userLang = normalizeLanguage(user?.language);
+    const localizedMessage = translateText(sanitizeText(message), userLang);
+    const localizedDescription = translateText(
+      sanitizeText(description),
+      userLang,
+    );
 
-  const persistInApp = async () => {
-    await Notification.create({
+    const notificationPayload = {
       receiver: userId,
-      message,
-      description,
+      message: localizedMessage,
+      description: localizedDescription,
       reference,
       modelType,
-    });
-  };
+      language: userLang,
+      ...(data ? { data } : {}),
+    };
 
-  try {
-    const user = await User.findById(userId).select('fcmToken').lean();
+    const persistInApp = async () => {
+      await Notification.create({
+        receiver: userId,
+        message: localizedMessage,
+        description: localizedDescription,
+        reference,
+        modelType,
+      });
+    };
+
     let persisted = false;
 
     if (user?.fcmToken) {
@@ -55,7 +66,13 @@ export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
   } catch (error) {
     console.error(`notifyUserPush failed for user ${userId}:`, error);
     try {
-      await persistInApp();
+      await Notification.create({
+        receiver: userId,
+        message: translateText(sanitizeText(message)),
+        description: translateText(sanitizeText(description)),
+        reference,
+        modelType,
+      });
     } catch {
       /* ignore */
     }

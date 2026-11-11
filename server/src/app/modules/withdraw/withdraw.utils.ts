@@ -14,7 +14,7 @@ export const sendWithdrawNotify = async (
   let message = ''
   let description = ''
 
-  const formattedAmount = `\u20AC${withdraw.amount.toFixed(2)}`
+  const formattedAmount = `€${withdraw.amount.toFixed(2)}`
 
   switch (action) {
     case 'cancelled':

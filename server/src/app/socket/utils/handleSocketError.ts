@@ -3,6 +3,7 @@ import { Socket } from "socket.io";
 import { TAckFn } from "../interface/index.interface";
 import ackHandler from "./ackHandler";
 import ApiError from "../../errors/ApiError";
+import { translateText } from "../../i18n/i18n";
 
 export const handleSocketError = (err: any, socket: Socket, ack?: TAckFn) => {
   let status = 500;
@@ -45,9 +46,11 @@ export const handleSocketError = (err: any, socket: Socket, ack?: TAckFn) => {
     message = err.message || message;
   }
 
+  const localizedMessage = translateText(message);
+
   // Send ack if provided
   if (ack && typeof ack === 'function') {
-    ackHandler(ack, { success: false, message });
+    ackHandler(ack, { success: false, message: localizedMessage });
   }
 
   // **নিরাপদভাবে emit করুন**
@@ -55,7 +58,7 @@ export const handleSocketError = (err: any, socket: Socket, ack?: TAckFn) => {
     socket.emit("socketError", {
       success: false,
       status,
-      message,
+      message: localizedMessage,
       error,
     });
   } else {

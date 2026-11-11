@@ -139,6 +139,14 @@ const appleZodValidationSchema = z.object({
   }),
 });
 
+const selectRoleValidationSchema = z.object({
+  body: z.object({
+    role: z.enum([USER_ROLE.user, USER_ROLE.provider] as [string, ...string[]], {
+      message: 'Role must be user or provider.',
+    }),
+  }),
+});
+
 export const AuthValidation = {
   loginValidationSchema,
   loginWithPhoneValidationSchema,
@@ -148,6 +156,7 @@ export const AuthValidation = {
   changePasswordValidationSchema,
   googleZodValidationSchema,
   appleZodValidationSchema,
+  selectRoleValidationSchema,
 };
 
 

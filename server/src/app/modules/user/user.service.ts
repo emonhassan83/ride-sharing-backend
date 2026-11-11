@@ -2,7 +2,7 @@ import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../errors/ApiError';
 import { TUser } from './user.interface';
 import { User } from './user.model';
-import { TUserStatus, USER_ROLE } from './user.constant';
+import { TUserStatus, USER_ROLE, USER_STATUS } from './user.constant';
 import mongoose from 'mongoose';
 import { sendUserStatusNotifYToUser } from './user.utils';
 import { Provider } from '../provider/provider.model';
@@ -389,6 +389,16 @@ const updateUserProfile = async (
     delete (updateData as any).longitude;
   }
 
+  // Handle role selection or update
+  if (payload.role && [USER_ROLE.user, USER_ROLE.provider].includes(payload.role as any)) {
+    updateData.role = payload.role;
+    if (payload.role === USER_ROLE.provider) {
+      updateData.status = user.isKycVerified ? USER_STATUS.active : USER_STATUS.pending;
+    } else {
+      updateData.status = USER_STATUS.active;
+    }
+  }
+
   // ==================== PHONE CHANGE LOGIC ====================
   if (payload.phone && payload.phone !== user.phone) {
     if (!user.isChangePhoneOtpVerified) {
@@ -441,15 +451,36 @@ const updateUserStatus = async (
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found!');
   }
 
+  const updateFields: Record<string, unknown> = { status };
+  if (status === USER_STATUS.blocked) {
+    updateFields.isOnline = false;
+  }
+
   const result = await User.findByIdAndUpdate(
     userId,
-    { status },
+    updateFields,
     {
       returnDocument: 'after',
     }
-  ).select('name fcmToken email phone status isDeleted');
+  ).select('name fcmToken email phone status isDeleted isOnline');
   if (!result) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+  }
+
+  // If user/driver is blocked, immediately remove them from active online/geo dispatch sets in Redis
+  if (status === USER_STATUS.blocked) {
+    try {
+      const redis = getRedisClient();
+      await Promise.all([
+        redis.srem('users:online', userId),
+        redis.srem('drivers:online', userId),
+        redis.zrem('drivers:geo', userId),
+        redis.zrem('drivers:location', userId),
+        redis.del(`driver:${userId}:details`),
+      ]);
+    } catch {
+      /* ignore redis cleanup errors */
+    }
   }
 
   // sent notify to user
@@ -552,13 +583,17 @@ const deleteUserProfile = async (
       );
     }
 
-    // Save deletion reason
+    const uid = String(userId);
+    const userObjectId = mongoose.Types.ObjectId.isValid(uid) ? new mongoose.Types.ObjectId(uid) : null;
+    const userQuery = userObjectId ? { $in: [uid, userObjectId] } : uid;
+
+    // Save deletion reason (fallback if not provided so transaction never aborts)
     await AccountDeletion.create(
       [
         {
-          user: userId,
-          reason: payload.reason,
-          otherReason: payload.otherReason,
+          user: userObjectId || userId,
+          reason: payload?.reason?.trim() ? payload.reason.trim() : 'User requested account deletion',
+          otherReason: payload?.otherReason || '',
         },
       ],
       { session }
@@ -576,8 +611,17 @@ const deleteUserProfile = async (
         isKycVerified: false,
         isProfileComplete: false,
         isOnline: false,
-        documents: null,
+        documents: [],
         fcmToken: null,
+        customerId: null,
+        stripeAccountId: null,
+        gender: null,
+        dateOfBirth: null,
+        experience: null,
+        language: null,
+        wallet: 0,
+        avgRating: 0,
+        totalRating: 0,
         isSignUpOtpVerified: false,
         isLoginOTPVerified: false,
         isResetPasswordVerified: false,
@@ -599,15 +643,14 @@ const deleteUserProfile = async (
 
     // Remove related records (Provider KYC, Vehicles, Saved Places, Notifications)
     await Promise.all([
-      Provider.deleteMany({ userId }, { session }),
-      Vehicle.deleteMany({ userId }, { session }),
-      UserLocation.deleteMany({ user: userId }, { session }),
-      Notification.deleteMany({ receiver: userId }, { session }),
+      Provider.deleteMany({ userId: userQuery }, { session }),
+      Vehicle.deleteMany({ userId: userQuery }, { session }),
+      UserLocation.deleteMany({ user: userQuery }, { session }),
+      Notification.deleteMany({ receiver: userQuery }, { session }),
     ]);
 
     await session.commitTransaction();
 
-    const uid = String(userId);
     await Promise.all([
       deleteCache(REDIS_KEYS.SAVED_PLACES_BY_USER(uid)).catch(() => {}),
       deleteCache(REDIS_KEYS.VEHICLES_BY_USER(uid)).catch(() => {}),
@@ -619,7 +662,9 @@ const deleteUserProfile = async (
       const redis = getRedisClient();
       await Promise.all([
         redis.srem('users:online', uid),
+        redis.srem('drivers:online', uid),
         redis.zrem('drivers:location', uid),
+        redis.zrem('drivers:geo', uid),
         redis.del(`driver:${uid}:details`),
         redis.del(`driver:${uid}:current`),
       ]);

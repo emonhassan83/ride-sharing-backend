@@ -9,8 +9,9 @@ import { isVehicleType } from './luggage.utils';
 import { sendNotification } from './sentPushNotification';
 import { modeType } from '../modules/notification/notification.interface';
 import { Notification } from '../modules/notification/notification.model';
+import { normalizeLanguage, translateText } from '../i18n/i18n';
 
-/** Socket + in-app notification + FCM push for a new ride request (ONLINE drivers only). */
+/** Socket (if online) + in-app notification + FCM push for a new ride request (both online & offline drivers). */
 export async function emitNewRideRequestToDriver(
   io: any,
   redis: any,
@@ -19,36 +20,42 @@ export async function emitNewRideRequestToDriver(
   ridePayload: any,
 ): Promise<boolean> {
   const driver = await User.findById(driverId)
-    .select('fcmToken isOnline isDeleted status isKycVerified')
+    .select('fcmToken isOnline isDeleted status isKycVerified language')
     .lean();
 
   if (
     !driver ||
     driver.isDeleted ||
-    !driver.isOnline ||
     driver.status !== USER_STATUS.active ||
     !driver.isKycVerified
   ) {
     return false;
   }
 
-  try {
-    await redis.sadd('users:online', driverId);
-  } catch {
-    /* ignore redis error */
+  // Socket notification if driver is currently online
+  if (driver.isOnline) {
+    try {
+      await redis.sadd('users:online', driverId);
+    } catch {
+      /* ignore redis error */
+    }
+
+    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
+    io.to(`user:${driverId}`).emit('ride:new-request', ridePayload);
   }
 
-  io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
-  io.to(`user:${driverId}`).emit('ride:new-request', ridePayload);
-
+  const driverLang = normalizeLanguage(driver.language);
   const rideType = String(ridePayload?.rideType || '');
+  const rawDescription =
+    rideType === 'split'
+      ? 'A new split ride request is available.'
+      : 'A new private ride request is available.';
+
   const notificationPayload = {
     receiver: driverId,
-    message: 'New Ride Request',
-    description:
-      rideType === 'split'
-        ? 'A new split ride request is available.'
-        : 'A new private ride request is available.',
+    message: translateText('New Ride Request', driverLang),
+    description: translateText(rawDescription, driverLang),
+    language: driverLang,
     reference: rideId,
     modelType: modeType.Ride,
     data: {
@@ -104,7 +111,7 @@ async function privateMatchingDriverIds(
 
   const minSeats = ridePayload.vehicleType === '6-seater' ? 6 : 4;
   const vehicles = await Vehicle.find({
-    isDeleted: false,
+    isDeleted: { $ne: true },
     seats: { $gte: minSeats },
   })
     .select('userId')
@@ -204,7 +211,7 @@ async function markDriverNotifiedOnce(
   return !!updatedRide;
 }
 
-// ── Notify nearby online drivers (private / solo ride) ──────────────────────
+// ── Notify nearby drivers (private / solo ride — online & offline within geo-radius) ──
 export async function notifyNearbyDrivers(
   rideId: string,
   pickup: ILatLng,
@@ -244,14 +251,13 @@ export async function notifyNearbyDrivers(
     redisOnlineDrivers.map(([id]) => String(id))
   );
 
-  // Also include online drivers from DB within radiusKm in case Redis geo entry expired/reconnected
+  // Include nearby drivers from DB within radiusKm (both online and offline drivers satisfying geo-radius condition)
   try {
-    const dbOnlineNearby = await User.find({
+    const dbNearby = await User.find({
       role: USER_ROLE.provider,
       isDeleted: false,
       status: USER_STATUS.active,
       isKycVerified: true,
-      isOnline: true,
       location: {
         $nearSphere: {
           $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
@@ -259,17 +265,19 @@ export async function notifyNearbyDrivers(
         },
       },
     })
-      .select('_id location')
+      .select('_id location isOnline')
       .lean();
 
-    for (const d of dbOnlineNearby) {
+    for (const d of dbNearby) {
       const id = d._id.toString();
       candidateDriverIds.add(id);
-      const coords = d.location?.coordinates;
-      if (coords && coords.length === 2 && (coords[0] !== 0 || coords[1] !== 0)) {
-        await redis
-          .geoadd('drivers:location', coords[0], coords[1], id)
-          .catch(() => {});
+      if (d.isOnline) {
+        const coords = d.location?.coordinates;
+        if (coords && coords.length === 2 && (coords[0] !== 0 || coords[1] !== 0)) {
+          await redis
+            .geoadd('drivers:location', coords[0], coords[1], id)
+            .catch(() => {});
+        }
       }
     }
   } catch {
@@ -282,51 +290,62 @@ export async function notifyNearbyDrivers(
     }
   }
 
-  for (const driverId of candidateDriverIds) {
-    if (targetDriverIds?.length && !targetDriverIds.includes(driverId)) continue;
-    if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
+  const attemptNotify = async (driverIds: Iterable<string>) => {
+    for (const driverId of driverIds) {
+      if (notifiedIds.includes(driverId)) continue;
+      if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
 
-    const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
-    if (rejected) continue;
+      const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
+      if (rejected) continue;
 
-    const driverDoc = await User.findById(driverId)
-      .select('isKycVerified isOnline isDeleted status _id')
-      .lean();
+      const driverDoc = await User.findById(driverId)
+        .select('isKycVerified isOnline isDeleted status _id')
+        .lean();
 
-    // Strictly only notify ONLINE, active, KYC-verified drivers
-    if (
-      !driverDoc ||
-      driverDoc.isDeleted ||
-      !driverDoc.isOnline ||
-      driverDoc.status !== USER_STATUS.active ||
-      !driverDoc.isKycVerified
-    ) {
-      continue;
+      // Must be valid active KYC-verified driver (online OR offline within geo-radius)
+      if (
+        !driverDoc ||
+        driverDoc.isDeleted ||
+        driverDoc.status !== USER_STATUS.active ||
+        !driverDoc.isKycVerified
+      ) {
+        continue;
+      }
+
+      const availability = await hasDriverRideAtDateTime(
+        driverId,
+        departureDate,
+        departureTime,
+        rideType,
+        requestedSeats
+      );
+      if (!availability.available) continue;
+
+      const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
+      if (!shouldNotify) continue;
+
+      const sent = await emitNewRideRequestToDriver(
+        io,
+        redis,
+        driverId,
+        rideId,
+        ridePayload
+      );
+      if (sent) {
+        notifiedIds.push(driverId);
+        notifiedCount++;
+      }
     }
+  };
 
-    const availability = await hasDriverRideAtDateTime(
-      driverId,
-      departureDate,
-      departureTime,
-      rideType,
-      requestedSeats
-    );
-    if (!availability.available) continue;
+  // If specific target drivers requested, try them first
+  if (targetDriverIds?.length) {
+    await attemptNotify(targetDriverIds.map(String));
+  }
 
-    const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
-    if (!shouldNotify) continue;
-
-    const sent = await emitNewRideRequestToDriver(
-      io,
-      redis,
-      driverId,
-      rideId,
-      ridePayload
-    );
-    if (sent) {
-      notifiedIds.push(driverId);
-      notifiedCount++;
-    }
+  // If no target driver was notified (e.g. offline/busy) or no target specified, notify candidate drivers
+  if (notifiedCount === 0) {
+    await attemptNotify(candidateDriverIds);
   }
 
   if (notifiedIds.length) {
@@ -338,7 +357,7 @@ export async function notifyNearbyDrivers(
   return notifiedCount;
 }
 
-// ── Notify nearby online drivers (split ride — route corridor) ──────────────
+// ── Notify nearby drivers (split ride — online & offline within route corridor) ──────────────
 export async function notifyNearbyDriversForSplitRide(
   rideId: string,
   routeGeometry: { type: string; coordinates: number[][] } | null,
@@ -388,14 +407,13 @@ export async function notifyNearbyDriversForSplitRide(
     redisOnlineDrivers.map(([id]) => String(id))
   );
 
-  // Also include online drivers from DB within 15km in case Redis geo entry expired/reconnected
+  // Include nearby drivers from DB within 15km (both online and offline drivers satisfying geo-radius condition)
   try {
-    const dbOnlineNearby = await User.find({
+    const dbNearby = await User.find({
       role: USER_ROLE.provider,
       isDeleted: false,
       status: USER_STATUS.active,
       isKycVerified: true,
-      isOnline: true,
       location: {
         $nearSphere: {
           $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
@@ -403,17 +421,19 @@ export async function notifyNearbyDriversForSplitRide(
         },
       },
     })
-      .select('_id location')
+      .select('_id location isOnline')
       .lean();
 
-    for (const d of dbOnlineNearby) {
+    for (const d of dbNearby) {
       const id = d._id.toString();
       candidateDriverIds.add(id);
-      const coords = d.location?.coordinates;
-      if (coords && coords.length === 2 && (coords[0] !== 0 || coords[1] !== 0)) {
-        await redis
-          .geoadd('drivers:location', coords[0], coords[1], id)
-          .catch(() => {});
+      if (d.isOnline) {
+        const coords = d.location?.coordinates;
+        if (coords && coords.length === 2 && (coords[0] !== 0 || coords[1] !== 0)) {
+          await redis
+            .geoadd('drivers:location', coords[0], coords[1], id)
+            .catch(() => {});
+        }
       }
     }
   } catch {
@@ -428,11 +448,10 @@ export async function notifyNearbyDriversForSplitRide(
       .select('_id location isKycVerified isOnline isDeleted status')
       .lean();
 
-    // Strictly only notify ONLINE, active, KYC-verified drivers
+    // Must be valid active KYC-verified driver (online OR offline within geo-radius/route)
     if (
       !dbDriver ||
       dbDriver.isDeleted ||
-      !dbDriver.isOnline ||
       dbDriver.status !== USER_STATUS.active ||
       !dbDriver.isKycVerified
     ) {

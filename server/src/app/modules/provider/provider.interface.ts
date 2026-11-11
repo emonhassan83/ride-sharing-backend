@@ -12,7 +12,7 @@ export interface TProvider {
   cnicBack: string;
   licenseFront: string;
   licenseBack: string;
-  carPapers: [string];
+  carPapers?: string[];
   status: TProviderStatus;
   rejectionReason: string
   approvedAt: Date

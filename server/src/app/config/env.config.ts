@@ -3,6 +3,38 @@ import path from 'path';
 
 dotenv.config({ path: path.join(process.cwd(), '.env') });
 
+export const DEFAULT_TIME_ZONE = 'Europe/Nicosia';
+
+export const resolveTimeZone = (raw?: string | null): string => {
+  const cleaned = String(raw || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
+  if (!cleaned) return DEFAULT_TIME_ZONE;
+
+  const lower = cleaned.toLowerCase();
+  if (lower === 'cyprus' || lower === 'nicosia' || lower === 'europe/nicosia' || lower === 'asia/nicosia') {
+    return 'Europe/Nicosia';
+  }
+  if (lower === 'bangladesh' || lower === 'dhaka' || lower === 'asia/dhaka' || lower === 'asia/dacca') {
+    return 'Asia/Dhaka';
+  }
+
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: cleaned });
+    return cleaned;
+  } catch {
+    console.warn(
+      `⚠️ Invalid TIME_ZONE "${cleaned}", falling back to ${DEFAULT_TIME_ZONE}`,
+    );
+    return DEFAULT_TIME_ZONE;
+  }
+};
+
+const activeTimeZone = resolveTimeZone(
+  process.env.TIME_ZONE || process.env.RIDE_TIME_ZONE,
+);
+process.env.TZ = activeTimeZone;
+
 export const config = {
   environment: process.env.NODE_ENV,
   port: process.env.PORT,
@@ -93,7 +125,7 @@ export const config = {
     phoneNumber: process.env.TWILIO_PHONE_NUMBER,
   },
 
-  timeZone: process.env.TIME_ZONE,
+  timeZone: activeTimeZone,
   google_maps_key: process.env.GOOGLE_MAPS_API_KEY,
 };
 

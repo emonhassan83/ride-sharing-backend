@@ -50,14 +50,6 @@ const providerSchema = new Schema<TProvider>(
       required: [true, 'License back image is required'],
       trim: true,
     },
-    carPapers: {
-      type: [String],
-      required: [true, 'Car papers are required'],
-      validate: {
-        validator: (v: string[]) => v.length >= 1 && v.length <= 10,
-        message: 'Car papers must have between 1 and 10 documents',
-      },
-    },
     status: {
       type: String,
       enum: {

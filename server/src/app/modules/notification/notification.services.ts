@@ -11,6 +11,11 @@ import {
 } from '../../redis/helpers/notification';
 import { Passenger } from '../passenger/passenger.model';
 import { Booking } from '../booking/booking.model';
+import {
+  resolveUserLanguage,
+  sanitizeText,
+  translateText,
+} from '../../i18n/i18n';
 
 const RIDE_META_MODEL_TYPES = new Set<string>([
   modeType.Ride,
@@ -50,6 +55,13 @@ const resolveRideIdForNotification = async (
 
 const withRideMeta = async (notification: any) => {
   const plain = toPlain(notification);
+  if (plain.message) {
+    plain.message = translateText(sanitizeText(plain.message));
+  }
+  if (plain.description) {
+    plain.description = translateText(sanitizeText(plain.description));
+  }
+
   const rideId = await resolveRideIdForNotification(
     plain.modelType,
     plain.reference,
@@ -68,7 +80,20 @@ const withRideMeta = async (notification: any) => {
 };
 
 const createNotificationIntoDB = async (payload: TNotification) => {
-  const notification = await Notification.create(payload);
+  const recipientLang = await resolveUserLanguage(
+    payload?.receiver ? String(payload.receiver) : undefined,
+  );
+  const localizedPayload = {
+    ...payload,
+    message: payload?.message
+      ? translateText(sanitizeText(payload.message), recipientLang)
+      : payload?.message,
+    description: payload?.description
+      ? translateText(sanitizeText(payload.description), recipientLang)
+      : payload?.description,
+  };
+
+  const notification = await Notification.create(localizedPayload);
   if (!notification) {
     throw new ApiError(StatusCodes.CONFLICT, 'Notification not created!');
   }
@@ -77,7 +102,10 @@ const createNotificationIntoDB = async (payload: TNotification) => {
   const io = global?.socketio;
   if (io) {
     const ver = 'notification::' + payload?.receiver;
-    io.emit(ver, { ...payload, createdAt: moment().format('YYYY-MM-DD') });
+    io.emit(ver, {
+      ...localizedPayload,
+      createdAt: moment().format('YYYY-MM-DD'),
+    });
   }
 
   return notification;

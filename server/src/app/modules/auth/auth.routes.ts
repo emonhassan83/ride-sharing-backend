@@ -57,6 +57,20 @@ router.post(
   AuthController.changePassword
 );
 
+router.post(
+  '/select-role',
+  auth('common'),
+  validateRequest(AuthValidation.selectRoleValidationSchema),
+  AuthController.selectRole
+);
+
+router.put(
+  '/select-role',
+  auth('common'),
+  validateRequest(AuthValidation.selectRoleValidationSchema),
+  AuthController.selectRole
+);
+
 router.post('/logout', auth('common'), AuthController.logout);
 router.post('/refresh-auth', AuthController.refreshToken);
 

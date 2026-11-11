@@ -2,12 +2,36 @@ import { messaging } from '../config/firebase.config';
 import httpStatus from 'http-status';
 import { Notification } from '../modules/notification/notification.model';
 import ApiError from '../errors/ApiError';
+import {
+  resolveUserLanguage,
+  sanitizeText,
+  translateText,
+} from '../i18n/i18n';
 
 export const sendNotification = async (
   fcmToken: string[],
-  payload: any
+  payload: any,
 ): Promise<any> => {
   try {
+    const receiverId = payload?.receiver ? String(payload.receiver) : undefined;
+    const recipientLang = await resolveUserLanguage(
+      receiverId,
+      payload?.language,
+    );
+
+    const localizedTitle = payload?.message
+      ? translateText(sanitizeText(payload.message), recipientLang)
+      : sanitizeText(payload?.message);
+    const localizedBody = payload?.description
+      ? translateText(sanitizeText(payload.description), recipientLang)
+      : sanitizeText(payload?.description);
+
+    const localizedPayload = {
+      ...payload,
+      message: localizedTitle,
+      description: localizedBody,
+    };
+
     // Filter out any empty, null, or undefined tokens before proceeding
     const validTokens = fcmToken.filter((token) => !!token);
 
@@ -16,7 +40,7 @@ export const sendNotification = async (
     }
 
     const dataPayload: Record<string, string> = {};
-    const sourceData = payload?.data || {};
+    const sourceData = localizedPayload?.data || {};
 
     Object.entries(sourceData).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
@@ -24,17 +48,28 @@ export const sendNotification = async (
       }
     });
 
-    if (payload?.reference) dataPayload.reference = String(payload.reference);
-    if (payload?.modelType) dataPayload.modelType = String(payload.modelType);
+    if (localizedPayload?.reference) {
+      dataPayload.reference = String(localizedPayload.reference);
+    }
+    if (localizedPayload?.modelType) {
+      dataPayload.modelType = String(localizedPayload.modelType);
+    }
 
     // Map your array of tokens into individual message objects for the new sendEach API
     const messages = validTokens.map((token) => ({
       token: token,
       notification: {
-        title: payload.message,
-        body: payload.description,
+        title: localizedTitle,
+        body: localizedBody,
       },
       data: dataPayload,
+      android: {
+        priority: 'high' as const,
+        notification: {
+          sound: 'default',
+          defaultSound: true,
+        },
+      },
       apns: {
         headers: {
           'apns-push-type': 'alert',
@@ -53,10 +88,7 @@ export const sendNotification = async (
 
     if (response.successCount > 0) {
       // Create a single database entry for the notification instead of inside a loop
-      await Notification.create(payload);
-
-      // If you need to handle per-user tracking in the future,
-      // you can read from the 'response.responses' array to find which tokens succeeded or failed.
+      await Notification.create(localizedPayload);
     }
 
     return response;
@@ -67,8 +99,7 @@ export const sendNotification = async (
 
     throw new ApiError(
       httpStatus.NOT_IMPLEMENTED,
-      error.message || 'Failed to send notification'
+      error.message || 'Failed to send notification',
     );
   }
 };
-

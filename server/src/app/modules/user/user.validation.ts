@@ -18,24 +18,28 @@ const createUserValidationSchema = z.object({
 
       countryCode: z
         .string()
-        .min(1, { message: 'Country code cannot be empty.' }),
+        .min(1, { message: 'Country code cannot be empty.' })
+        .optional(),
 
       phone: z
         .string({ message: 'Phone number is required!' })
         .min(6, { message: 'Contact number must be at least 6 digits long' })
         .max(15, { message: 'Contact number must be at most 15 digits long' }),
 
-      role: z.enum(Object.values(USER_ROLE) as [string, ...string[]], {
-        message: 'Role is required.',
-      }),
+      role: z
+        .enum(Object.values(USER_ROLE) as [string, ...string[]], {
+          message: 'Role must be user or provider.',
+        })
+        .optional(),
 
       fcmToken: z.string().optional(),
     })
-    .strict(),
+    .passthrough(),
 });
 
 const updateUserValidationSchema = z.object({
   body: z.object({
+    role: z.enum([USER_ROLE.user, USER_ROLE.provider] as [string, ...string[]]).optional(),
     type: z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]]).optional(),
     name: z.string().optional(),
     phone: z.string().optional(),

@@ -63,7 +63,7 @@ export const rideRequestHandler = eventHandler<any>(
     const requestedDriverId = selectedDriverId || driverId;
     const notifyMode = 'all_eligible';
 
-    // â”€â”€ Real distance & ETA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Real distance & ETA ──
     let actualDistance = 0;
     let actualDuration = 0;
     try {
@@ -81,11 +81,11 @@ export const rideRequestHandler = eventHandler<any>(
       actualDuration = Math.ceil((actualDistance / 30) * 60);
     }
 
-    // â”€â”€ Route geometry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Route geometry ──
     let routeGeometry = {};
     try { routeGeometry = await getRouteGeometry(pickup, destination); } catch { /* ignore */ }
 
-    // â”€â”€ Fare breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Fare breakdown ──
     const fareBreakdown = await calculateFareBreakdown({
       distanceKm:     actualDistance,
       departureDate:  departureDateTime,
@@ -98,7 +98,7 @@ export const rideRequestHandler = eventHandler<any>(
     const roundedBreakdown = roundObjectNumbers(fareBreakdown);
     const fareType         = getFareType(departureDateTime);
 
-    // â”€â”€ Determine totalSeats from vehicle for split rides â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Determine totalSeats from vehicle for split rides ──
     // let totalSeats = requestedSeats;
     // if (type === RIDE_TYPE.split) {
     //   const vehicle = await Vehicle.findOne({
@@ -109,7 +109,7 @@ export const rideRequestHandler = eventHandler<any>(
     //   totalSeats = vehicle?.seats || requestedSeats;
     // }
 
-    // â”€â”€ Create Ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Create Ride ──
     const ride = await Ride.create({
       type,
       rideCreatedBy: userId,
@@ -124,7 +124,7 @@ export const rideRequestHandler = eventHandler<any>(
       routeGeometry,
     });
 
-    // â”€â”€ Create Passenger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Create Passenger ──
     const passenger = await Passenger.create({
       userId,
       rideId:                   ride._id,
@@ -202,7 +202,7 @@ export const rideRequestHandler = eventHandler<any>(
       createdAt:           passenger.createdAt,
     };
 
-    // â”€â”€ Notify drivers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Notify drivers ──
     const booking = await Booking.create({
       passengerId: passenger._id,
       rideId: ride._id,
@@ -217,7 +217,7 @@ export const rideRequestHandler = eventHandler<any>(
 
     const notifiedCount = 0;
 
-    // â”€â”€ Redis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Redis ──
     await redis.hset(`ride:request:${ride._id}`, {
       userId,
       passengerId:        passenger._id.toString(),

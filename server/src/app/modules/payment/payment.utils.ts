@@ -77,8 +77,8 @@ export const paymentNotifyToUser = async (
 
   const description =
     type === 'SUCCESS'
-      ? `Your payment of Â\u20AC${payment.amount} has been successfully processed`
-      : `A refund of Â\u20AC${payment.amount} has been issued to your account`;
+      ? `Your payment of â‚¬${payment.amount} has been successfully processed`
+      : `A refund of â‚¬${payment.amount} has been issued to your account`;
 
   // Create a notification entry
   const notifyPayload = {

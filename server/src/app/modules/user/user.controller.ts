@@ -53,7 +53,11 @@ const changedEmail = catchAsync(async (req, res) => {
 const updateUserProfile = catchAsync(async (req, res) => {
   req.body.status = undefined;
   req.body.email = undefined;
-  req.body.role = undefined;
+  if (req.body.role) {
+    if (req.body.role === 'admin' || !['user', 'provider'].includes(req.body.role)) {
+      req.body.role = undefined;
+    }
+  }
   const result = await UserService.updateUserProfile(
     req.params.userId as string,
     req.body

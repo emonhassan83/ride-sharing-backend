@@ -10,6 +10,10 @@ import { deleteMessageHandler } from './handlers/chat/deleteMessage.handler';
 import { seenHandler } from './handlers/chat/seen.handler';
 import { typingHandler } from './handlers/chat/typing.handler';
 import { stopTypingHandler } from './handlers/chat/stopTyping.handler';
+import {
+  joinChatHandler,
+  leaveChatHandler,
+} from './handlers/chat/chatPresence.handler';
 
 // Driver events
 import { driverGoOnlineHandler } from './handlers/ride/driverGoOnline.handler';
@@ -46,6 +50,18 @@ export const registerSocketEvents = (socket: Socket) => {
   const tSocket = socket as TSocket; // Cast to TSocket
 
   // ==================== CHAT EVENTS ====================
+  tSocket.on('join_chat', (data, callback) =>
+    joinChatHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('join-chat', (data, callback) =>
+    joinChatHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('leave_chat', (data, callback) =>
+    leaveChatHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('leave-chat', (data, callback) =>
+    leaveChatHandler.call(tSocket, data, callback)
+  );
   tSocket.on('my-chat-list', (data, callback) =>
     myChatListHandler.call(tSocket, data, callback)
   );
@@ -93,7 +109,7 @@ export const registerSocketEvents = (socket: Socket) => {
   tSocket.on('driver:arrived-pickup', (data, callback) =>
     driverArrivedHandler.call(tSocket, data, callback)
   );
-  tSocket.on('driver:send-start-otp', async (data, callback) => {
+  const handleSendStartOtp = async (data: any, callback: any) => {
     try {
       const result = await sendRideStartOtp({
         rideId: data?.rideId,
@@ -103,7 +119,7 @@ export const registerSocketEvents = (socket: Socket) => {
       });
       callback?.({
         success: true,
-        message: 'Ride start OTP sent to passenger notification and email successfully.',
+        message: 'Ride start OTP sent to passenger phone, notification, and email successfully.',
         data: result,
       });
     } catch (err: any) {
@@ -112,8 +128,9 @@ export const registerSocketEvents = (socket: Socket) => {
         message: err?.message || 'Failed to send ride start OTP',
       });
     }
-  });
-  tSocket.on('driver:verify-start-otp', async (data, callback) => {
+  };
+
+  const handleVerifyStartOtp = async (data: any, callback: any) => {
     try {
       const result = await verifyRideStartOtp({
         rideId: data?.rideId,
@@ -133,7 +150,12 @@ export const registerSocketEvents = (socket: Socket) => {
         message: err?.message || 'Failed to verify ride start OTP',
       });
     }
-  });
+  };
+
+  tSocket.on('driver:send-start-otp', handleSendStartOtp);
+  tSocket.on('passenger:send-start-otp', handleSendStartOtp);
+  tSocket.on('driver:verify-start-otp', handleVerifyStartOtp);
+  tSocket.on('passenger:verify-start-otp', handleVerifyStartOtp);
   tSocket.on('driver:start-trip', (data, callback) =>
     driverStartTripHandler.call(tSocket, data, callback)
   );

@@ -6,6 +6,7 @@ import handleZodError from '../errors/handleZodError';
 import { errorLogger } from '../config/logger.config';
 import { IErrorMessage } from '../types/errors.types';
 import { config } from '../config/env.config';
+import { translateText } from '../i18n/i18n';
 
 const globalErrorHandler: ErrorRequestHandler = (error, req, res, next) => {
   // Log error
@@ -70,17 +71,23 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, next) => {
       : [];
   }
 
+  const lang = res?.locals?.language || (req as any)?.language;
+  const localizedErrors = errorMessages.map((err) => ({
+    ...err,
+    message: translateText(err.message, lang),
+  }));
+
   // Format multiple error messages as a comma-separated list in the message field
   const formattedMessage =
-    errorMessages.length > 1
-      ? errorMessages.map(err => err.message).join(', ')
-      : message;
+    localizedErrors.length > 1
+      ? localizedErrors.map((err) => err.message).join(', ')
+      : translateText(message, lang);
 
   // Send response with statusCode, success, message, and error
   res.status(code).json({
     code,
     message: `${formattedMessage}`,
-    error: errorMessages, // Error details (path and message)
+    error: localizedErrors, // Error details (path and message)
     stack: config.environment === 'development' ? error?.stack : undefined, // Stack trace in development mode
   });
 };

@@ -94,7 +94,7 @@ export const driverArrivedHandler = eventHandler<any>(
     if (!validStatuses.includes(ride.status as any))
       return callback?.({
         success: false,
-        message: `Cannot trigger arrived — status: ${ride.status}`,
+        message: `Cannot trigger arrived - status: ${ride.status}`,
       });
 
     const io = getIO();
@@ -142,7 +142,7 @@ export const driverArrivedHandler = eventHandler<any>(
         }).catch(() => {});
       }
 
-      // Warning only — NO charge / NO price change (client rule).
+      // Warning only - NO charge / NO price change (client rule).
       setTimeout(async () => {
         const p = await Passenger.findById(passenger._id);
         if (!p || p.pickedUpAt || p.status !== PASSENGER_STATUS.driver_arrived) return;
@@ -336,7 +336,7 @@ export const driverArrivedHandler = eventHandler<any>(
         message:
           notifiedCount > 0
             ? `Arrived notification sent to ${notifiedCount} passenger(s).${skippedCount > 0 ? ` ${skippedCount} skipped.` : ''}`
-            : 'No passengers notified — not near any pickup.',
+            : 'No passengers notified - not near any pickup.',
         data: { results, notifiedCount, skippedCount, waitTimeNotice: waitNotice },
       });
     }

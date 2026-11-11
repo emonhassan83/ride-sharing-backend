@@ -7,7 +7,7 @@ import {
   resolveSplitMatchedSurchargePercent,
   roundMoney,
 } from './fareMath.utils';
-import { formatRideLocalDate } from './rideSchedule.utils';
+import { formatRideLocalDate, getRideTimeZone } from './rideSchedule.utils';
 
 export interface FareBreakdown {
   initialCharge: number;
@@ -88,8 +88,15 @@ const DEFAULTS: FareSettings = {
 
 let holidaysCache: { [year: string]: string[] } = {};
 
-async function getCyprusPublicHolidays(year: number): Promise<string[]> {
-  const cacheKey = year.toString();
+const getCountryCodeForTimeZone = (timeZone: string): string => {
+  const lower = timeZone.toLowerCase();
+  if (lower.includes('dhaka') || lower.includes('dacca')) return 'BD';
+  return 'CY';
+};
+
+async function getPublicHolidaysForActiveTimeZone(year: number): Promise<string[]> {
+  const countryCode = getCountryCodeForTimeZone(getRideTimeZone());
+  const cacheKey = `${countryCode}:${year}`;
 
   if (holidaysCache[cacheKey]) {
     return holidaysCache[cacheKey];
@@ -97,7 +104,7 @@ async function getCyprusPublicHolidays(year: number): Promise<string[]> {
 
   try {
     const response = await axios.get(
-      `https://date.nager.at/api/v3/PublicHolidays/${year}/CY`,
+      `https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`,
     );
 
     const holidays = response.data.map((h: any) => h.date);
@@ -105,7 +112,7 @@ async function getCyprusPublicHolidays(year: number): Promise<string[]> {
 
     return holidays;
   } catch (error) {
-    console.warn(`Failed to fetch holidays for ${year}, using fallback`);
+    console.warn(`Failed to fetch holidays for ${year} (${countryCode}), using fallback`);
     return [];
   }
 }
@@ -114,7 +121,7 @@ export async function isPublicHoliday(date: Date): Promise<boolean> {
   const dateStr = formatRideLocalDate(date);
   const year = Number(dateStr.slice(0, 4));
 
-  const holidays = await getCyprusPublicHolidays(year);
+  const holidays = await getPublicHolidaysForActiveTimeZone(year);
   return holidays.includes(dateStr);
 }
 

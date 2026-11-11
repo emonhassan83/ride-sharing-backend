@@ -156,7 +156,7 @@ const getDriverMonthlyInvoice = async (
 };
 
 const getAllIntoDB = async (query: Record<string, unknown>) => {
-  // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Filter type: scheduled | completed | all (default) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
+  // ──────────────────────────────────────────────────────────
   const status = query.status as string | undefined;
   delete query.status;
 
@@ -171,7 +171,7 @@ const getAllIntoDB = async (query: Record<string, unknown>) => {
       status: RIDE_STATUS.completed,
     };
   } else {
-    // default ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â exclude pending, cancelled, rejected
+    // default - exclude pending, cancelled, rejected
     statusFilter = {
       status: {
         $nin: [
@@ -215,20 +215,215 @@ const PAID_PAYMENT_STATUSES = [
 const isPaidPaymentStatus = (status: unknown) =>
   PAID_PAYMENT_STATUSES.includes(status as (typeof PAID_PAYMENT_STATUSES)[number]);
 
+const normalizeRideTypeValue = (rawType: unknown): string | null => {
+  if (!rawType || typeof rawType !== 'string') return null;
+  const normalized = rawType.trim().toLowerCase();
+  if (!normalized || normalized === 'all') return null;
+  if (normalized === RIDE_TYPE.split || normalized === 'shared') {
+    return RIDE_TYPE.split;
+  }
+  if (normalized === RIDE_TYPE.private || normalized === 'solo') {
+    return RIDE_TYPE.private;
+  }
+  return normalized;
+};
+
+const buildDateFilterVariants = (rawDate: unknown): string[] | null => {
+  if (!rawDate || typeof rawDate !== 'string') return null;
+  const trimmed = rawDate.trim();
+  if (!trimmed) return null;
+
+  const variants = new Set<string>([trimmed]);
+  // Match YYYY-MM-DD or YYYY/MM/DD
+  const ymdMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (ymdMatch) {
+    const [, yyyy, m, d] = ymdMatch;
+    const mm = m.padStart(2, '0');
+    const dd = d.padStart(2, '0');
+    variants.add(`${yyyy}-${mm}-${dd}`);
+    variants.add(`${dd}-${mm}-${yyyy}`);
+    variants.add(`${yyyy}/${mm}/${dd}`);
+    variants.add(`${dd}/${mm}/${yyyy}`);
+  }
+
+  // Match DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dmyMatch) {
+    const [, d, m, yyyy] = dmyMatch;
+    const dd = d.padStart(2, '0');
+    const mm = m.padStart(2, '0');
+    variants.add(`${dd}-${mm}-${yyyy}`);
+    variants.add(`${yyyy}-${mm}-${dd}`);
+    variants.add(`${dd}/${mm}/${yyyy}`);
+    variants.add(`${yyyy}/${mm}/${dd}`);
+  }
+
+  return Array.from(variants);
+};
+
+const buildTimeFilterVariants = (rawTime: unknown): string[] | null => {
+  if (!rawTime || typeof rawTime !== 'string') return null;
+  const trimmed = rawTime.trim();
+  if (!trimmed) return null;
+
+  const variants = new Set<string>([trimmed, trimmed.toUpperCase(), trimmed.toLowerCase()]);
+
+  // 12-hour format: e.g. "02:00 PM" or "2:00 pm"
+  const ampmMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    let hour = parseInt(ampmMatch[1], 10);
+    const minute = ampmMatch[2];
+    const period = ampmMatch[3].toUpperCase();
+    const hour12NoPad = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    const hour12Pad = String(hour12NoPad).padStart(2, '0');
+
+    if (period === 'PM' && hour < 12) hour += 12;
+    if (period === 'AM' && hour === 12) hour = 0;
+    const hour24Pad = String(hour).padStart(2, '0');
+
+    variants.add(`${hour24Pad}:${minute}`);
+    variants.add(`${hour}:${minute}`);
+    variants.add(`${hour12Pad}:${minute} ${period}`);
+    variants.add(`${hour12NoPad}:${minute} ${period}`);
+    variants.add(`${hour12Pad}:${minute} ${period.toLowerCase()}`);
+    variants.add(`${hour12NoPad}:${minute} ${period.toLowerCase()}`);
+  }
+
+  // 24-hour format: e.g. "14:00" or "09:30"
+  const h24Match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (h24Match) {
+    const hour24 = parseInt(h24Match[1], 10);
+    const minute = h24Match[2];
+    if (hour24 >= 0 && hour24 <= 23) {
+      const hour24Pad = String(hour24).padStart(2, '0');
+      const period = hour24 >= 12 ? 'PM' : 'AM';
+      const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+      const hour12Pad = String(hour12).padStart(2, '0');
+
+      variants.add(`${hour24Pad}:${minute}`);
+      variants.add(`${hour24}:${minute}`);
+      variants.add(`${hour12Pad}:${minute} ${period}`);
+      variants.add(`${hour12}:${minute} ${period}`);
+      variants.add(`${hour12Pad}:${minute} ${period.toLowerCase()}`);
+      variants.add(`${hour12}:${minute} ${period.toLowerCase()}`);
+    }
+  }
+
+  return Array.from(variants);
+};
+
+const resolveRideStatusesFromQuery = (rawStatus: unknown): {
+  isPendingList: boolean;
+  includesCancelledOrRejected: boolean;
+  statuses: string[] | null;
+} => {
+  if (!rawStatus || typeof rawStatus !== 'string') {
+    return {
+      isPendingList: false,
+      includesCancelledOrRejected: false,
+      statuses: null,
+    };
+  }
+
+  const tokens = rawStatus
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!tokens.length || tokens.includes('all')) {
+    return {
+      isPendingList: false,
+      includesCancelledOrRejected: true,
+      statuses: [
+        RIDE_STATUS.accepted,
+        RIDE_STATUS.arrived,
+        RIDE_STATUS.started,
+        RIDE_STATUS.completed,
+        RIDE_STATUS.cancelled,
+        RIDE_STATUS.rejected,
+      ],
+    };
+  }
+
+  const resolved = new Set<string>();
+  for (const token of tokens) {
+    if (token === RIDE_STATUS.pending || token === 'request' || token === 'requests') {
+      resolved.add(RIDE_STATUS.pending);
+    } else if (token === 'upcoming' || token === 'scheduled') {
+      resolved.add(RIDE_STATUS.accepted);
+    } else if (
+      token === 'ongoing' ||
+      token === 'active' ||
+      token === 'in_progress' ||
+      token === 'in-progress' ||
+      token === 'running'
+    ) {
+      resolved.add(RIDE_STATUS.arrived);
+      resolved.add(RIDE_STATUS.started);
+    } else if (token === 'history' || token === 'past') {
+      resolved.add(RIDE_STATUS.completed);
+      resolved.add(RIDE_STATUS.cancelled);
+      resolved.add(RIDE_STATUS.rejected);
+    } else if (token === 'cancelled' || token === 'canceled') {
+      resolved.add(RIDE_STATUS.cancelled);
+    } else if (token === RIDE_STATUS.rejected) {
+      resolved.add(RIDE_STATUS.rejected);
+    } else if (token === RIDE_STATUS.completed) {
+      resolved.add(RIDE_STATUS.completed);
+    } else if (token === RIDE_STATUS.accepted) {
+      resolved.add(RIDE_STATUS.accepted);
+    } else if (token === RIDE_STATUS.arrived) {
+      resolved.add(RIDE_STATUS.arrived);
+    } else if (token === RIDE_STATUS.started) {
+      resolved.add(RIDE_STATUS.started);
+    }
+  }
+
+  const statusList = Array.from(resolved);
+  const isPendingList =
+    statusList.length === 1 && statusList[0] === RIDE_STATUS.pending;
+  const includesCancelledOrRejected =
+    statusList.includes(RIDE_STATUS.cancelled) ||
+    statusList.includes(RIDE_STATUS.rejected);
+
+  return {
+    isPendingList,
+    includesCancelledOrRejected,
+    statuses: statusList.length ? statusList : null,
+  };
+};
+
 const getDriverRides = async (
   userId: string,
   query: Record<string, unknown>
 ) => {
-  const isPendingList = query.status === RIDE_STATUS.pending;
-  const rideFilter = isPendingList
+  const { isPendingList, includesCancelledOrRejected, statuses } =
+    resolveRideStatusesFromQuery(query.status);
+
+  const normalizedType = normalizeRideTypeValue(query.type ?? query.rideType);
+  const dateVariants = buildDateFilterVariants(query.departureDate ?? query.date);
+  const timeVariants = buildTimeFilterVariants(query.departureTime ?? query.time);
+
+  const baseRideCondition: Record<string, unknown> = isPendingList
     ? {
-        status: RIDE_STATUS.pending,
-        $or: [{ driverId: userId }, { notifiedDriverIds: userId }],
+        $or: [
+          {
+            status: RIDE_STATUS.pending,
+            $or: [{ driverId: userId }, { notifiedDriverIds: userId }],
+          },
+          {
+            type: RIDE_TYPE.split,
+            status: RIDE_STATUS.accepted,
+            $or: [{ driverId: userId }, { notifiedDriverIds: userId }],
+          },
+        ],
       }
     : {
         driverId: userId,
-        status: query.status
-          ? query.status
+        status: statuses
+          ? statuses.length === 1
+            ? statuses[0]
+            : { $in: statuses }
           : {
               $nin: [
                 RIDE_STATUS.pending,
@@ -238,8 +433,29 @@ const getDriverRides = async (
             },
       };
 
-  const driverRides = await Ride.find(rideFilter).select('_id');
+  if (normalizedType) {
+    baseRideCondition.type = normalizedType;
+  }
+  if (dateVariants) {
+    baseRideCondition.departureDate = { $in: dateVariants };
+  }
+  if (timeVariants) {
+    baseRideCondition.departureTime = { $in: timeVariants };
+  }
+
+  const driverRides = await Ride.find(baseRideCondition)
+    .select('_id status')
+    .lean();
   const driverRideIds = driverRides.map(r => r._id);
+  const cancelledOrRejectedRideIdSet = new Set(
+    driverRides
+      .filter(
+        r =>
+          r.status === RIDE_STATUS.cancelled ||
+          r.status === RIDE_STATUS.rejected,
+      )
+      .map(r => r._id.toString()),
+  );
 
   const passengers = await Passenger.find({
     rideId: { $in: driverRideIds },
@@ -251,15 +467,19 @@ const getDriverRides = async (
             PASSENGER_STATUS.split_matching,
           ],
         }
-      : {
-          $nin: [
-            PASSENGER_STATUS.pending,
-            PASSENGER_STATUS.cancelled,
-            PASSENGER_STATUS.rejected,
-            PASSENGER_STATUS.split_matching,
-          ],
-        },
-  }).select('_id rideId paymentStatus');
+      : includesCancelledOrRejected
+        ? {
+            $nin: [PASSENGER_STATUS.split_matching],
+          }
+        : {
+            $nin: [
+              PASSENGER_STATUS.pending,
+              PASSENGER_STATUS.cancelled,
+              PASSENGER_STATUS.rejected,
+              PASSENGER_STATUS.split_matching,
+            ],
+          },
+  }).select('_id rideId status paymentStatus');
 
   const passengerIds = passengers.map(p => p._id);
   const bookings = await Booking.find({
@@ -271,20 +491,49 @@ const getDriverRides = async (
     bookings.map(b => [b.passengerId.toString(), b.paymentStatus]),
   );
 
-  const paidPassengerIds = new Set<string>();
-  const paidRideIds = new Set<string>();
-  for (const p of passengers) {
-    if (!p.rideId) continue;
-    const paymentStatus =
-      bookingPaymentByPassengerId.get(p._id.toString()) ?? p.paymentStatus;
-    if (!isPaidPaymentStatus(paymentStatus)) continue;
-    paidPassengerIds.add(p._id.toString());
-    paidRideIds.add(p.rideId.toString());
+  const eligiblePassengerIds = new Set<string>();
+  const eligibleRideIdSet = new Set<string>();
+
+  // Keep cancelled/rejected driver rides visible even if bookings were refunded/cancelled
+  if (includesCancelledOrRejected) {
+    for (const cancelledRideId of cancelledOrRejectedRideIdSet) {
+      eligibleRideIdSet.add(cancelledRideId);
+    }
   }
 
-  const eligibleRideIds = Array.from(paidRideIds);
+  const pendingPassengerRideIdSet = new Set<string>();
+  if (isPendingList) {
+    for (const p of passengers) {
+      if (p.status === PASSENGER_STATUS.pending) {
+        pendingPassengerRideIdSet.add(p.rideId?.toString() || '');
+      }
+    }
+  }
 
-  // 5. If no rides are eligible, return empty result with pagination metadata
+  for (const p of passengers) {
+    if (!p.rideId) continue;
+    const rideIdStr = p.rideId.toString();
+    const isCancelledOrRejectedRide = cancelledOrRejectedRideIdSet.has(rideIdStr);
+    const paymentStatus =
+      bookingPaymentByPassengerId.get(p._id.toString()) ?? p.paymentStatus;
+
+    if (!isCancelledOrRejectedRide && !isPaidPaymentStatus(paymentStatus)) {
+      continue;
+    }
+
+    if (isPendingList) {
+      // In pending list, only include rides that have pending passengers and only show pending passengers
+      if (!pendingPassengerRideIdSet.has(rideIdStr)) continue;
+      if (p.status !== PASSENGER_STATUS.pending) continue;
+    }
+
+    eligiblePassengerIds.add(p._id.toString());
+    eligibleRideIdSet.add(rideIdStr);
+  }
+
+  const eligibleRideIds = Array.from(eligibleRideIdSet);
+
+  // If no rides are eligible, return empty result with pagination metadata
   if (!eligibleRideIds.length) {
     return {
       meta: {
@@ -297,14 +546,23 @@ const getDriverRides = async (
     };
   }
 
-  const sortRaw = String(query.sort || 'desc').toLowerCase();
+  const sanitizedQuery: Record<string, unknown> = { ...query };
+  delete sanitizedQuery.status;
+  delete sanitizedQuery.type;
+  delete sanitizedQuery.rideType;
+  delete sanitizedQuery.date;
+  delete sanitizedQuery.departureDate;
+  delete sanitizedQuery.time;
+  delete sanitizedQuery.departureTime;
+
+  const sortRaw = String(sanitizedQuery.sort || 'desc').toLowerCase();
   const sortAsc =
     sortRaw === 'asc' ||
     sortRaw === 'createdat' ||
     sortRaw === 'createdat:asc' ||
     sortRaw === 'created_at' ||
     sortRaw === 'created_at:asc';
-  query.sort = sortAsc ? 'createdAt' : '-createdAt';
+  sanitizedQuery.sort = sortAsc ? 'createdAt' : '-createdAt';
 
   const rideQuery = new QueryBuilder(
     Ride.find({
@@ -317,7 +575,7 @@ const getDriverRides = async (
       .select(
         'id pickup destination departureDate departureTime bookedSeats status createdAt type driverId rideCreatedBy'
       ),
-    query
+    sanitizedQuery
   )
     .filter()
     .sort()
@@ -333,7 +591,7 @@ const getDriverRides = async (
 
   const rideIds = result.map(r => r._id);
   const allPassengers = await Passenger.find({
-    _id: { $in: Array.from(paidPassengerIds) },
+    _id: { $in: Array.from(eligiblePassengerIds) },
     rideId: { $in: rideIds },
   })
     .populate('userId', 'name')
@@ -366,13 +624,23 @@ const getRiderRides = async (
   userId: string,
   query: Record<string, unknown>,
 ) => {
-  const isPendingList = query.status === RIDE_STATUS.pending;
+  const { isPendingList, includesCancelledOrRejected, statuses } =
+    resolveRideStatusesFromQuery(query.status);
+
+  const normalizedType = normalizeRideTypeValue(query.type ?? query.rideType);
+  const dateVariants = buildDateFilterVariants(query.departureDate ?? query.date);
+  const timeVariants = buildTimeFilterVariants(query.departureTime ?? query.time);
+
   const rideStatusFilter: Record<string, unknown> = {};
-  if (query.status && !isPendingList) {
-    rideStatusFilter.status = query.status;
+  if (statuses && !isPendingList) {
+    rideStatusFilter.status =
+      statuses.length === 1 ? statuses[0] : { $in: statuses };
+  }
+  if (normalizedType) {
+    rideStatusFilter.type = normalizedType;
   }
 
-  const passengerDocs = await Passenger.find({
+  const passengerFindFilter: Record<string, unknown> = {
     userId,
     status: isPendingList
       ? {
@@ -381,15 +649,31 @@ const getRiderRides = async (
             PASSENGER_STATUS.split_matching,
           ],
         }
-      : {
-          $nin: [
-            PASSENGER_STATUS.pending,
-            PASSENGER_STATUS.cancelled,
-            PASSENGER_STATUS.rejected,
-            PASSENGER_STATUS.split_matching,
-          ],
-        },
-  })
+      : includesCancelledOrRejected
+        ? {
+            $nin: [
+              PASSENGER_STATUS.pending,
+              PASSENGER_STATUS.split_matching,
+            ],
+          }
+        : {
+            $nin: [
+              PASSENGER_STATUS.pending,
+              PASSENGER_STATUS.cancelled,
+              PASSENGER_STATUS.rejected,
+              PASSENGER_STATUS.split_matching,
+            ],
+          },
+  };
+
+  if (dateVariants) {
+    passengerFindFilter.departureDate = { $in: dateVariants };
+  }
+  if (timeVariants) {
+    passengerFindFilter.departureTime = { $in: timeVariants };
+  }
+
+  const passengerDocs = await Passenger.find(passengerFindFilter)
     .select(
       'rideId pickup destination requestedSeats status estimatedFare paymentStatus departureDate departureTime largeSuitcase smallSuitcase luggageNote luggageCounts note createdAt',
     )
@@ -434,7 +718,12 @@ const getRiderRides = async (
 
   const rides = await Ride.find({
     _id: { $in: rideIds },
-    ...(isPendingList ? { status: RIDE_STATUS.pending } : rideStatusFilter),
+    ...(isPendingList
+      ? {
+          status: RIDE_STATUS.pending,
+          ...(normalizedType ? { type: normalizedType } : {}),
+        }
+      : rideStatusFilter),
   })
     .populate([{ path: 'driverId', select: 'name profileImage phone email' }])
     .select(
@@ -449,11 +738,19 @@ const getRiderRides = async (
       const ride = p.rideId ? rideMap.get(p.rideId.toString()) : undefined;
       const booking = bookingMap.get(p._id.toString());
       const isUnmatchedSplit = p.status === PASSENGER_STATUS.split_matching;
+      const isPassengerCancelledOrRejected =
+        p.status === PASSENGER_STATUS.cancelled ||
+        p.status === PASSENGER_STATUS.rejected;
 
       if (isPendingList) {
         if (!isUnmatchedSplit && !ride) return null;
+        if (normalizedType && isUnmatchedSplit && normalizedType !== RIDE_TYPE.split) {
+          return null;
+        }
       } else if (!ride) {
-        return null;
+        if (!(includesCancelledOrRejected && isPassengerCancelledOrRejected)) {
+          return null;
+        }
       }
 
       return {
@@ -474,7 +771,9 @@ const getRiderRides = async (
 
         rideId: ride?._id ?? null,
         rideType: ride?.type ?? (isUnmatchedSplit ? RIDE_TYPE.split : null),
-        rideStatus: ride?.status ?? RIDE_STATUS.pending,
+        rideStatus:
+          ride?.status ??
+          (isPassengerCancelledOrRejected ? p.status : RIDE_STATUS.pending),
         passengerStatus: p.status,
 
         driver: ride?.driverId || null,

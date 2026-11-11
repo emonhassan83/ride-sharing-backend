@@ -154,9 +154,9 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
         ),
       },
       $or: [
-        { totalSeats: 0 },
+        { totalSeats: { $in: [0, null] } },
         { totalSeats: { $exists: false } },
-        { $expr: { $gte: [{ $subtract: ['$totalSeats', '$bookedSeats'] }, requestedSeats] } },
+        { $expr: { $gte: [{ $subtract: [{ $ifNull: ['$totalSeats', 4] }, { $ifNull: ['$bookedSeats', 0] }] }, requestedSeats] } },
       ],
     })
       .populate<{ driverId: TUser }>(

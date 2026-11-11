@@ -90,7 +90,7 @@ const findMatchingBacklogPeer = async (passenger: any) => {
     _id: { $ne: passenger._id },
     status: PASSENGER_STATUS.split_matching,
     rideId: null,
-    paymentStatus: PASSENGER_PAYMENT_STATUS.authorized,
+    paymentStatus: { $in: [PASSENGER_PAYMENT_STATUS.authorized, PASSENGER_PAYMENT_STATUS.paid] },
     departureDate: {
       $in: getCandidateDepartureDates(
         passenger.departureDate,
@@ -566,7 +566,7 @@ const loadSplitMatchingBacklog = async () => {
   const authorizedPassengers = await Passenger.find({
     status: PASSENGER_STATUS.split_matching,
     rideId: null,
-    paymentStatus: PASSENGER_PAYMENT_STATUS.authorized,
+    paymentStatus: { $in: [PASSENGER_PAYMENT_STATUS.authorized, PASSENGER_PAYMENT_STATUS.paid] },
   })
     .sort({ createdAt: 1 })
     .limit(BATCH_SIZE)
@@ -574,7 +574,7 @@ const loadSplitMatchingBacklog = async () => {
 
   // Repair path: Booking authorized but Passenger.paymentStatus still pending.
   const readyBookings = await Booking.find({
-    paymentStatus: BOOKING_PAYMENT_STATUS.authorized,
+    paymentStatus: { $in: [BOOKING_PAYMENT_STATUS.authorized, BOOKING_PAYMENT_STATUS.paid] },
     $or: [{ rideId: null }, { rideId: { $exists: false } }],
   })
     .select('passengerId')

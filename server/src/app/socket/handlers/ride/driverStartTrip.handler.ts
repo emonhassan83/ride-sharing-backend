@@ -68,7 +68,7 @@ export const driverStartTripHandler = eventHandler<any>(
       try {
         await verifyRideStartOtp({
           rideId: String(rideId),
-          passengerId: passengerId ? String(passengerId) : undefined,
+          passengerId: passengerId ? String(passengerId) : passengers[0]._id.toString(),
           otp,
           requesterId: driverId,
           requesterRole: 'provider',

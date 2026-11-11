@@ -75,6 +75,7 @@ export const driverGoOnlineHandler = eventHandler<any>(
 
       // ── 5. Save Driver Details in Redis ───────────────────────────────
       const driverHash: any = {
+        driverId: driverId,
         name: driver.name || '',
         email: driver.email || '',
         phone: driver.phone || '',
@@ -83,6 +84,7 @@ export const driverGoOnlineHandler = eventHandler<any>(
         vehicleModel: vehicle.name || '',
         vehicleNumber: vehicle.number || '',
         seats: vehicle.seats.toString(),
+        totalSeats: vehicle.seats.toString(),
         bookedSeats: '0',
         status: 'online',
         lastLat: lat.toString(),

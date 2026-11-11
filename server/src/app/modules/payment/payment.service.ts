@@ -300,13 +300,18 @@ const createPaymentIntent = async (payload: {
   }
 
   const scheduleSource: any = ride || passenger;
-  const rideTypeForSchedule = ride?.type || RIDE_TYPE.split;
-  await assertMinimumBookingLeadTime(
+  const departureDateTime = getDepartureDateTime(
     scheduleSource.departureDate,
     scheduleSource.departureTime,
-    rideTypeForSchedule
   );
+  if (departureDateTime.getTime() <= Date.now()) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'Cannot pay for a ride whose departure time has already passed',
+    );
+  }
 
+  const rideTypeForSchedule = ride?.type || RIDE_TYPE.split;
   if (rideTypeForSchedule === RIDE_TYPE.split) {
     await assertSplitMinimumDistance(Number((passenger as any).estimatedDistanceKm || 0));
   }
@@ -483,17 +488,17 @@ const confirmPayment = async (payload: Record<string, any>) => {
     session.startTransaction();
     transactionStarted = true;
 
-    // â”€â”€ 1. Payment check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── 1. Payment check ──
     const payment = await Payment.findById(resolvedPaymentId).session(session);
     if (!payment) throw new ApiError(httpStatus.NOT_FOUND, 'Payment not found');
 
-    // âœ… Idempotency guard â€” already paid, skip everything
+    // ✅ Idempotency guard - already paid, skip everything
     if (payment.isPaid) {
       await session.commitTransaction();
       return payment;
     }
 
-    // â”€â”€ 2. Booking check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── 2. Booking check ──
     const booking = await Booking.findById(payment.booking).session(session);
     if (!booking) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
 
@@ -536,7 +541,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
     }
 
     if (booking.paymentStatus === PAYMENT_STATUS.paid) {
-      // Booking already paid but payment record not updated â€” sync it
+      // Booking already paid but payment record not updated - sync it
       await Payment.findByIdAndUpdate(
         payment._id,
         { isPaid: true, status: PAYMENT_STATUS.paid, paymentIntentId },
@@ -546,26 +551,26 @@ const confirmPayment = async (payload: Record<string, any>) => {
       return payment;
     }
 
-    // â”€â”€ 3. Update payment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── 3. Update payment ──
     payment.isPaid = true;
     payment.status = PAYMENT_STATUS.paid;
     payment.paymentIntentId = paymentIntentId as string;
     await payment.save({ session });
 
-    // â”€â”€ 4. Update booking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── 4. Update booking ──
     booking.paymentStatus = PAYMENT_STATUS.paid;
     booking.bookingStatus = BOOKING_STATUS.accepted;
     booking.amountPaid = booking.totalFare;
     await booking.save({ session });
 
-    // â”€â”€ 4.5:  Update passenger â”€â”€â”€â”€â”€â”€
+    // ── 4.5:  Update passenger ──
     await Passenger.findByIdAndUpdate(
       booking.passengerId,
       { paymentStatus: PAYMENT_STATUS.paid },
       { returnDocument: 'after' }
     );
 
-    // â”€â”€ 5. Update passenger & ride â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── 5. Update passenger & ride ──
     const passenger = await Passenger.findById(booking.passengerId).session(
       session
     );
@@ -581,7 +586,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
       await payment.save({ session });
     }
 
-    // âœ… Seat availability check
+    // ✅ Seat availability check
     const newBookedSeats =
       (ride.bookedSeats || 0) + (passenger.requestedSeats || 1);
     if (newBookedSeats > ride.totalSeats) {
@@ -591,20 +596,20 @@ const confirmPayment = async (payload: Record<string, any>) => {
       );
     }
 
-    // âœ… Bug 5 fix: bookedSeats + malePassengers + femalePassengers all here
+    // ✅ Bug 5 fix: bookedSeats + malePassengers + femalePassengers all here
     await Ride.findByIdAndUpdate(
       ride._id,
       {
         $inc: {
           bookedSeats: passenger.requestedSeats || 1,
-          malePassengers: passenger.malePassengers || 0, // âœ… added
-          femalePassengers: passenger.femalePassengers || 0, // âœ… added
+          malePassengers: passenger.malePassengers || 0, // ✅ added
+          femalePassengers: passenger.femalePassengers || 0, // ✅ added
         },
       },
       { session }
     );
 
-    // âœ… Redis bookedSeats sync â€” also update driver hash
+    // ✅ Redis bookedSeats sync - also update driver hash
     const driverId = booking.driverId?.toString();
     if (driverId) {
       const redis = getRedisClient();
@@ -615,13 +620,13 @@ const confirmPayment = async (payload: Record<string, any>) => {
       );
     }
 
-    // â”€â”€ 6. Provider wallet update â€” duplicate safe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── 6. Provider wallet update - duplicate safe ──
     // Only increment wallet if providerEarning > 0 and not already credited
     // We use paymentIntentId as the idempotency key stored on payment doc
     // Since payment.isPaid was false above, this is guaranteed to run once only
     // Provider wallet is credited only after ride completion.
 
-    // â”€â”€ 7. Create chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── 7. Create chat ──
     const existingChat = await Chat.findOne({ booking: booking._id }).session(
       session
     );
@@ -676,7 +681,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
 };
 
 /* =====================================================
-   ðŸ”¹ PAY WITH WALLET (Direct Deduction)
+   🔹 PAY WITH WALLET (Direct Deduction)
 ===================================================== */
 type TCaptureAuthorizedOptions = {
   incrementRideSeats?: boolean;
@@ -918,7 +923,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
   session.startTransaction();
 
   try {
-    // â”€â”€ 1. Validate Booking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── 1. Validate Booking ──
     const booking = await Booking.findById(bookingId).session(session);
     if (!booking)
       throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found');
@@ -934,7 +939,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       throw new ApiError(StatusCodes.BAD_REQUEST, 'Payment already completed');
     }
 
-    // â”€â”€ 2. Validate User & Wallet Balance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── 2. Validate User & Wallet Balance ──
     const user = await User.findById(userId).session(session);
     if (!user || user.isDeleted) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');

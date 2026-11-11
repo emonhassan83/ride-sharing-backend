@@ -2,9 +2,12 @@ import path from 'path';
 import DailyRotateFile from 'winston-daily-rotate-file';
 const { createLogger, format, transports } = require('winston');
 const { combine, timestamp, label, printf } = format;
-import { config } from './env.config';
+import { config, resolveTimeZone } from './env.config';
 
-const TIME_ZONE = config.timeZone || 'Europe/Nicosia';
+const getActiveTimeZone = () =>
+  resolveTimeZone(
+    process.env.TIME_ZONE || process.env.RIDE_TIME_ZONE || config.timeZone,
+  );
 
 const myFormat = printf(
   ({
@@ -18,10 +21,10 @@ const myFormat = printf(
     label: string;
     timestamp: Date;
   }) => {
-    // Convert UTC timestamp to Cyprus (Europe/Nicosia) for display
+    // Convert UTC timestamp to configured TIME_ZONE (e.g. Europe/Nicosia or Asia/Dhaka) for display
     const date = new Date(timestamp);
     const options: Intl.DateTimeFormatOptions = {
-      timeZone: TIME_ZONE,
+      timeZone: getActiveTimeZone(),
       year: 'numeric',
       month: 'short',
       day: 'numeric',

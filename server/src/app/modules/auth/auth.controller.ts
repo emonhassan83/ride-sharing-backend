@@ -162,6 +162,28 @@ const refreshToken = catchAsync(async (req, res) => {
   });
 });
 
+const selectRole = catchAsync(async (req, res) => {
+  const result = await AuthService.selectRole(req.user.userId, req.body.role);
+  const { refreshToken, ...data } = result;
+
+  const cookieOptions: any = {
+    secure: false,
+    httpOnly: true,
+    maxAge: 1000 * 60 * 60 * 24 * 365,
+  };
+
+  if (config.environment === 'production') {
+    cookieOptions.sameSite = 'none';
+  }
+  res.cookie('refreshToken', refreshToken, cookieOptions);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Role selected successfully',
+    data,
+  });
+});
+
 export const AuthController = {
   register,
   registerWithGoogle,
@@ -173,4 +195,5 @@ export const AuthController = {
   refreshToken,
   forgotPassword,
   resetPassword,
+  selectRole,
 };

@@ -6,8 +6,12 @@ import { Morgan } from './app/utils/morgen';
 import router from './app/routes';
 import globalErrorHandler from './app/middlewares/globalErrorHandler';
 import notFound from './app/middlewares/notFount';
+import { i18nMiddleware, translateText } from './app/i18n/i18n';
 
 const app = express();
+
+// i18n language detection & context middleware
+app.use(i18nMiddleware);
 
 // morgan
 app.use(Morgan.successHandler);
@@ -39,7 +43,7 @@ app.get('/', (req: Request, res: Response) => {
   res
     .status(201)
     .json({
-      message: 'Welcome to SplitRide!',
+      message: translateText('Welcome to SplitRide!', (req as any).language),
       status: 'success',
       timestamp: new Date().toISOString()
     });

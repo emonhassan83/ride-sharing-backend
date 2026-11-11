@@ -1,5 +1,6 @@
 import { StatusCodes } from 'http-status-codes';
 import moment from 'moment';
+import twilio from 'twilio';
 import ApiError from '../errors/ApiError';
 import { getRedisClient } from '../config/redis.config';
 import { config } from '../config/env.config';
@@ -53,6 +54,13 @@ export const sendRideStartOtp = async (params: {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'rideId is required');
   }
 
+  if (!passengerId) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'passengerId is required to send ride start OTP.',
+    );
+  }
+
   const ride = await Ride.findById(rideId).lean();
   if (!ride) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
@@ -82,6 +90,7 @@ export const sendRideStartOtp = async (params: {
   }
 
   const passengerFilter: Record<string, any> = {
+    _id: passengerId,
     rideId: ride._id,
     status: {
       $in: [
@@ -91,15 +100,12 @@ export const sendRideStartOtp = async (params: {
       ],
     },
   };
-  if (passengerId) {
-    passengerFilter._id = passengerId;
-  }
 
   const passengers = await Passenger.find(passengerFilter).lean();
   if (!passengers.length) {
     throw new ApiError(
       StatusCodes.NOT_FOUND,
-      'No active confirmed passenger found for this ride.',
+      'No active confirmed passenger found for this ride with the provided passengerId.',
     );
   }
 
@@ -116,12 +122,14 @@ export const sendRideStartOtp = async (params: {
     userId: string;
     expiresInSeconds: number;
     otp?: string;
+    phone?: string;
   }> = [];
 
   for (const passenger of passengers) {
     const pid = passenger._id.toString();
     const uid = passenger.userId.toString();
-    const otp = String(generateOtp());
+    // Guaranteed 6-digit OTP
+    const otp = String(generateOtp()).padStart(6, '0');
 
     await Promise.all([
       redis.setex(
@@ -137,25 +145,54 @@ export const sendRideStartOtp = async (params: {
     ]);
 
     const riderUser = await User.findById(uid)
-      .select('name email fcmToken')
+      .select('name email phone fcmToken')
       .lean();
 
-    // 1. Real-time socket event to rider
+    // 1. Real-time socket events to passenger listener (ensuring passenger receives it)
     if (io) {
-      io.to(`user:${uid}`).emit('ride:start-otp', {
+      const otpSocketPayload = {
         rideId: String(ride._id),
         passengerId: pid,
         otp,
         expiresInSeconds: RIDE_START_OTP_TTL_SECONDS,
-        message: `Your ride start OTP is ${otp}. Share this code with your driver to start the trip.`,
-      });
+        message: `Your ride start OTP is ${otp}. Share this code with your driver when boarding.`,
+      };
+      io.to(`user:${uid}`).emit('ride:start-otp', otpSocketPayload);
+      io.to(`passenger:${pid}`).emit('ride:start-otp', otpSocketPayload);
+      io.to(`user:${uid}`).emit('passenger:start-otp', otpSocketPayload);
+      io.to(`user:${uid}`).emit('driver:send-start-otp', otpSocketPayload);
     }
 
-    // 2. Push notification + in-app notification to rider
+    // 2. Direct Phone SMS via Twilio (same pattern as sendOtpViaDirectPhone)
+    if (riderUser?.phone) {
+      const isDevelopment = config.environment !== 'production';
+      if (isDevelopment) {
+        console.log(`🔑 [RIDE START OTP] Passenger Phone: ${riderUser.phone}`);
+        console.log(`🔑 [RIDE START OTP] 6-digit Code: ${otp}`);
+        console.log('⚠️  Real SMS skipped in development mode');
+      } else if (
+        config.twilio?.accountSid &&
+        config.twilio?.authToken &&
+        config.twilio?.phoneNumber
+      ) {
+        try {
+          const twilioClient = twilio(config.twilio.accountSid, config.twilio.authToken);
+          await twilioClient.messages.create({
+            body: `Your ride start OTP is ${otp}. It expires in 10 minutes. Please share this 6-digit code with your driver when boarding.`,
+            from: config.twilio.phoneNumber,
+            to: riderUser.phone,
+          });
+        } catch (twilioErr: any) {
+          console.error(`Twilio SMS failed for passenger phone ${riderUser.phone}:`, twilioErr);
+        }
+      }
+    }
+
+    // 3. Push notification + in-app notification to rider
     await notifyUserPush({
       userId: uid,
       message: 'Ride Start OTP Code',
-      description: `Your verification code to start the ride is ${otp}. Share this OTP with your driver when boarding.`,
+      description: `Your 6-digit verification code to start the ride is ${otp}. Share this OTP with your driver when boarding.`,
       reference: String(ride._id),
       modelType: modeType.Ride,
       data: {
@@ -168,7 +205,7 @@ export const sendRideStartOtp = async (params: {
       console.warn(`Failed to send ride start OTP push to ${uid}:`, err);
     });
 
-    // 3. Email notification to rider
+    // 4. Email notification to rider
     if (riderUser?.email) {
       try {
         const expiresAt = moment().add(10, 'minute');
@@ -198,6 +235,7 @@ export const sendRideStartOtp = async (params: {
     results.push({
       passengerId: pid,
       userId: uid,
+      phone: riderUser?.phone || '',
       expiresInSeconds: RIDE_START_OTP_TTL_SECONDS,
       ...(config.environment !== 'production' ? { otp } : {}),
     });
@@ -205,9 +243,9 @@ export const sendRideStartOtp = async (params: {
 
   return {
     rideId: String(ride._id),
+    passengerId: results[0]?.passengerId || passengerId,
     expiresInSeconds: RIDE_START_OTP_TTL_SECONDS,
     passengers: results,
-    ...(results.length === 1 ? { passengerId: results[0].passengerId } : {}),
     ...(config.environment !== 'production' && results[0]?.otp
       ? { otp: results[0].otp, mock: true }
       : {}),
@@ -231,6 +269,13 @@ export const verifyRideStartOtp = async (params: {
     );
   }
 
+  if (!passengerId) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'passengerId is required to verify OTP.',
+    );
+  }
+
   const ride = await Ride.findById(rideId).lean();
   if (!ride) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
@@ -249,6 +294,7 @@ export const verifyRideStartOtp = async (params: {
   }
 
   const passengerFilter: Record<string, any> = {
+    _id: passengerId,
     rideId: ride._id,
     status: {
       $in: [
@@ -258,15 +304,12 @@ export const verifyRideStartOtp = async (params: {
       ],
     },
   };
-  if (passengerId) {
-    passengerFilter._id = passengerId;
-  }
 
   const passengers = await Passenger.find(passengerFilter);
   if (!passengers.length) {
     throw new ApiError(
       StatusCodes.NOT_FOUND,
-      'No active passenger found for OTP verification.',
+      'No active passenger found for OTP verification with the provided passengerId.',
     );
   }
 
@@ -290,12 +333,9 @@ export const verifyRideStartOtp = async (params: {
   }
 
   if (!matchedPassenger) {
-    // Check if any OTP exists at all to distinguish expired vs invalid
-    const anyOtpExists = await Promise.all(
-      passengers.map((p) => redis.get(getRideStartOtpKey(rideId, p._id.toString()))),
-    );
+    const storedOtp = await redis.get(getRideStartOtpKey(rideId, passengerId));
     const fallbackExists = await redis.get(getRideStartOtpFallbackKey(rideId));
-    const hasActiveOtp = anyOtpExists.some(Boolean) || !!fallbackExists;
+    const hasActiveOtp = !!storedOtp || !!fallbackExists;
 
     if (!hasActiveOtp) {
       throw new ApiError(
@@ -306,7 +346,7 @@ export const verifyRideStartOtp = async (params: {
 
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      'Invalid ride start OTP. Please check the code with the passenger.',
+      'Invalid ride start OTP. Please check the 6-digit code with the passenger.',
     );
   }
 
@@ -323,9 +363,7 @@ export const verifyRideStartOtp = async (params: {
       'true',
     ),
     redis.del(getRideStartOtpKey(rideId, pid)),
-    ...(passengers.length === 1
-      ? [redis.del(getRideStartOtpFallbackKey(rideId))]
-      : []),
+    redis.del(getRideStartOtpFallbackKey(rideId)),
   ]);
 
   try {
@@ -333,15 +371,24 @@ export const verifyRideStartOtp = async (params: {
     const eventPayload = {
       rideId: String(ride._id),
       passengerId: pid,
+      userId: uid,
       isStartOtpVerified: true,
       message: 'Passenger OTP verified. Ride is now approved to start.',
     };
+
+    // Both sides: passenger socket rooms
     io.to(`user:${uid}`).emit('ride:start-otp-verified', eventPayload);
+    io.to(`passenger:${pid}`).emit('ride:start-otp-verified', eventPayload);
+    io.to(`user:${uid}`).emit('driver:verify-start-otp', eventPayload);
+    io.to(`user:${uid}`).emit('driver:start-otp-verified', eventPayload);
+
+    // Both sides: driver socket rooms
     if (ride.driverId) {
-      io.to(`driver:${ride.driverId.toString()}`).emit(
-        'ride:start-otp-verified',
-        eventPayload,
-      );
+      const did = ride.driverId.toString();
+      io.to(`driver:${did}`).emit('ride:start-otp-verified', eventPayload);
+      io.to(`user:${did}`).emit('ride:start-otp-verified', eventPayload);
+      io.to(`driver:${did}`).emit('driver:verify-start-otp', eventPayload);
+      io.to(`driver:${did}`).emit('driver:start-otp-verified', eventPayload);
     }
   } catch {
     /* ignore socket error */

@@ -6,6 +6,7 @@ import ApiError from '../../errors/ApiError';
 import { User } from '../../modules/user/user.model';
 import { Vehicle } from '../../modules/vehicle/vehicle.model';
 import { USER_ROLE } from '../../modules/user/user.constant';
+import { normalizeLanguage } from '../../i18n/i18n';
 
 // NOTE: Socket.IO middleware `use` does NOT support async directly.
 // But we can use a wrapper that calls next() after async operations.
@@ -31,11 +32,26 @@ export const socketAuth = async (socket: Socket, next: (err?: Error) => void) =>
 
     // 2. Fetch user from DB (without password)
     const user = await User.findById(decoded.userId)
-      .select('_id email role name phone profileImage location avgRating')
+      .select('_id email role name phone profileImage location avgRating language')
       .lean();
 
     if (!user) {
       return next(new ApiError(httpStatus.NOT_FOUND, 'User not found'));
+    }
+
+    const handshakeLang =
+      socket.handshake.auth?.language ||
+      socket.handshake.headers?.['language'] ||
+      socket.handshake.headers?.['x-language'] ||
+      socket.handshake.headers?.['accept-language'];
+    const resolvedLanguage = handshakeLang
+      ? normalizeLanguage(handshakeLang as string)
+      : normalizeLanguage(user.language);
+
+    if (handshakeLang && user.language !== resolvedLanguage) {
+      User.findByIdAndUpdate(user._id, { language: resolvedLanguage }).catch(
+        () => {},
+      );
     }
 
     // 3. If driver, fetch default vehicle
@@ -75,6 +91,7 @@ export const socketAuth = async (socket: Socket, next: (err?: Error) => void) =>
       vehicle: vehicleInfo,
       lastLocation: lastLocation,
       avgRating: user.avgRating,
+      language: resolvedLanguage,
     };
 
     next();

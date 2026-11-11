@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { translateText } from '../i18n/i18n';
 
 type IData<T> = {
   code: number;
@@ -15,9 +16,14 @@ type IData<T> = {
 };
 
 const sendResponse = <T>(res: Response, data: IData<T>) => {
+  const lang = res?.locals?.language || (res?.req as any)?.language;
+  const translatedMessage = data.message
+    ? translateText(data.message, lang)
+    : data.message;
+
   const resData = {
     code: data.code,
-    message: data.message,
+    message: translatedMessage,
     pagination: data.pagination,
     data: data.data,
     extra: data.extra,

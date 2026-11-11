@@ -1,11 +1,14 @@
 // handlers/ride/pickUpRideClean.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
-import { RIDE_STATUS } from '../../../modules/ride/ride.constant';
+import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
+import { Payment } from '../../../modules/payment/payment.model';
+import { PAYMENT_STATUS } from '../../../modules/payment/payment.constant';
+import { PaymentService } from '../../../modules/payment/payment.service';
 import { User } from '../../../modules/user/user.model';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { sendNotification } from '../../../utils/sentPushNotification';
@@ -82,7 +85,7 @@ export const pickUpRideHandler = eventHandler<any>(
       try {
         await verifyRideStartOtp({
           rideId: String(rideId),
-          passengerId: passengerId ? String(passengerId) : undefined,
+          passengerId: passengerId ? String(passengerId) : passengers[0]._id.toString(),
           otp,
           requesterId: driverId,
           requesterRole: 'provider',
@@ -134,7 +137,37 @@ export const pickUpRideHandler = eventHandler<any>(
     if (ride.status === RIDE_STATUS.accepted) {
       ride.status = RIDE_STATUS.started as any;
       (ride as any).tripStartedAt = now;
+      if (ride.type === RIDE_TYPE.split) {
+        (ride as any).splitFareLocked = true;
+        (ride as any).splitFareLockedAt = now;
+      }
       await ride.save();
+
+      if (ride.type === RIDE_TYPE.split) {
+        const bookings = await Booking.find({
+          rideId,
+          bookingStatus: { $ne: BOOKING_STATUS.cancelled },
+        });
+        for (const b of bookings) {
+          const payment = await Payment.findOne({ booking: b._id });
+          if (payment && payment.status === PAYMENT_STATUS.authorized) {
+            try {
+              await PaymentService.captureAuthorizedBookingPayment(
+                b._id.toString(),
+                driverId,
+                {
+                  incrementRideSeats: false,
+                  createChat: false,
+                  recalculateSplit: false,
+                  updateBookingStatus: false,
+                }
+              );
+            } catch {
+              /* ignore capture error */
+            }
+          }
+        }
+      }
     }
 
     for (const passenger of passengers) {

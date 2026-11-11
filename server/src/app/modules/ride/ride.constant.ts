@@ -7,6 +7,7 @@ export const RIDE_STATUS = {
   pending: 'pending',
   rejected: 'rejected',
   accepted: 'accepted',
+  arrived: 'arrived',
   cancelled: 'cancelled',
   started: 'started',
   completed: 'completed',

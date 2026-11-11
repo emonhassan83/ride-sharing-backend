@@ -16,6 +16,23 @@ export const driverInvoiceQueryZodSchema = z.object({
   }),
 });
 
+export const sendStartOtpZodSchema = z.object({
+  body: z.object({
+    rideId: z.string({ message: 'rideId is required' }).min(1, 'rideId is required'),
+    passengerId: z.string({ message: 'passengerId is required' }).min(1, 'passengerId is required'),
+  }),
+});
+
+export const verifyStartOtpZodSchema = z.object({
+  body: z.object({
+    rideId: z.string({ message: 'rideId is required' }).min(1, 'rideId is required'),
+    passengerId: z.string({ message: 'passengerId is required' }).min(1, 'passengerId is required'),
+    otp: z.string({ message: 'otp is required' }).min(4, 'otp must be at least 4 digits').max(8),
+  }),
+});
+
 export const RideValidation = {
   driverInvoiceQueryZodSchema,
+  sendStartOtpZodSchema,
+  verifyStartOtpZodSchema,
 };

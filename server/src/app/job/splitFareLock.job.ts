@@ -2,7 +2,10 @@
 import { RIDE_STATUS, RIDE_TYPE } from '../modules/ride/ride.constant';
 import { Ride } from '../modules/ride/ride.model';
 import { getIO } from '../socket/socket.init';
-import { getDepartureDateTime } from '../utils/rideSchedule.utils';
+import {
+  formatRideLocalDate,
+  getDepartureDateTime,
+} from '../utils/rideSchedule.utils';
 import { lockSplitRideFare } from '../utils/splitFare.utils';
 
 const BATCH_SIZE = 50;
@@ -10,7 +13,7 @@ const BATCH_SIZE = 50;
 export const checkSplitFareLock = async (): Promise<void> => {
   try {
     const now = new Date();
-    const todayLocal = now.toLocaleDateString('en-CA');
+    const todayLocal = formatRideLocalDate(now);
     const io = getIO();
 
     const rides = await Ride.find({

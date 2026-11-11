@@ -1,6 +1,10 @@
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../errors/ApiError';
-import { config } from '../config/env.config';
+import {
+  config,
+  DEFAULT_TIME_ZONE,
+  resolveTimeZone,
+} from '../config/env.config';
 import { Setting } from '../modules/settings/settings.model';
 
 export type RideScheduleType = 'private' | 'split';
@@ -11,11 +15,21 @@ export const DEFAULT_SPLIT_MIN_DISTANCE_KM = 0;
 export const DEFAULT_SPLIT_REFUND_RESTRICTION_HOURS = 24;
 export const DEFAULT_PRIVATE_REFUND_RESTRICTION_HOURS = 1;
 export const DEFAULT_MATCHING_LAST_NOTIFY_HOURS = 1;
-/** Production market: Cyprus. Override with RIDE_TIME_ZONE / TIME_ZONE. */
-export const DEFAULT_RIDE_TIME_ZONE = 'Europe/Nicosia';
+/** Production market: Cyprus (`Europe/Nicosia`) or Bangladesh (`Asia/Dhaka`). Override with TIME_ZONE / RIDE_TIME_ZONE. */
+export const DEFAULT_RIDE_TIME_ZONE = DEFAULT_TIME_ZONE;
 
-export const getRideTimeZone = (): string =>
-  process.env.RIDE_TIME_ZONE || config.timeZone || DEFAULT_RIDE_TIME_ZONE;
+export const getRideTimeZone = (): string => {
+  const tz = resolveTimeZone(
+    process.env.RIDE_TIME_ZONE ||
+      process.env.TIME_ZONE ||
+      config.timeZone ||
+      DEFAULT_RIDE_TIME_ZONE,
+  );
+  if (process.env.TZ !== tz) {
+    process.env.TZ = tz;
+  }
+  return tz;
+};
 
 /** YYYY-MM-DD in the ride timezone (Cyprus by default). */
 export const formatRideLocalDate = (date: Date = new Date()): string => {

@@ -281,12 +281,13 @@ export async function fetchDriversWithinRadius(
     'WITHDIST'
   )) as GeoRadiusResult;
 
-  // ── Step 2: Nearby drivers from DB (includes offline) ────────────────────
+  // ── Step 2: Nearby online drivers from DB ────────────────────
   const dbDrivers = await User.find({
     role: USER_ROLE.provider,
     isDeleted: false,
     status: USER_STATUS.active,
     isKycVerified: true,
+    isOnline: true,
     location: {
       $nearSphere: {
         $geometry: {
@@ -297,21 +298,21 @@ export async function fetchDriversWithinRadius(
       },
     },
   })
-    .select('_id name email phone avgRating profileImage location')
+    .select('_id name email phone avgRating profileImage location isOnline')
     .lean();
 
-  // ── Step 3: Merge — DB drivers as base, Redis distance overrides ──────────
+  // ── Step 3: Merge — DB drivers + Redis drivers:location ──────────
   const onlineMap = new Map(
     onlineDrivers.map(([driverId, dist]) => [driverId, parseFloat(dist)])
   );
 
-  // Build merged driver list (DB as source of truth for all nearby)
+  // Build merged driver list
   const mergedDriverIds = new Map<
     string,
     { driverId: string; geoDistanceKm: number }
   >();
 
-  // Add DB drivers
+  // Add DB online drivers
   for (const dbDriver of dbDrivers) {
     const id = dbDriver._id.toString();
     const coords = dbDriver.location?.coordinates;
@@ -324,10 +325,12 @@ export async function fetchDriversWithinRadius(
     mergedDriverIds.set(id, { driverId: id, geoDistanceKm: distKm });
   }
 
-  // Override distance with Redis geo distance if online (more accurate)
+  // Include any driver who is in Redis onlineMap (more accurate distance)
   for (const [driverId, dist] of onlineMap) {
     if (mergedDriverIds.has(driverId)) {
       mergedDriverIds.get(driverId)!.geoDistanceKm = dist;
+    } else {
+      mergedDriverIds.set(driverId, { driverId, geoDistanceKm: dist });
     }
   }
 
@@ -384,12 +387,23 @@ export async function fetchDriversWithinRadius(
       }
     } else {
       // DB fallback
-      const dbDriver = dbDrivers.find((d) => d._id.toString() === driverId);
-      const vehicle = await Vehicle.findOne({
+      let dbDriver = dbDrivers.find((d) => d._id.toString() === driverId);
+      if (!dbDriver) {
+        dbDriver = (await User.findById(driverId)
+          .select('_id name email phone avgRating profileImage location isOnline')
+          .lean()) as any;
+      }
+      let vehicle = await Vehicle.findOne({
         userId: driverId,
         isDefault: true,
-        isDeleted: false,
+        isDeleted: { $ne: true },
       }).lean();
+      if (!vehicle) {
+        vehicle = await Vehicle.findOne({
+          userId: driverId,
+          isDeleted: { $ne: true },
+        }).lean();
+      }
 
       driverName = dbDriver?.name || 'Unknown';
       driverEmail = dbDriver?.email || '';

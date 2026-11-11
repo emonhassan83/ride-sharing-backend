@@ -4,35 +4,52 @@ import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
-import { User } from '../../../modules/user/user.model';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
 import {
   calculateTotalDistance,
-  calculateDuration
+  calculateDuration,
 } from '../../../utils/location.utils';
-import { sendNotification } from '../../../utils/sentPushNotification';
+import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { modeType } from '../../../modules/notification/notification.interface';
+import { sanitizeText, translateText } from '../../../i18n/i18n';
 
 export const driverDropOffPassengerHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const { rideId, passengerId } = data;
     const driverId = socket.auth?._id?.toString();
 
-    if (!driverId || !rideId)
-      return callback?.({ success: false, message: 'Missing required fields' });
+    if (!driverId || !rideId) {
+      return callback?.({
+        success: false,
+        message: translateText('Missing required fields'),
+      });
+    }
 
     const redis = getRedisClient();
     const io = getIO();
 
     const ride = await Ride.findById(rideId);
-    if (!ride) return callback?.({ success: false, message: 'Ride not found' });
-    if (ride.driverId?.toString() !== driverId)
-      return callback?.({ success: false, message: 'You are not assigned to this ride' });
-    if (ride.status !== RIDE_STATUS.started)
-      return callback?.({ success: false, message: `Cannot drop off �\u20AC� status: ${ride.status}` });
+    if (!ride) {
+      return callback?.({
+        success: false,
+        message: translateText('Ride not found'),
+      });
+    }
+    if (ride.driverId?.toString() !== driverId) {
+      return callback?.({
+        success: false,
+        message: translateText('You are not assigned to this ride'),
+      });
+    }
+    if (ride.status !== RIDE_STATUS.started) {
+      return callback?.({
+        success: false,
+        message: sanitizeText(`Cannot drop off - status: ${ride.status}`),
+      });
+    }
 
     const locationKey = `ride:${rideId}:live`;
     const locations = await redis.lrange(locationKey, 0, -1);
@@ -41,20 +58,30 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
     const getPassengerDistance = async (passenger: any) => {
       try {
         const { distanceKm, durationMinutes } = await getRealDistanceAndETA(
-          { lat: passenger.pickup.coordinates[1], lng: passenger.pickup.coordinates[0] },
-          { lat: passenger.destination.coordinates[1], lng: passenger.destination.coordinates[0] }
+          {
+            lat: passenger.pickup.coordinates[1],
+            lng: passenger.pickup.coordinates[0],
+          },
+          {
+            lat: passenger.destination.coordinates[1],
+            lng: passenger.destination.coordinates[0],
+          },
         );
         return { distanceKm, durationSeconds: durationMinutes * 60 };
       } catch {
         return {
-          distanceKm: calculateTotalDistance(parsedLocations) || passenger.estimatedDistanceKm || 0,
+          distanceKm:
+            calculateTotalDistance(parsedLocations) ||
+            passenger.estimatedDistanceKm ||
+            0,
           durationSeconds: calculateDuration(parsedLocations) || 0,
         };
       }
     };
 
     const dropOffPassenger = async (passenger: any) => {
-      const { distanceKm, durationSeconds } = await getPassengerDistance(passenger);
+      const { distanceKm, durationSeconds } =
+        await getPassengerDistance(passenger);
 
       const waitingCharge = 0;
       const baseFare = passenger.estimatedFare || passenger.totalFare || 0;
@@ -66,22 +93,30 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
         totalFare,
       });
 
-      await redis.rpush(locationKey, JSON.stringify({
-        event: 'PASSENGER_DROPPED_OFF',
-        driverId,
-        passengerId: passenger._id,
-        timestamp: Date.now(),
-      }));
+      await redis.rpush(
+        locationKey,
+        JSON.stringify({
+          event: 'PASSENGER_DROPPED_OFF',
+          driverId,
+          passengerId: passenger._id,
+          timestamp: Date.now(),
+        }),
+      );
 
-      // �\u20AC�\u20AC Notification to Passenger �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
-      const riderUser = await User.findById(passenger.userId).select('fcmToken').lean();
-      if (riderUser?.fcmToken) {
-        await sendNotification([riderUser.fcmToken], {
-          receiver: passenger.userId,
-          message: '🛑 You have been dropped off',
-          description: `Total fare: �\u20AC${totalFare} (Base: �\u20AC${baseFare} + Waiting: �\u20AC${waitingCharge})`,
-          reference: rideId,
-          modelType: modeType.Ride
+      // Notification to Passenger (clean UTF-8 Euro symbol + auto-localized in notifyUserPush)
+      if (passenger.userId) {
+        await notifyUserPush({
+          userId: passenger.userId.toString(),
+          message: 'You have been dropped off',
+          description: `Total fare: €${totalFare} (Base: €${baseFare} + Waiting: €${waitingCharge})`,
+          reference: String(rideId),
+          modelType: modeType.Ride,
+          data: {
+            type: 'PASSENGER_DROPPED_OFF',
+            rideId: String(rideId),
+            passengerId: String(passenger._id),
+            totalFare: String(totalFare),
+          },
         }).catch(() => {});
       }
 
@@ -102,55 +137,73 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
 
     // PRIVATE RIDE
     if (ride.type === RIDE_TYPE.private) {
-      const passenger = passengerId ? await Passenger.findOne({
-         _id: passengerId,
-        rideId,
-        status: PASSENGER_STATUS.picked_up,
-      }) : await Passenger.findOne({
-        rideId,
-        status: PASSENGER_STATUS.picked_up,
-      });
-      if (!passenger) return callback?.({ success: false, message: 'No picked up passenger found' });
+      const passenger = passengerId
+        ? await Passenger.findOne({
+            _id: passengerId,
+            rideId,
+            status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
+          })
+        : await Passenger.findOne({
+            rideId,
+            status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
+          });
+      if (!passenger) {
+        return callback?.({
+          success: false,
+          message: translateText('No picked up passenger found'),
+        });
+      }
 
       const result = await dropOffPassenger(passenger);
 
       return callback?.({
         success: true,
-        message: 'Passenger dropped off successfully',
+        message: translateText('Passenger dropped off successfully'),
         data: { ...result, allDroppedOff: true },
       });
     }
 
     // SPLIT RIDE
     if (ride.type === RIDE_TYPE.split) {
-      if (!passengerId) return callback?.({ success: false, message: 'passengerId is required' });
+      if (!passengerId) {
+        return callback?.({
+          success: false,
+          message: translateText('passengerId is required'),
+        });
+      }
 
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,
-        status: PASSENGER_STATUS.picked_up,
+        status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
       });
-      if (!passenger) return callback?.({ success: false, message: 'Passenger not found or already dropped off' });
+      if (!passenger) {
+        return callback?.({
+          success: false,
+          message: translateText('Passenger not found or already dropped off'),
+        });
+      }
 
       const result = await dropOffPassenger(passenger);
 
       const remainingCount = await Passenger.countDocuments({
         rideId,
-        status: PASSENGER_STATUS.picked_up,
+        status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
       });
 
       io.to(`driver:${driverId}`).emit('ride:passenger-dropped-off', {
         rideId,
         passengerId: passenger._id,
         remainingPassengers: remainingCount,
-        message: remainingCount > 0 
-          ? `${remainingCount} passenger(s) remaining.` 
-          : 'All passengers dropped off.',
+        message:
+          remainingCount > 0
+            ? `${remainingCount} passenger(s) remaining.`
+            : 'All passengers dropped off.',
       });
 
       return callback?.({
         success: true,
-        message: 'Passenger dropped off successfully',
+        message: translateText('Passenger dropped off successfully'),
         data: {
           ...result,
           remainingPassengers: remainingCount,
@@ -159,7 +212,9 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
       });
     }
 
-    return callback?.({ success: false, message: 'Unknown ride type' });
-  }
+    return callback?.({
+      success: false,
+      message: translateText('Unknown ride type'),
+    });
+  },
 );
-

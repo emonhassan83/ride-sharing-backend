@@ -1,4 +1,4 @@
-// â”\u20ACâ”\u20AC withdraw.service.ts â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// â”€â”€ withdraw.service.ts â”€â”€
 
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
@@ -15,7 +15,7 @@ import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
 import ApiError from '../../errors/ApiError';
 
-// â”\u20ACâ”\u20AC Create withdrawal request â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// â”€â”€ Create withdrawal request â”€â”€
 const addWithdraw = async (
   payload: { amount: number },
   userId: string,
@@ -24,7 +24,7 @@ const addWithdraw = async (
   session.startTransaction();
 
   try {
-    // â”\u20ACâ”\u20AC 1. Validate user â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // â”€â”€ 1. Validate user â”€â”€
     const user = await User.findById(userId).session(session);
     if (!user || user.isDeleted)
       throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
@@ -38,10 +38,10 @@ const addWithdraw = async (
     if (amount > walletBalance)
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `Insufficient balance. Your current balance is \u20AC${walletBalance.toFixed(2)}, but you requested \u20AC${amount.toFixed(2)}.`,
+        `Insufficient balance. Your current balance is â‚¬${walletBalance.toFixed(2)}, but you requested â‚¬${amount.toFixed(2)}.`,
       );
 
-    // â”\u20ACâ”\u20AC 4. One pending request at a time â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // â”€â”€ 4. One pending request at a time â”€â”€
     const pendingRequest = await Withdraw.findOne({
       user: userId,
       status: WITHDRAW_STATUS.pending,
@@ -53,7 +53,7 @@ const addWithdraw = async (
         'You already have a pending withdrawal request. Please wait until it is processed.',
       );
 
-    // â”\u20ACâ”\u20AC 5. Create withdrawal â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+    // â”€â”€ 5. Create withdrawal â”€â”€
     const [withdraw] = await Withdraw.create(
       [
         {
@@ -76,16 +76,16 @@ const addWithdraw = async (
   }
 };
 
-// â”\u20ACâ”\u20AC Get all withdrawals (admin) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// â”€â”€ Get all withdrawals (admin) â”€â”€
 const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
   const filter: any = {};
 
-  // â”\u20ACâ”\u20AC Status Filter â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+  // â”€â”€ Status Filter â”€â”€
   if (query.status) {
     filter.status = query.status;
   }
 
-  // â”\u20ACâ”\u20AC Date Range Filter (createdAt) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+  // â”€â”€ Date Range Filter (createdAt) â”€â”€
   if (query.dateFrom || query.dateTo) {
     filter.createdAt = {};
     if (query.dateFrom) {
@@ -96,7 +96,7 @@ const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
     }
   }
 
-  // â”\u20ACâ”\u20AC Amount Range Filter â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+  // â”€â”€ Amount Range Filter â”€â”€
   if (query.minAmount || query.maxAmount) {
     filter.amount = {};
     if (query.minAmount) {
@@ -107,7 +107,7 @@ const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
     }
   }
 
-  // â”\u20ACâ”\u20AC User Filter (by userId) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+  // â”€â”€ User Filter (by userId) â”€â”€
   if (query.userId) {
     filter.user = query.userId;
   }
@@ -137,7 +137,7 @@ const getAllWithdrawsFromDB = async (query: Record<string, unknown>) => {
   };
 };
 
-// â”\u20ACâ”\u20AC Get my withdrawals (provider) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// â”€â”€ Get my withdrawals (provider) â”€â”€
 const getDateRange = (query: Record<string, unknown>) => {
   const filter = String(query.filter || '').toLowerCase();
   const now = new Date();
@@ -319,7 +319,7 @@ const getMyWithdrawsFromDB = async (
   };
 };
 
-// â”\u20ACâ”\u20AC Get single withdrawal â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// â”€â”€ Get single withdrawal â”€â”€
 const getAWithdrawFromDB = async (id: string) => {
   const result = await Withdraw.findById(id).populate([
     { path: 'user', select: 'name email profileImage phone' },
@@ -328,7 +328,7 @@ const getAWithdrawFromDB = async (id: string) => {
   return result;
 };
 
-// â”\u20ACâ”\u20AC Update withdrawal status (admin only) â”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20ACâ”\u20AC
+// â”€â”€ Update withdrawal status (admin only) â”€â”€
 // Flow: pending -> completed (wallet deduct + IBAN snapshot)
 //       pending -> cancelled (no wallet touch)
 const updateWithdrawFromDB = async (

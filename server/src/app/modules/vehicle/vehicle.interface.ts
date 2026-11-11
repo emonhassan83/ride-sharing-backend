@@ -7,6 +7,7 @@ export interface TVehicle {
   number: string;
   year: number;
   seats: number;
+  carPapers?: string[];
   isDefault: boolean;
   isDeleted: boolean;
   createdAt: Date;

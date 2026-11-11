@@ -31,6 +31,10 @@ const vehicleSchema = new Schema<TVehicle>(
       min: [4, 'At least 4 seat required'],
       max: [6, 'Maximum 6 seats allowed'],
     },
+    carPapers: {
+      type: [String],
+      default: [],
+    },
     isDefault: {
       type: Boolean,
       default: false,

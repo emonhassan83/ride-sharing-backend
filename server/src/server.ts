@@ -8,6 +8,7 @@ import { connectRedis } from './app/config/redis.config';
 import initializeSocketIO from './app/socket/socket.init';
 import { startBackgroundJobs } from './app/job/jobScheduler';
 import { syncVehicleIndexes } from './app/modules/vehicle/vehicle.model';
+import { initChatPushWorker } from './app/queues/chatPush.queue';
 
 // ✅ One server, created once, never reassigned
 const server: Server = createServer(app);
@@ -36,8 +37,9 @@ async function main() {
         )
       );
 
-      // Start cron jobs AFTER the server is fully listening —
+      // Start cron jobs & BullMQ chat push worker AFTER the server is fully listening —
       startBackgroundJobs();
+      initChatPushWorker();
     });
 
     // @ts-ignore

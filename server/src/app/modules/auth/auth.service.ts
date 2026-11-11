@@ -5,6 +5,7 @@ import { User } from '../user/user.model';
 import bcrypt from 'bcrypt';
 import { config } from '../../config/env.config';
 import { REGISTER_WITH, USER_ROLE, USER_STATUS } from '../user/user.constant';
+import { Types } from 'mongoose';
 import {
   TAppleLoginPayload,
   TGoogleLoginPayload,
@@ -44,11 +45,14 @@ const clearFcmTokenFromOtherUsers = async (fcmToken?: string | null, excludeUser
 
 const purgeDeletedUserRelations = async (userId: any) => {
   const uid = String(userId);
+  const userObjectId = Types.ObjectId.isValid(uid) ? new Types.ObjectId(uid) : null;
+  const userQuery = userObjectId ? { $in: [uid, userObjectId] } : uid;
+
   await Promise.all([
-    Provider.deleteMany({ userId }),
-    Vehicle.deleteMany({ userId }),
-    UserLocation.deleteMany({ user: userId }),
-    Notification.deleteMany({ receiver: userId }),
+    Provider.deleteMany({ userId: userQuery }),
+    Vehicle.deleteMany({ userId: userQuery }),
+    UserLocation.deleteMany({ user: userQuery }),
+    Notification.deleteMany({ receiver: userQuery }),
     deleteCache(REDIS_KEYS.SAVED_PLACES_BY_USER(uid)).catch(() => {}),
     deleteCache(REDIS_KEYS.VEHICLES_BY_USER(uid)).catch(() => {}),
   ]);
@@ -56,7 +60,9 @@ const purgeDeletedUserRelations = async (userId: any) => {
     const redis = getRedisClient();
     await Promise.all([
       redis.srem('users:online', uid),
+      redis.srem('drivers:online', uid),
       redis.zrem('drivers:location', uid),
+      redis.zrem('drivers:geo', uid),
       redis.del(`driver:${uid}:details`),
       redis.del(`driver:${uid}:current`),
     ]);
@@ -92,14 +98,20 @@ const createUser = async (payload: any) => {
       throw new ApiError(StatusCodes.FORBIDDEN, message);
     }
 
+    // Role resolution: prioritize newly submitted role if provided (allowing role re-selection!), else preserve previously selected role, else default to 'user'
+    const resolvedRole = payload.role || existingUser.role || USER_ROLE.user;
+
     // 2. Soft deleted user — clean old relations & recreate fresh state
     if (existingUser.isDeleted) {
       await purgeDeletedUserRelations(existingUser._id);
       await clearFcmTokenFromOtherUsers(fcmToken, existingUser._id);
       existingUser.set({
         ...rest,
+        name: payload.name || existingUser.name,
         email,
         phone,
+        countryCode: payload.countryCode || existingUser.countryCode,
+        role: resolvedRole,
         fcmToken: fcmToken || null,
         isDeleted: false,
         deletedAt: null as any,
@@ -109,12 +121,21 @@ const createUser = async (payload: any) => {
         isKycVerified: false,
         isProfileComplete: false,
         isOnline: false,
-        documents: null,
+        documents: [],
+        customerId: null,
+        stripeAccountId: null,
+        gender: null,
+        dateOfBirth: null,
+        experience: null,
+        language: null,
+        wallet: 0,
+        avgRating: 0,
+        totalRating: 0,
         isSignUpOtpVerified: false,
         isLoginOTPVerified: false,
         isResetPasswordVerified: false,
         status:
-          payload.role === USER_ROLE.provider
+          resolvedRole === USER_ROLE.provider
             ? USER_STATUS.pending
             : payload.status || USER_STATUS.active,
       });
@@ -125,7 +146,19 @@ const createUser = async (payload: any) => {
     // 3. Unverified user — update fields and re-save
     if (!existingUser.isSignUpOtpVerified) {
       await clearFcmTokenFromOtherUsers(fcmToken, existingUser._id);
-      existingUser.set({ ...rest, email, phone, fcmToken });
+      existingUser.set({
+        ...rest,
+        name: payload.name || existingUser.name,
+        email,
+        phone,
+        countryCode: payload.countryCode || existingUser.countryCode,
+        role: resolvedRole,
+        fcmToken,
+        status:
+          resolvedRole === USER_ROLE.provider
+            ? USER_STATUS.pending
+            : payload.status || USER_STATUS.active,
+      });
       const user = await existingUser.save();
       return user;
     }
@@ -133,13 +166,17 @@ const createUser = async (payload: any) => {
 
   await clearFcmTokenFromOtherUsers(fcmToken);
 
+  const resolvedRole = payload.role || USER_ROLE.user;
   const finalPayload = {
     ...rest,
+    name: payload.name,
+    role: resolvedRole,
     email,
     phone,
+    countryCode: payload.countryCode,
     fcmToken,
     status:
-      payload.role === USER_ROLE.provider
+      resolvedRole === USER_ROLE.provider
         ? USER_STATUS.pending
         : payload.status || USER_STATUS.active,
   };
@@ -194,7 +231,16 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
           isKycVerified: false,
           isProfileComplete: false,
           isOnline: false,
-          documents: null,
+          documents: [],
+          customerId: null,
+          stripeAccountId: null,
+          gender: null,
+          dateOfBirth: null,
+          experience: null,
+          language: null,
+          wallet: 0,
+          avgRating: 0,
+          totalRating: 0,
           status: isProvider ? USER_STATUS.pending : USER_STATUS.active,
           verification: { otp: 0, expiresAt: new Date(), status: true },
           expireAt: null,
@@ -282,7 +328,16 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
           isKycVerified: false,
           isProfileComplete: false,
           isOnline: false,
-          documents: null,
+          documents: [],
+          customerId: null,
+          stripeAccountId: null,
+          gender: null,
+          dateOfBirth: null,
+          experience: null,
+          language: null,
+          wallet: 0,
+          avgRating: 0,
+          totalRating: 0,
           status: isProvider ? USER_STATUS.pending : USER_STATUS.active,
           verification: { otp: 0, expiresAt: new Date(), status: true },
           expireAt: null,
@@ -733,6 +788,61 @@ const refreshToken = async (token: string) => {
   };
 };
 
+const selectRole = async (userId: string, role: string) => {
+  if (![USER_ROLE.user, USER_ROLE.provider].includes(role as any)) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'Invalid role. Allowed roles: user, provider'
+    );
+  }
+
+  const user = await User.findById(userId);
+  if (!user || user.isDeleted) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+  }
+
+  user.role = role as any;
+  if (role === USER_ROLE.provider) {
+    user.status = user.isKycVerified ? USER_STATUS.active : USER_STATUS.pending;
+  } else {
+    user.status = USER_STATUS.active;
+  }
+
+  await user.save();
+
+  const jwtPayload = {
+    userId: user._id,
+    email: user.email,
+    role: user.role,
+  };
+
+  const accessToken = createToken(
+    jwtPayload,
+    config.jwt.accessSecret as string,
+    config.jwt.accessExpiration as TExpiresIn
+  );
+
+  const refreshToken = createToken(
+    jwtPayload,
+    config.jwt.refreshSecret as string,
+    config.jwt.refreshExpiration as TExpiresIn
+  );
+
+  return {
+    accessToken,
+    refreshToken,
+    user: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      isProfileComplete: user.isProfileComplete,
+      isKycVerified: user.isKycVerified,
+    },
+  };
+};
+
 export const AuthService = {
   createUser,
   loginWithEmail,
@@ -744,6 +854,7 @@ export const AuthService = {
   logoutUser,
   changePassword,
   refreshToken,
+  selectRole,
 };
 
 

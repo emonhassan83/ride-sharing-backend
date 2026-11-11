@@ -7,6 +7,10 @@ import httpStatus from 'http-status';
 import { callbackFn } from '../../../utils/callbackFn';
 import { Message } from '../../../modules/messages/messages.model';
 import { getIO } from '../../socket.init';
+import {
+  enqueueChatPushNotification,
+  isUserActiveInChat,
+} from '../../../queues/chatPush.queue';
 
 export const sendMessageHandler = eventHandler(
   async (socket: TSocket, payload: any, callback: any) => {
@@ -33,7 +37,7 @@ export const sendMessageHandler = eventHandler(
       }
 
       // 3. find chat and validate
-      const chat = await Chat.findById(chatId).populate('participants', '_id');
+      const chat = await Chat.findById(chatId).populate('participants', '_id name');
       if (!chat) {
         return callbackFn(callback, {
           success: false,
@@ -42,10 +46,10 @@ export const sendMessageHandler = eventHandler(
       }
 
       // 4. Check precipitant
-      const isParticipant = chat.participants.some(
+      const senderParticipant = chat.participants.find(
         (p: any) => p._id.toString() === userId
-      );
-      if (!isParticipant) {
+      ) as any;
+      if (!senderParticipant) {
         return callbackFn(callback, {
           success: false,
           message: 'You are not a participant of this chat',
@@ -55,7 +59,7 @@ export const sendMessageHandler = eventHandler(
       // 5. sent receiver join the room
       const otherParticipant = chat.participants.find(
         (p: any) => p._id.toString() !== userId
-      );
+      ) as any;
       if (!otherParticipant) {
         return callbackFn(callback, {
           success: false,
@@ -64,6 +68,12 @@ export const sendMessageHandler = eventHandler(
       }
       const finalReceiverId = otherParticipant._id.toString();
 
+      // Check if receiver is currently active inside this specific chat screen
+      const receiverActiveInChat = await isUserActiveInChat(
+        chat._id.toString(),
+        finalReceiverId
+      );
+
       // 6. Creation message
       const message = await Message.create({
         chat: chat._id,
@@ -71,6 +81,7 @@ export const sendMessageHandler = eventHandler(
         receiver: finalReceiverId,
         text: text?.trim(),
         imageUrl,
+        seen: receiverActiveInChat,
       });
 
       const populated = await Message.findById(message._id).select(
@@ -78,9 +89,13 @@ export const sendMessageHandler = eventHandler(
       );
 
       const io = getIO();
-      // emit to users
+      // emit to users (both user room and chat room)
       socket.emit('new-message', populated);
       io.to(finalReceiverId).emit('new-message', populated);
+      io.to(`chat:${chat._id.toString()}`).emit(
+        `new-message::${chat._id.toString()}`,
+        populated
+      );
 
       // chat list update
       const [senderChatList, receiverChatList] = await Promise.all([
@@ -96,6 +111,19 @@ export const sendMessageHandler = eventHandler(
         seen: false,
       });
       io.to(finalReceiverId).emit('new-notifications', unreadCount);
+
+      // 7. Push Bypass Check + Redis Buffer + BullMQ Debounced Batch Push
+      if (!receiverActiveInChat) {
+        await enqueueChatPushNotification({
+          chatId: chat._id.toString(),
+          senderId: userId,
+          senderName: senderParticipant?.name || socket.auth?.name || '',
+          receiverId: finalReceiverId,
+          text: text?.trim(),
+          imageUrl,
+          messageId: message._id.toString(),
+        });
+      }
 
       callbackFn(callback, {
         statusCode: httpStatus.OK,

@@ -42,10 +42,7 @@ const createProviderZodSchema = z.object({
     licenseFront: imageUrlSchema,
     licenseBack: imageUrlSchema,
 
-    carPapers: z
-      .array(imageUrlSchema, { message: 'Car papers are required' })
-      .min(1, { message: 'At least 1 car paper is required' })
-      .max(10, { message: 'Maximum 10 car papers allowed' }),
+    carPapers: z.array(imageUrlSchema).optional(),
   }),
 });
 

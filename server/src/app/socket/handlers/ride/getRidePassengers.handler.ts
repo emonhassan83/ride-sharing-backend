@@ -39,6 +39,7 @@ export const getRidePassengersHandler = eventHandler<any>(
     const passengers = await Passenger.find({
       rideId,
       status: { $in: [
+        PASSENGER_STATUS.pending,
         PASSENGER_STATUS.confirmed,
         PASSENGER_STATUS.driver_arrived,
         PASSENGER_STATUS.in_progress,

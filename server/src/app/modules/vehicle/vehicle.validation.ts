@@ -14,6 +14,7 @@ const singleCarSchema = z.object({
     .number()
     .min(1, 'At least 1 seat required')
     .max(20, 'Maximum 20 seats allowed'),
+  carPapers: z.array(z.string()).optional(),
 });
 
 // Multiple cars schema
@@ -35,7 +36,8 @@ const updateVehicleZodSchema = z.object({
       .regex(/^[A-Za-z0-9- ]+$/)
       .optional(),
     year: z.number().min(1900).max(new Date().getFullYear() + 1).optional(),
-    seats: z.number().min(1).max(20).optional()
+    seats: z.number().min(1).max(20).optional(),
+    carPapers: z.array(z.string()).optional(),
   }),
 });
 

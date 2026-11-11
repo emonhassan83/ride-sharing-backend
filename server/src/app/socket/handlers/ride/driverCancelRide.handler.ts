@@ -140,7 +140,7 @@ const cancelBookingWithRefund = async (
   return { refundAmount, userId: passenger?.userId };
 };
 
-// �\u20AC�\u20AC Helper: cancel entire ride (all active passengers) �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+// ── Helper: cancel entire ride (all active passengers) ──
 const cancelEntireRide = async (
   rideId: string,
   driverId: string,
@@ -226,7 +226,7 @@ export const driverCancelRideHandler = eventHandler<any>(
       ]);
     };
 
-    // �\u20AC�\u20AC PRIVATE RIDE �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+    // ── PRIVATE RIDE ──
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId
         ? await Passenger.findOne({
@@ -277,10 +277,10 @@ export const driverCancelRideHandler = eventHandler<any>(
       });
     }
 
-    // �\u20AC�\u20AC SPLIT RIDE �\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC�\u20AC
+    // ── SPLIT RIDE ──
     if (ride.type === RIDE_TYPE.split) {
 
-      // ✅ Case 1: passengerId নেই �\u20AC� পুরো ride cancel করো
+      // ✅ Case 1: passengerId নেই ──- পুরো ride cancel করো
       if (!passengerId) {
         const { cancelledPassengerCount, totalRefunded } = await cancelEntireRide(
           rideId,

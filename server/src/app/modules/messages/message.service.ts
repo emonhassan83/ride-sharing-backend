@@ -7,6 +7,11 @@ import { io } from '../../../server'
 import mongoose from 'mongoose'
 import { Message } from './messages.model'
 import ApiError from '../../errors/ApiError'
+import {
+  clearPendingChatPushBatch,
+  enqueueChatPushNotification,
+  isUserActiveInChat,
+} from '../../queues/chatPush.queue'
 
 const createMessages = async (payload: TMessages) => {
   const alreadyExists = await Chat.findOne({
@@ -22,6 +27,15 @@ const createMessages = async (payload: TMessages) => {
     payload.chat = alreadyExists?._id
   }
 
+  const chatIdStr = payload.chat.toString()
+  const receiverIdStr = payload.receiver.toString()
+  const senderIdStr = payload.sender.toString()
+
+  const receiverActiveInChat = await isUserActiveInChat(chatIdStr, receiverIdStr)
+  if (receiverActiveInChat) {
+    payload.seen = true
+  }
+
   const result = await Message.create(payload)
   if (!result) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Message creation failed')
@@ -30,6 +44,7 @@ const createMessages = async (payload: TMessages) => {
   if (io) {
     const senderMessage = `new-message::${result.chat.toString()}`
     io.to(`chat:${result.chat.toString()}`).emit(senderMessage, result)
+    io.to(receiverIdStr).emit('new-message', result)
 
     const [ChatListSender, ChatListReceiver] = await Promise.all([
       chatService.getMyChatList(result.sender.toString(), {}),
@@ -60,6 +75,17 @@ const createMessages = async (payload: TMessages) => {
       `new-notifications::${result.receiver.toString()}`,
       receiverUnread,
     )
+  }
+
+  if (!receiverActiveInChat) {
+    await enqueueChatPushNotification({
+      chatId: chatIdStr,
+      senderId: senderIdStr,
+      receiverId: receiverIdStr,
+      text: payload.text,
+      imageUrl: payload.imageUrl,
+      messageId: result._id.toString(),
+    })
   }
 
   return result
@@ -153,6 +179,8 @@ const deleteMessages = async (id: string) => {
 }
 
 const seenMessage = async (userId: string, chatId: string) => {
+  await clearPendingChatPushBatch(chatId, userId)
+
   const messageIdList = await Message.aggregate([
     {
       $match: {

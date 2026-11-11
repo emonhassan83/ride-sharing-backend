@@ -81,6 +81,7 @@ const initializeSocketIO = (server: HttpServer) => {
               vehicleName: vehicle?.name ?? '',
               vehicleNumber: vehicle?.number ?? '',
               vehicleModel: vehicle?.name ?? '',
+              seats: (vehicle?.seats ?? 4).toString(),
               totalSeats: (vehicle?.seats ?? 4).toString(),
               status: 'online',
               lastLat: (coords?.[1] ?? 0).toString(),

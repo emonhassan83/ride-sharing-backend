@@ -27,12 +27,14 @@ router.get(
 router.post(
   '/send-start-otp',
   auth([USER_ROLE.provider, USER_ROLE.user, USER_ROLE.admin]),
+  validateRequest(RideValidation.sendStartOtpZodSchema),
   RideController.sendStartOtp
 );
 
 router.post(
   '/verify-start-otp',
   auth([USER_ROLE.provider, USER_ROLE.user, USER_ROLE.admin]),
+  validateRequest(RideValidation.verifyStartOtpZodSchema),
   RideController.verifyStartOtp
 );
 
