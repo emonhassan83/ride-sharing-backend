@@ -171,8 +171,7 @@ export const pickUpRideHandler = eventHandler<any>(
     }
 
     for (const passenger of passengers) {
-      const wasAlreadyInProgress =
-        passenger.status === PASSENGER_STATUS.in_progress ||
+      const wasAlreadyPickedUp =
         passenger.status === PASSENGER_STATUS.picked_up;
 
       passenger.pickedUpAt = now;
@@ -219,7 +218,7 @@ export const pickUpRideHandler = eventHandler<any>(
         message: 'Your ride has started. Enjoy the trip!',
       });
 
-      if (!wasAlreadyInProgress) {
+      if (!wasAlreadyPickedUp) {
         const riderUser = await User.findById(passenger.userId)
           .select('fcmToken')
           .lean();

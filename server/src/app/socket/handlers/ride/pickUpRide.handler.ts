@@ -10,6 +10,11 @@ import eventHandler from '../../utils/eventHandler';
 import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { computePickupDelay } from '../../../utils/waitTimeNotice.utils';
+import {
+  isPassengerStartOtpVerified,
+  sendRideStartOtp,
+  verifyRideStartOtp,
+} from '../../../utils/rideStartOtp.utils';
 
 /** Still waiting to be picked up (not yet onboard). */
 const WAITING_PICKUP_STATUSES = [
@@ -26,7 +31,7 @@ const ACTIVE_SPLIT_NOTIFY_STATUSES = [
 
 export const pickUpRideHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    const { rideId, passengerId } = data;
+    const { rideId, passengerId, otp } = data || {};
     const driverId = socket.auth?._id?.toString();
 
     if (!driverId || !rideId)
@@ -37,11 +42,67 @@ export const pickUpRideHandler = eventHandler<any>(
       return callback?.({ success: false, message: 'Ride not found' });
     if (ride.driverId?.toString() !== driverId)
       return callback?.({ success: false, message: 'You are not assigned to this ride' });
-    if (ride.status !== RIDE_STATUS.started)
-      return callback?.({ success: false, message: 'Trip must be started before picking up' });
+    if (ride.status !== RIDE_STATUS.started && ride.status !== RIDE_STATUS.accepted)
+      return callback?.({ success: false, message: 'Trip must be accepted or started before picking up' });
 
     const redis = getRedisClient();
     const io = getIO();
+
+    const ensurePassengerOtpVerified = async (passenger: any) => {
+      if (otp) {
+        try {
+          await verifyRideStartOtp({
+            rideId: String(rideId),
+            passengerId: passenger._id.toString(),
+            otp,
+            requesterId: driverId,
+            requesterRole: 'provider',
+          });
+        } catch (otpErr: any) {
+          callback?.({
+            success: false,
+            requiresOtp: true,
+            message:
+              otpErr?.message ||
+              'Invalid or expired ride start OTP. Please verify the passenger OTP.',
+          });
+          return false;
+        }
+      }
+
+      const verified = await isPassengerStartOtpVerified(
+        String(rideId),
+        passenger._id.toString(),
+        passenger,
+      );
+      if (!verified) {
+        try {
+          await sendRideStartOtp({
+            rideId: String(rideId),
+            passengerId: passenger._id.toString(),
+            requesterId: driverId,
+            requesterRole: 'provider',
+          });
+        } catch {
+          /* ignore send error */
+        }
+
+        callback?.({
+          success: false,
+          requiresOtp: true,
+          message:
+            'Passenger OTP authorization is required before pickup. An OTP has been sent to the passenger via notification and email.',
+          data: {
+            rideId: ride._id,
+            passengerId: passenger._id,
+            requiresOtp: true,
+          },
+        });
+        return false;
+      }
+
+      return true;
+    };
 
     // Client rule: upfront price is locked - waiting must NOT alter rider fare.
     const doPickup = async (passenger: any) => {
@@ -127,6 +188,9 @@ export const pickUpRideHandler = eventHandler<any>(
       if (!passenger)
         return callback?.({ success: false, message: 'No passenger to pick up' });
 
+      const otpOk = await ensurePassengerOtpVerified(passenger);
+      if (!otpOk) return;
+
       const { waitingCharge } = await doPickup(passenger);
 
       return callback?.({
@@ -147,6 +211,9 @@ export const pickUpRideHandler = eventHandler<any>(
       });
       if (!passenger)
         return callback?.({ success: false, message: 'Passenger not found or already picked up' });
+
+      const otpOk = await ensurePassengerOtpVerified(passenger);
+      if (!otpOk) return;
 
       const { waitingCharge } = await doPickup(passenger);
 

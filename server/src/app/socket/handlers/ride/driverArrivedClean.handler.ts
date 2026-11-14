@@ -8,7 +8,6 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { triggerArrival } from '../../utils/triggerArrival';
-import { sendRideStartOtp } from '../../../utils/rideStartOtp.utils';
 
 export const driverArrivedHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -50,7 +49,11 @@ export const driverArrivedHandler = eventHandler<any>(
     const passengerQuery: Record<string, any> = {
       rideId,
       status: {
-        $in: [PASSENGER_STATUS.confirmed, PASSENGER_STATUS.driver_arrived],
+        $in: [
+          PASSENGER_STATUS.confirmed,
+          PASSENGER_STATUS.in_progress,
+          PASSENGER_STATUS.driver_arrived,
+        ],
       },
     };
     if (passengerId) {
@@ -75,20 +78,11 @@ export const driverArrivedHandler = eventHandler<any>(
         io,
         redis,
       );
-
-      // Ensure Ride Start OTP is sent when driver explicitly marks arrival
-      await sendRideStartOtp({
-        rideId: String(rideId),
-        passengerId: passenger._id.toString(),
-        requesterId: driverId,
-        requesterRole: 'provider',
-      }).catch(() => {});
     }
 
     return callback?.({
       success: true,
-      message:
-        'Arrival marked and Ride Start OTP sent to passenger notification and email.',
+      message: 'Driver arrival marked and passenger notified successfully.',
       data: {
         rideId: ride._id,
         passengerIds: passengers.map((p) => p._id),

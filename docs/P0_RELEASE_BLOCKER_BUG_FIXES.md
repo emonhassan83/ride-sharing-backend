@@ -84,30 +84,33 @@
 
 ---
 
-### d. SPLIT-051 | Ride can start without passenger authorization (Ride Start OTP API & Flow)
+### d. SPLIT-051 | Ride can start without passenger authorization (Pickup OTP Flow)
 
 #### কী বাগ ছিল (What Was the Bug):
-- ড্রাইভার যাত্রীর কাছ থেকে কোনো OTP ভেরিফাই করা ছাড়াই যেকোনো সময় (`driver:start-trip` বা `driver:pickup-ride`) রাইড শুরু করে দিতে পারত।
+- ড্রাইভার যাত্রীর কাছ থেকে কোনো OTP ভেরিফাই করা ছাড়াই পিকআপ সম্পন্ন (`driver:pickup-ride`) করতে পারত, অথবা ট্রিপ স্টার্ট করার সময় (`driver:start-trip`) অপ্রয়োজনীয়ভাবে অটোমেটিক OTP চলে যেত।
 
 #### কী ফিক্স করা হয়েছে (What Was Fixed):
 - `Passenger` মডেলে `isStartOtpVerified: { type: Boolean, default: false }` ফিল্ড যুক্ত করা হয়েছে।
-- রাইড শুরু করার জন্য **বাধ্যতামূলক ৬-ডিজিট (6-Digit) OTP** জেনারেশন ও ভেরিফিকেশন সিস্টেম তৈরি করা হয়েছে:
-  1. **`POST /api/v1/ride/send-start-otp`** (এবং সকেট ইভেন্ট `driver:send-start-otp`):
+- **ট্রিপ স্টার্ট (`driver:start-trip`) বনাম পিকআপ (`driver:pickup-ride`) OTP নিয়ম:**
+  - **ট্রিপ স্টার্ট করার সময় (`driver:start-trip`) কোনো অটোমেটিক OTP যাবে না বা ব্লক করবে না:** ড্রাইভার যখন পিকআপ লোকেশনের উদ্দেশ্যে যাত্রা শুরু করে (`driver:start-trip`), তখন রাইডের স্ট্যাটাস `started` হবে কিন্তু তখন অটোমেটিক কোনো OTP পাঠানো হবে না। একইভাবে পিকআপ লোকেশনে পৌঁছানোর (`driver:arrived-pickup` / `triggerArrival`) সময়ও অটোমেটিক OTP যাবে না।
+  - **যাত্রীকে পিকআপ করার সময় (`driver:pickup-ride`) অটোমেটিক OTP যাবে এবং ভেরিফিকেশন বাধ্যতামূলক:** ড্রাইভার যখন যাত্রীকে পিকআপ করতে যাবে (`driver:pickup-ride`) এবং যাত্রীর OTP এখনও ভেরিফাইড না থাকে (`isStartOtpVerified === false`), তখন স্বয়ংক্রিয়ভাবে সেই যাত্রীর কাছে ৬-ডিজিট OTP চলে যাবে এবং `requiresOtp: true` রিটার্ন করবে। এছাড়া অ্যাপ থেকে সরাসরি `POST /api/v1/ride/send-start-otp` বা সকেট `driver:send-start-otp` কল করেও পিকআপের সময় OTP পাঠানো যাবে।
+- পিকআপের জন্য **বাধ্যতামূলক ৬-ডিজিট (6-Digit) OTP** জেনারেশন ও ভেরিফিকেশন সিস্টেম:
+  1. **`POST /api/v1/ride/send-start-otp`** (এবং সকেট ইভেন্ট `driver:send-start-otp` / `driver:pickup-ride` অটো-ট্রিগার):
      - রিকোয়েস্ট বডি (বাধ্যতামূলক): `{ "rideId": "<rideId>", "passengerId": "<passengerId>" }`
      - কাজ: ৬-ডিজিটের ক্রিপ্টোগ্রাফিক OTP জেনারেট করে Redis-এ ১০ মিনিটের মেয়াদে সেভ করে এবং:
        - **Phone SMS (Twilio)**: `otp.service.ts`-এর নিয়মে যাত্রীর ভেরিফাইড ফোন নম্বরে সরাসরি Twilio SMS পাঠানো হয় (ডেভেলপমেন্ট মোডে কনসোলে লগ ও API রেসপন্সে `otp` রিটার্ন করা হয়)।
        - **Push Notification**: যাত্রীর ফোনে তাৎক্ষণিক পুশ নোটিফিকেশন পাঠানো হয়।
        - **Email Notification**: ব্যাকগ্রাউন্ড ইমেইল কিউয়ের মাধ্যমে যাত্রীর ইমেইলে OTP পৌঁছে যায়।
        - **Real-time Socket**: প্যাসেঞ্জারের সকেট রুমে (`user:${userId}`, `passenger:${passengerId}`) `ride:start-otp` ইভেন্ট পাঠিয়ে দেওয়া হয়।
-  2. **`POST /api/v1/ride/verify-start-otp`** (এবং সকেট ইভেন্ট `driver:verify-start-otp`):
+  2. **`POST /api/v1/ride/verify-start-otp`** (এবং সকেট ইভেন্ট `driver:verify-start-otp` অথবা `driver:pickup-ride` এ `{ otp }` পাস করা):
      - রিকোয়েস্ট বডি (বাধ্যতামূলক): `{ "rideId": "<rideId>", "passengerId": "<passengerId>", "otp": "123456" }`
      - কাজ: ৬-ডিজিট OTP সঠিক হলে `passenger.isStartOtpVerified = true` করা হয়।
      - **উভয় প্রান্তে (Both Sides) রিয়েল-টাইম ইভেন্ট ব্রডকাস্ট**: ভেরিফিকেশন সম্পন্ন হওয়ার সাথে সাথে ড্রাইভার (`driver:${driverId}`) এবং প্যাসেঞ্জার (`user:${passenger.userId}`) উভয় সাইডেই সকেটে `ride:start-otp-verified` এবং `driver:verify-start-otp` ইভেন্ট পাঠানো হয় যাতে উভয় অ্যাপ স্ক্রিন স্বয়ংক্রিয়ভাবে আপডেট হয়ে যায়।
   3. **স্প্লিট রাইড বনাম প্রাইভেট রাইডের পিকআপ ও রাইড শুরুর নিয়ম:**
-     - **প্রাইভেট রাইড:** একজন মূল যাত্রী থাকে। ড্রাইভার পৌঁছে তার ৬-ডিজিট OTP ভেরিফাই করে `driver:pickup-ride` কল করলেই যাত্রী `picked_up` হয় এবং সামগ্রিক রাইড `started` হয়ে যায়।
+     - **প্রাইভেট রাইড:** ড্রাইভার রাইড স্টার্ট (`driver:start-trip`) করলে কোনো অটো OTP ছাড়াই ট্রিপ স্টার্ট হয়। এরপর পিকআপের সময় (`driver:pickup-ride`) যাত্রীর কাছে ৬-ডিজিট OTP যায় এবং ভেরিফাই করলেই যাত্রী `picked_up` হয়।
      - **স্প্লিট রাইড (Multi-Passenger Split Pickup):**
-       - স্প্লিট রাইডে প্রতিটি যাত্রীর পিকআপ স্পট আলাদা হতে পারে। ড্রাইভার ১ম যাত্রীর পিকআপ লোকেশনে পৌঁছে তার স্বতন্ত্র ৬-ডিজিট OTP ভেরিফাই করে পিকআপ (`picked_up`) সম্পন্ন করার সাথে সাথেই গাড়ির সামগ্রিক ট্রিপ `Ride.status = 'started'` হয়ে যাবে (কারণ গাড়িটি যাত্রী নিয়ে পরবর্তী স্পটের উদ্দেশ্যে যাত্রা শুরু করেছে)।
-       - কিন্তু ২য় (বা পরবর্তী) কোনো যাত্রী ততক্ষণ পর্যন্ত `picked_up` হবে না যতক্ষণ না ড্রাইভার তার নিজস্ব পিকআপ লোকেশনে পৌঁছে তার স্বতন্ত্র ৬-ডিজিট OTP ভেরিফাই করছে। প্রতিটি যাত্রীর নিজস্ব OTP ভেরিফিকেশন ও পিকআপ সম্পূর্ণ পৃথকভাবে সংরক্ষিত থাকে।
+       - স্প্লিট রাইডে প্রতিটি যাত্রীর পিকআপ স্পট আলাদা হতে পারে। ড্রাইভার ১ম যাত্রীর পিকআপ করার সময় (`driver:pickup-ride`) তার স্বতন্ত্র ৬-ডিজিট OTP ভেরিফাই করে পিকআপ (`picked_up`) সম্পন্ন করে।
+       - ২য় (বা পরবর্তী) কোনো যাত্রী ততক্ষণ পর্যন্ত `picked_up` হবে না যতক্ষণ না ড্রাইভার তার নিজস্ব পিকআপের সময় তার স্বতন্ত্র ৬-ডিজিট OTP ভেরিফাই করছে। প্রতিটি যাত্রীর নিজস্ব পিকআপ OTP ভেরিফিকেশন সম্পূর্ণ পৃথকভাবে সংরক্ষিত থাকে।
 
 #### কোথায় পরিবর্তন হয়েছে (Changed Files):
 - `server/src/app/utils/rideStartOtp.utils.ts`
@@ -121,6 +124,7 @@
 - `server/src/app/socket/handlers/ride/driverStartTrip.handler.ts`
 - `server/src/app/socket/handlers/ride/driverArrivedClean.handler.ts`
 - `server/src/app/socket/handlers/ride/pickUpRideClean.handler.ts`
+- `server/src/app/socket/handlers/ride/pickUpRide.handler.ts`
 - `server/src/app/socket/utils/triggerArrival.ts`
 
 ---
@@ -254,10 +258,11 @@
 ### j. SPLIT-065 | Ride-start notification fires before pickup
 
 #### কী বাগ ছিল (What Was the Bug):
-- ড্রাইভার পিকআপ লোকেশনে পৌঁছানোর বা যাত্রীকে পিকআপ করার আগেই `driver:start-trip` কল করতে পারত এবং সাথে সাথে যাত্রীকে `"Trip Started! Your ride has started. Enjoy the trip!"` পুশ নোটিফিকেশন পাঠিয়ে দেওয়া হতো।
+- ড্রাইভার পিকআপ লোকেশনে পৌঁছানোর বা যাত্রীকে পিকআপ করার আগেই `driver:start-trip` কল করলে যাত্রীকে `"Trip Started! Your ride has started. Enjoy the trip!"` পুশ নোটিফিকেশন পাঠিয়ে দেওয়া হতো এবং `pickedUpAt` সেট হয়ে যেত।
 
 #### কী ফিক্স করা হয়েছে (What Was Fixed):
-- `driverStartTrip.handler.ts` এবং `pickUpRideClean.handler.ts`-এ যাত্রীর পিকআপ OTP ভেরিফিকেশন (`isStartOtpVerified === true`) বাধ্যতামূলক করা হয়েছে। ফলে ড্রাইভার যাত্রীকে পিকআপ করে OTP ভেরিফাই করার আগে ট্রিপ স্টার্ট বা `"Trip Started!"` নোটিফিকেশন ফায়ার হবে না।
+- `driverStartTrip.handler.ts`-এ `driver:start-trip` কল হলে কেবল ড্রাইভারের ট্রিপ শুরু (`Ride.status = 'started'`, `Passenger.status = 'in_progress'`) হয়—এখানে কোনো অটোমেটিক OTP পাঠানো হয় না এবং `"Trip Started!"` পুশ নোটিফিকেশন বা `pickedUpAt` সেট করা হয় না।
+- শুধুমাত্র যখন ড্রাইভার যাত্রীকে পিকআপ (`driver:pickup-ride` in `pickUpRideClean.handler.ts`) করে এবং যাত্রীর ৬-ডিজিট পিকআপ OTP ভেরিফাই (`isStartOtpVerified === true`) সম্পন্ন হয়, তখনই যাত্রী `picked_up` হয় এবং `"Trip Started! Your ride has started. Enjoy the trip!"` পুশ নোটিফিকেশন পাঠানো হয়।
 
 #### কোথায় পরিবর্তন হয়েছে (Changed Files):
 - `server/src/app/socket/handlers/ride/driverStartTrip.handler.ts`

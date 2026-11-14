@@ -9,22 +9,14 @@ import { Booking } from '../../../modules/booking/booking.model';
 import { Payment } from '../../../modules/payment/payment.model';
 import { PAYMENT_STATUS as PAYMENT_RECORD_STATUS } from '../../../modules/payment/payment.constant';
 import { PaymentService } from '../../../modules/payment/payment.service';
-import { User } from '../../../modules/user/user.model';
-import { modeType } from '../../../modules/notification/notification.interface';
-import { sendNotification } from '../../../utils/sentPushNotification';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { lockSplitRideFare } from '../../../utils/splitFare.utils';
-import {
-  isPassengerStartOtpVerified,
-  sendRideStartOtp,
-  verifyRideStartOtp,
-} from '../../../utils/rideStartOtp.utils';
 
 export const driverStartTripHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
-    const { rideId, passengerId, otp } = data;
+    const { rideId } = data;
     const driverId = socket.auth?._id?.toString();
 
     if (!driverId || !rideId)
@@ -62,59 +54,6 @@ export const driverStartTripHandler = eventHandler<any>(
         success: false,
         message: 'No confirmed passengers found',
       });
-
-    // ── Passenger OTP authorization check (SPLIT-051 & SPLIT-065) ─────────────
-    if (otp) {
-      try {
-        await verifyRideStartOtp({
-          rideId: String(rideId),
-          passengerId: passengerId ? String(passengerId) : passengers[0]._id.toString(),
-          otp,
-          requesterId: driverId,
-          requesterRole: 'provider',
-        });
-      } catch (otpErr: any) {
-        return callback?.({
-          success: false,
-          requiresOtp: true,
-          message:
-            otpErr?.message ||
-            'Invalid or expired ride start OTP. Please verify the passenger OTP.',
-        });
-      }
-    }
-
-    for (const passenger of passengers) {
-      const verified = await isPassengerStartOtpVerified(
-        String(rideId),
-        passenger._id.toString(),
-        passenger,
-      );
-      if (!verified) {
-        try {
-          await sendRideStartOtp({
-            rideId: String(rideId),
-            passengerId: passenger._id.toString(),
-            requesterId: driverId,
-            requesterRole: 'provider',
-          });
-        } catch {
-          /* ignore send error if already sent */
-        }
-
-        return callback?.({
-          success: false,
-          requiresOtp: true,
-          message:
-            'Passenger OTP authorization is required to start the ride. An OTP has been sent to the passenger via notification and email.',
-          data: {
-            rideId: ride._id,
-            passengerId: passenger._id,
-            requiresOtp: true,
-          },
-        });
-      }
-    }
 
     if (ride.type === RIDE_TYPE.split) {
       await lockSplitRideFare(rideId, 'trip_start', io);
@@ -182,11 +121,10 @@ export const driverStartTripHandler = eventHandler<any>(
 
     // ── Update passengers + bookings ──────────────────────────────────────────
     for (const passenger of passengers) {
-      passenger.status = PASSENGER_STATUS.in_progress;
-      if (!passenger.pickedUpAt) {
-        passenger.pickedUpAt = new Date();
+      if (passenger.status === PASSENGER_STATUS.confirmed) {
+        passenger.status = PASSENGER_STATUS.in_progress;
+        await passenger.save();
       }
-      await passenger.save();
 
       await Booking.findOneAndUpdate(
         { passengerId: passenger._id },
@@ -199,24 +137,10 @@ export const driverStartTripHandler = eventHandler<any>(
         passengerId: passenger._id,
         driverId,
         startTime: new Date(),
-        message: 'Your ride has started. Enjoy the trip!',
+        message: 'Driver has started the trip and is heading to the pickup location.',
       });
 
-      // FCM push — trip started (only fires after passenger OTP authorization)
-      const riderUser = await User.findById(passenger.userId)
-        .select('fcmToken')
-        .lean();
-      if (riderUser?.fcmToken) {
-        sendNotification([riderUser.fcmToken], {
-          receiver: passenger.userId,
-          message: 'Trip Started!',
-          description: 'Your ride has started. Enjoy the trip!',
-          reference: rideId,
-          modelType: modeType.Ride,
-        }).catch(() => {});
-      }
-
-      console.log(`✅ Passenger ${passenger._id} → in_progress | FCM sent`);
+      console.log(`✅ Passenger ${passenger._id} → in_progress`);
     }
 
     // ── Redis ─────────────────────────────────────────────────────────────────

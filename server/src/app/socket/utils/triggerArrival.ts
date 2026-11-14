@@ -6,7 +6,6 @@ import { User } from '../../modules/user/user.model';
 import { modeType } from '../../modules/notification/notification.interface';
 import { sendNotification } from '../../utils/sentPushNotification';
 import { buildWaitTimeNotice } from '../../utils/waitTimeNotice.utils';
-import { sendRideStartOtp } from '../../utils/rideStartOtp.utils';
 
 export async function triggerArrival(
   rideId: string,
@@ -70,17 +69,9 @@ export async function triggerArrival(
       }).catch((err: any) => console.warn(`FCM failed for rider ${passenger.userId}:`, err));
     }
 
-    // Automatically send Ride Start OTP to the passenger's notification & email upon arrival
-    sendRideStartOtp({
-      rideId: String(rideId),
-      passengerId: String(passenger._id),
-    }).catch((err: any) =>
-      console.warn(`Failed to send ride start OTP on arrival for ${passenger._id}:`, err),
-    );
-
     const remaining = await Passenger.countDocuments({
       rideId,
-      status: PASSENGER_STATUS.confirmed,
+      status: { $in: [PASSENGER_STATUS.confirmed, PASSENGER_STATUS.in_progress] },
       arrivedNotified: false,
     });
 
