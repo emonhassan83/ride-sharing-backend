@@ -21,6 +21,7 @@ import { config } from '../../config/env.config';
 import { Vehicle } from '../vehicle/vehicle.model';
 import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
+import { Review } from '../review/review.model';
 import { Passenger } from '../passenger/passenger.model';
 import { PASSENGER_STATUS } from '../passenger/passenger.constant';
 import { Payment } from '../payment/payment.model';
@@ -176,6 +177,7 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
       splitTodayEarningResult,
       totalEarningResult,
       splitTotalEarningResult,
+      reviewStats,
     ] = await Promise.all([
         // KYC / provider doc
         Provider.findOne({ userId })
@@ -255,7 +257,35 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
           },
           { $group: { _id: null, total: { $sum: '$driverEarningAmount' } } },
         ]),
+
+        Review.aggregate([
+          { $match: { user: userObjectId } },
+          {
+            $group: {
+              _id: null,
+              sumRating: { $sum: '$rating' },
+              count: { $sum: 1 },
+            },
+          },
+        ]),
       ]);
+
+    const liveTotalRating = reviewStats[0]?.count ?? 0;
+    const liveAvgRating =
+      liveTotalRating > 0
+        ? Number((reviewStats[0].sumRating / liveTotalRating).toFixed(2))
+        : 0;
+
+    if (
+      liveTotalRating > 0 &&
+      (result.avgRating !== liveAvgRating || result.totalRating !== liveTotalRating)
+    ) {
+      result.avgRating = liveAvgRating;
+      result.totalRating = liveTotalRating;
+      await User.findByIdAndUpdate(userId, {
+        $set: { avgRating: liveAvgRating, totalRating: liveTotalRating },
+      }).catch(() => {});
+    }
 
     providerData = provider;
     isKycSubmitted = !!provider;

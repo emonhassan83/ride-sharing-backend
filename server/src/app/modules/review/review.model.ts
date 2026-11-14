@@ -5,9 +5,9 @@ const reviewSchema = new Schema<TReviews>(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     reviewer: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    ride: { type: Schema.Types.ObjectId, ref: 'Ride', required: true },
+    ride: { type: Schema.Types.ObjectId, ref: 'Ride', required: false, default: null },
     rating: { type: Number, min: 1, max: 5, required: true },
-    comment: { type: String, required: true },
+    comment: { type: String, required: false, default: '' },
   },
   {
     timestamps: true,
