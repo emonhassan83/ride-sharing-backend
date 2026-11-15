@@ -112,8 +112,24 @@ const createNotificationIntoDB = async (payload: TNotification) => {
 };
 
 // get my notifications
+// Supports: ?sort=asc|desc | ?order=asc|desc | ?createdAt=asc|desc | ?sort=-createdAt
+// Default: newest first (-createdAt)
 const getAllNotificationFromDB = async (query: Record<string, unknown>) => {
-  const notificationQuery = new QueryBuilder(Notification.find(), query)
+  const normalizedQuery: Record<string, unknown> = { ...query };
+
+  const sortRaw = String(normalizedQuery.sort || normalizedQuery.order || '')
+    .trim()
+    .toLowerCase();
+  if (['asc', 'ascending', '1'].includes(sortRaw)) {
+    normalizedQuery.sort = 'createdAt';
+  } else if (['desc', 'descending', '-1'].includes(sortRaw)) {
+    normalizedQuery.sort = '-createdAt';
+  }
+
+  const notificationQuery = new QueryBuilder(
+    Notification.find(),
+    normalizedQuery,
+  )
     .filter()
     .sort()
     .paginate()
@@ -121,11 +137,10 @@ const getAllNotificationFromDB = async (query: Record<string, unknown>) => {
 
   const result = await notificationQuery.modelQuery;
   const meta = await notificationQuery.countTotal();
-  if (!notificationQuery) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Notification not found!');
-  }
 
-  const enriched = await Promise.all(result.map((item: any) => withRideMeta(item)));
+  const enriched = await Promise.all(
+    result.map((item: any) => withRideMeta(item)),
+  );
 
   return {
     meta,

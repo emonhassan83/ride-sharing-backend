@@ -13,6 +13,8 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { lockSplitRideFare } from '../../../utils/splitFare.utils';
+import { notifyUserPush } from '../../../utils/notifyUser.utils';
+import { modeType } from '../../../modules/notification/notification.interface';
 
 export const driverStartTripHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -131,14 +133,41 @@ export const driverStartTripHandler = eventHandler<any>(
         { bookingStatus: BOOKING_STATUS.running }
       );
 
+      const tripMessage =
+        'Driver has started the trip and is heading to the pickup location.';
+
       // Socket
       io.to(`ride:${rideId}`).emit('ride:trip-started', {
         rideId,
         passengerId: passenger._id,
         driverId,
         startTime: new Date(),
-        message: 'Driver has started the trip and is heading to the pickup location.',
+        message: tripMessage,
       });
+
+      const riderId = passenger.userId?.toString();
+      if (riderId) {
+        io.to(`user:${riderId}`).emit('ride:trip-started', {
+          rideId,
+          passengerId: passenger._id,
+          driverId,
+          startTime: new Date(),
+          message: tripMessage,
+        });
+
+        await notifyUserPush({
+          userId: riderId,
+          message: 'Trip Started',
+          description: tripMessage,
+          reference: rideId,
+          modelType: modeType.Ride,
+          data: {
+            type: 'TRIP_STARTED',
+            rideId: String(rideId),
+            passengerId: String(passenger._id),
+          },
+        });
+      }
 
       console.log(`✅ Passenger ${passenger._id} → in_progress`);
     }

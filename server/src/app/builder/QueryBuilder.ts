@@ -28,6 +28,7 @@ class QueryBuilder<T> {
     const excludeFields = [
       'searchTerm',
       'sort',
+      'order',
       'limit',
       'page',
       'fields',
@@ -64,13 +65,29 @@ class QueryBuilder<T> {
   }
 
   sort() {
-    // Prefer explicit ?sort=amount / ?sort=-amount
+    // Prefer explicit field sort: ?sort=amount / ?sort=-createdAt
     let sort = (this?.query?.sort as string)?.split(',')?.join(' ') || ''
 
-    // Also support frontend shorthand: ?amount=asc | ?createdAt=desc
-    if (!sort) {
+    // Direction-only: ?sort=asc|desc or ?order=asc|desc → createdAt
+    const directionOnly = (sort || String(this?.query?.order || ''))
+      .trim()
+      .toLowerCase()
+    if (['asc', 'ascending', '1'].includes(directionOnly)) {
+      sort = 'createdAt'
+    } else if (['desc', 'descending', '-1'].includes(directionOnly)) {
+      sort = '-createdAt'
+    }
+
+    // Field shorthand: ?amount=asc | ?createdAt=desc
+    if (
+      !sort ||
+      ['asc', 'desc', 'ascending', 'descending', '1', '-1'].includes(
+        sort.toLowerCase(),
+      )
+    ) {
       const parts: string[] = []
       for (const [key, value] of Object.entries(this.query || {})) {
+        if (key === 'sort' || key === 'order') continue
         if (
           typeof value === 'string' &&
           ['asc', 'desc', 'ascending', 'descending', '1', '-1'].includes(
@@ -83,8 +100,20 @@ class QueryBuilder<T> {
           parts.push(`${dir}${key}`)
         }
       }
-      sort = parts.join(' ')
+      if (parts.length) sort = parts.join(' ')
+      else if (
+        ['asc', 'desc', 'ascending', 'descending', '1', '-1'].includes(
+          String(sort).toLowerCase(),
+        )
+      ) {
+        // already mapped above; keep
+      }
     }
+
+    // Final normalize if still direction-only
+    const finalDir = String(sort || '').toLowerCase()
+    if (['asc', 'ascending', '1'].includes(finalDir)) sort = 'createdAt'
+    else if (['desc', 'descending', '-1'].includes(finalDir)) sort = '-createdAt'
 
     this.modelQuery = this.modelQuery.sort(sort || '-createdAt')
 
