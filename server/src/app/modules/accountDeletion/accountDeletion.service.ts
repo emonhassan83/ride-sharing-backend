@@ -4,24 +4,49 @@ import ApiError from '../../errors/ApiError';
 import { AccountDeletion } from './accountDeletion.model';
 import QueryBuilder from '../../builder/QueryBuilder';
 import { User } from '../user/user.model';
+import { TUserRole, USER_ROLE } from '../user/user.constant';
 import { getCache, setCache, deleteCache, deleteCachePattern } from '../../redis/helpers';
 import { REDIS_KEYS } from '../../redis/keys';
 
+const isUserRole = (value: string): value is TUserRole =>
+  (Object.values(USER_ROLE) as string[]).includes(value);
+
 // ==================== ADMIN - GET ALL ====================
 const getAllDeletions = async (query: Record<string, any> = {}) => {
-  // No list cache — searchTerm / page / limit must always hit DB
+  // No list cache — searchTerm / role / page / limit must always hit DB
   const filter: Record<string, any> = {};
+  const andConditions: Record<string, any>[] = [];
 
   const searchTerm =
     typeof query.searchTerm === 'string' ? query.searchTerm.trim() : '';
+  const roleRaw =
+    typeof query.role === 'string' ? query.role.trim() : '';
+  const role: TUserRole | null = isUserRole(roleRaw) ? roleRaw : null;
 
-  if (searchTerm) {
+  // role lives on User, not AccountDeletion — resolve user ids first
+  if (roleRaw) {
+    if (!role) {
+      // Unknown role → empty page
+      filter._id = { $exists: false };
+    } else {
+      const roleUsers = await User.find({ role })
+        .select('_id')
+        .lean<{ _id: Types.ObjectId }[]>();
+      const roleUserIds = roleUsers.map((u) => u._id);
+      if (!roleUserIds.length) {
+        filter._id = { $exists: false };
+      } else {
+        andConditions.push({ user: { $in: roleUserIds } });
+      }
+    }
+  }
+
+  if (searchTerm && !filter._id) {
     const userQuery: Record<string, any>[] = [
       { name: { $regex: searchTerm, $options: 'i' } },
       { email: { $regex: searchTerm, $options: 'i' } },
     ];
 
-    // Match Mongo _id when searchTerm is a valid ObjectId string
     if (
       Types.ObjectId.isValid(searchTerm) &&
       String(new Types.ObjectId(searchTerm)) === searchTerm
@@ -29,9 +54,15 @@ const getAllDeletions = async (query: Record<string, any> = {}) => {
       userQuery.push({ _id: new Types.ObjectId(searchTerm) });
     }
 
-    const matchedUsers = await User.find({ $or: userQuery }).select('_id').lean();
-    const userIds = matchedUsers.map((u) => u._id);
+    // If role already scoped users, search within that role only
+    const matchedUsers = await User.find({
+      $or: userQuery,
+      ...(role ? { role } : {}),
+    } as any)
+      .select('_id')
+      .lean<{ _id: Types.ObjectId }[]>();
 
+    const userIds = matchedUsers.map((u) => u._id);
     const deletionOr: Record<string, any>[] = [];
     if (userIds.length) {
       deletionOr.push({ user: { $in: userIds } });
@@ -44,14 +75,18 @@ const getAllDeletions = async (query: Record<string, any> = {}) => {
     }
 
     if (deletionOr.length) {
-      filter.$or = deletionOr;
+      andConditions.push({ $or: deletionOr });
     } else {
-      // No matches — force empty result (pagination meta still correct)
       filter._id = { $exists: false };
     }
   }
 
-  const { searchTerm: _search, ...builderQuery } = query;
+  if (andConditions.length && !filter._id) {
+    filter.$and = andConditions;
+  }
+
+  // role/searchTerm are not AccountDeletion document fields
+  const { searchTerm: _search, role: _role, ...builderQuery } = query;
 
   const accountDeletion = new QueryBuilder(
     AccountDeletion.find(filter).populate([
@@ -84,7 +119,7 @@ const getSingleDeletion = async (id: string) => {
     {
       path: 'user',
       select:
-        '_id name email profileImage phone countryCode address location createdAt',
+        '_id name email role profileImage phone countryCode address location createdAt',
     },
   ]);
   if (!record)

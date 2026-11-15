@@ -35,6 +35,7 @@ class QueryBuilder<T> {
       'maxAmount',
       'dateFrom',
       'dateTo',
+      'role', // often a related-user filter, not a document field
     ]
     excludeFields.forEach((el) => delete queryObj[el])
 

@@ -1198,14 +1198,16 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
     isDeleted: { $ne: true },
   };
 
-  // Date range
+  // Date range in Cyprus wall-clock (Europe/Nicosia), not raw UTC midnight
   if (query.dateFrom || query.dateTo) {
     filter.createdAt = {};
     if (query.dateFrom) {
-      filter.createdAt.$gte = new Date(`${query.dateFrom}T00:00:00.000Z`);
+      filter.createdAt.$gte = getDepartureDateTime(String(query.dateFrom), '00:00');
     }
     if (query.dateTo) {
-      filter.createdAt.$lte = new Date(`${query.dateTo}T23:59:59.999Z`);
+      // Inclusive end of local day
+      const end = getDepartureDateTime(String(query.dateTo), '23:59');
+      filter.createdAt.$lte = new Date(end.getTime() + 59 * 1000 + 999);
     }
   }
 
@@ -1260,6 +1262,7 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
     dateFrom: _from,
     dateTo: _to,
     searchTerm: _search,
+    role: _role,
     ...builderQuery
   } = query;
 
