@@ -39,10 +39,19 @@ class QueryBuilder<T> {
     ]
     excludeFields.forEach((el) => delete queryObj[el])
 
-    // Drop empty values so `?status=` does not break filtering
+    // Drop empty values + sort shorthands like amount=asc / createdAt=desc
     Object.keys(queryObj).forEach((key) => {
       const value = queryObj[key]
       if (value === '' || value === undefined || value === null) {
+        delete queryObj[key]
+        return
+      }
+      if (
+        typeof value === 'string' &&
+        ['asc', 'desc', 'ascending', 'descending', '1', '-1'].includes(
+          value.toLowerCase(),
+        )
+      ) {
         delete queryObj[key]
       }
     })
@@ -55,9 +64,29 @@ class QueryBuilder<T> {
   }
 
   sort() {
-    const sort =
-      (this?.query?.sort as string)?.split(',')?.join(' ') || '-createdAt'
-    this.modelQuery = this.modelQuery.sort(sort as string)
+    // Prefer explicit ?sort=amount / ?sort=-amount
+    let sort = (this?.query?.sort as string)?.split(',')?.join(' ') || ''
+
+    // Also support frontend shorthand: ?amount=asc | ?createdAt=desc
+    if (!sort) {
+      const parts: string[] = []
+      for (const [key, value] of Object.entries(this.query || {})) {
+        if (
+          typeof value === 'string' &&
+          ['asc', 'desc', 'ascending', 'descending', '1', '-1'].includes(
+            value.toLowerCase(),
+          )
+        ) {
+          const dir = ['desc', 'descending', '-1'].includes(value.toLowerCase())
+            ? '-'
+            : ''
+          parts.push(`${dir}${key}`)
+        }
+      }
+      sort = parts.join(' ')
+    }
+
+    this.modelQuery = this.modelQuery.sort(sort || '-createdAt')
 
     return this
   }

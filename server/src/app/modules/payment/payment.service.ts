@@ -1255,7 +1255,8 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
     ];
   }
 
-  // Strip helpers so QueryBuilder never treats them as document fields
+  // Strip helpers so QueryBuilder never treats them as document fields.
+  // Keep amount/createdAt when value is asc|desc — QueryBuilder.sort() handles those.
   const {
     minAmount: _min,
     maxAmount: _max,
@@ -1265,6 +1266,22 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
     role: _role,
     ...builderQuery
   } = query;
+
+  // If amount is a real number filter (not asc/desc), apply equality and strip from builder
+  if (
+    builderQuery.amount !== undefined &&
+    builderQuery.amount !== null &&
+    builderQuery.amount !== '' &&
+    !['asc', 'desc', 'ascending', 'descending', '1', '-1'].includes(
+      String(builderQuery.amount).toLowerCase(),
+    )
+  ) {
+    const exactAmount = Number(builderQuery.amount);
+    if (!Number.isNaN(exactAmount)) {
+      filter.amount = exactAmount;
+    }
+    delete builderQuery.amount;
+  }
 
   const paymentModel = new QueryBuilder(
     Payment.find(filter).populate([
