@@ -1,9 +1,6 @@
 // handlers/driver/driverAcceptRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
-import {
-  BOOKING_STATUS,
-  PAYMENT_STATUS as BOOKING_PAYMENT_STATUS,
-} from '../../../modules/booking/booking.constant';
+import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
 import { Booking } from '../../../modules/booking/booking.model';
 import { Chat } from '../../../modules/chat/chat.models';
 import { CHAT_STATUS } from '../../../modules/chat/chat.constants';
@@ -23,10 +20,7 @@ import { sendNotification } from '../../../utils/sentPushNotification';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { recalculateSplitFares } from '../../../utils/splitFare.utils';
-import {
-  assertDriverCanAcceptSplitPassenger,
-  getActiveSplitPassengersOnRide,
-} from '../../../utils/splitMatching.utils';
+import { getActiveSplitPassengersOnRide } from '../../../utils/splitMatching.utils';
 import { getSplitMaxMatchedRiders } from '../../../utils/splitFare.utils';
 import { buildStoredFareBreakdown } from '../../../utils/fareBreakdownResponse.utils';
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
@@ -178,52 +172,6 @@ const notifyOtherNotifiedDriversRideTaken = async (
     });
   }
 };
-const getDriverAvailableSeats = async (
-  driverId: string,
-  targetRideId: string,
-  targetDate: string,
-  targetTime: string,
-  vehicleTotalSeats: number
-): Promise<number> => {
-  const toMinutes = (t: string) => {
-    const [h, m] = t.split(':').map(Number);
-    return h * 60 + m;
-  };
-
-  const targetMinutes = toMinutes(targetTime);
-  const TRIP_DURATION_MINUTES = 60; // conservative estimate
-  const targetStart = targetMinutes;
-  const targetEnd = targetMinutes + TRIP_DURATION_MINUTES;
-
-  // Find driver's rides on same date that overlap with target time window
-  const overlappingRides = await Ride.find({
-    driverId,
-    _id: { $ne: targetRideId }, // exclude the ride being accepted
-    departureDate: targetDate,
-    status: { $in: [RIDE_STATUS.accepted, RIDE_STATUS.started] },
-  })
-    .select('departureTime bookedSeats type')
-    .lean();
-
-  let conflictingBookedSeats = 0;
-
-  for (const r of overlappingRides) {
-    const rideMinutes = toMinutes(r.departureTime);
-    const rideEnd = rideMinutes + TRIP_DURATION_MINUTES;
-
-    // Check time overlap
-    const overlaps =
-      (targetStart >= rideMinutes && targetStart < rideEnd) ||
-      (rideMinutes >= targetStart && rideMinutes < targetEnd);
-
-    if (overlaps) {
-      conflictingBookedSeats += r.bookedSeats || 0;
-    }
-  }
-
-  return vehicleTotalSeats - conflictingBookedSeats;
-};
-
 export const driverAcceptRideHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const { rideId, passengerId } = data;
@@ -322,60 +270,31 @@ export const driverAcceptRideHandler = eventHandler<any>(
       });
     }
 
-    // ──────────────────────────────────────────────────────────
-    const availableSeats = await getDriverAvailableSeats(
-      driverId,
-      rideId,
-      ride.departureDate,
-      ride.departureTime,
-      vehicleTotalSeats
-    );
-
     socket.join(`ride:${rideId}`);
     socket.join(`driver:${driverId}`);
 
     // ──────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.private) {
+      // Accept-time: no status/seats/booking-state gates — find passenger and proceed.
       const passenger = passengerId
-        ? await Passenger.findOne({
-          _id: passengerId,
-          rideId,
-          status: { $in: [PASSENGER_STATUS.pending] },
-        })
-        : await Passenger.findOne({
-          rideId,
-          status: { $in: [PASSENGER_STATUS.pending] },
-        });
+        ? await Passenger.findOne({ _id: passengerId, rideId }) ||
+          await Passenger.findById(passengerId)
+        : await Passenger.findOne({ rideId });
       if (!passenger)
         return callback?.({
           success: false,
-          message: 'No pending passenger found',
+          message: 'Passenger not found',
         });
 
-      const booking = await Booking.findOne({ passengerId: passenger._id, rideId: ride._id });
+      const booking =
+        (await Booking.findOne({ passengerId: passenger._id, rideId: ride._id })) ||
+        (await Booking.findOne({ passengerId: passenger._id }));
       if (!booking) {
         return callback?.({
           success: false,
           message: 'Booking not found for this passenger.',
         });
       }
-
-      if (
-        booking.bookingStatus === BOOKING_STATUS.cancelled ||
-        booking.paymentStatus === BOOKING_PAYMENT_STATUS.refunded ||
-        booking.paymentStatus === 'cancelled_authorization'
-      ) {
-        return callback?.({
-          success: false,
-          message: 'Booking has been cancelled or refunded and cannot be accepted.',
-        });
-      }
-
-      if (availableSeats < (passenger.requestedSeats || 1))
-        return callback?.({
-          success: false,
-          message: `Not enough seats. ${availableSeats} available, ${passenger.requestedSeats || 1} requested.`,
-        });
 
       const pickupLat = passenger.pickup.coordinates[1];
       const pickupLng = passenger.pickup.coordinates[0];
@@ -551,54 +470,25 @@ await redis.hset(`ride:active:${rideId}`, {
 
     // ──────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.split) {
+      // Accept-time: no pending/seats/cap/booking-state gates — find passenger and proceed.
       const passenger = passengerId
-        ? await Passenger.findOne({
-            _id: passengerId,
-            rideId,
-            status: PASSENGER_STATUS.pending,
-          })
-        : await Passenger.findOne({
-            rideId,
-            status: PASSENGER_STATUS.pending,
-          });
+        ? await Passenger.findOne({ _id: passengerId, rideId }) ||
+          await Passenger.findById(passengerId)
+        : await Passenger.findOne({ rideId });
 
       if (!passenger)
         return callback?.({
           success: false,
-          message: 'No pending passenger found for this split ride',
+          message: 'Passenger not found for this split ride',
         });
 
-      const booking = await Booking.findOne({ passengerId: passenger._id, rideId: ride._id });
+      const booking =
+        (await Booking.findOne({ passengerId: passenger._id, rideId: ride._id })) ||
+        (await Booking.findOne({ passengerId: passenger._id }));
       if (!booking) {
         return callback?.({
           success: false,
           message: 'Booking not found for this passenger.',
-        });
-      }
-
-      if (
-        booking.bookingStatus === BOOKING_STATUS.cancelled ||
-        booking.paymentStatus === BOOKING_PAYMENT_STATUS.refunded ||
-        booking.paymentStatus === 'cancelled_authorization'
-      ) {
-        return callback?.({
-          success: false,
-          message: 'Booking has been cancelled or refunded and cannot be accepted.',
-        });
-      }
-
-      const requestedSeats = passenger.requestedSeats || 1;
-      if (availableSeats < requestedSeats)
-        return callback?.({
-          success: false,
-          message: `Not enough seats. ${availableSeats} available, ${requestedSeats} requested.`,
-        });
-
-      const riderCap = await assertDriverCanAcceptSplitPassenger(rideId, passenger._id);
-      if (!riderCap.ok) {
-        return callback?.({
-          success: false,
-          message: riderCap.message || 'Split ride rider limit reached.',
         });
       }
 
