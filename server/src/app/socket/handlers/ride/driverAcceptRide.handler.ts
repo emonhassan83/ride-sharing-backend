@@ -445,16 +445,18 @@ export const driverAcceptRideHandler = eventHandler<any>(
         await notifyOtherNotifiedDriversRideTaken(ride, driverId, io, passenger._id.toString());
       }
 
-      booking.userId = passenger.userId as any;
-      booking.driverId = driverId as any;
-      booking.totalFare = passenger.estimatedFare;
-      booking.bookingStatus = BOOKING_STATUS.accepted;
-      await booking.save();
-
+      // Do NOT save booking before capture — that + long Stripe txn caused Mongo write conflicts.
+      // Capture links driver, marks paid/accepted, increments seats, creates chat.
       try {
         await PaymentService.captureAuthorizedBookingPayment(
           booking._id.toString(),
-          driverId
+          driverId,
+          {
+            incrementRideSeats: true,
+            createChat: true,
+            recalculateSplit: false,
+            updateBookingStatus: true,
+          },
         );
       } catch (captureErr: any) {
         // Keep claim for same-driver retry; surface real payment error (not "another driver").
@@ -468,6 +470,22 @@ export const driverAcceptRideHandler = eventHandler<any>(
             captureErr?.message ||
             'Payment capture failed. Please try accepting again.',
         });
+      }
+
+      // Refresh booking after capture for response payload
+      const refreshedBooking = await Booking.findById(booking._id);
+      if (refreshedBooking) {
+        booking.userId = refreshedBooking.userId as any;
+        booking.driverId = refreshedBooking.driverId as any;
+        booking.totalFare = refreshedBooking.totalFare;
+        booking.bookingStatus = refreshedBooking.bookingStatus;
+        booking.paymentStatus = refreshedBooking.paymentStatus;
+        booking.amountPaid = refreshedBooking.amountPaid;
+      } else {
+        booking.userId = passenger.userId as any;
+        booking.driverId = driverId as any;
+        booking.totalFare = passenger.estimatedFare;
+        booking.bookingStatus = BOOKING_STATUS.accepted;
       }
 
       notifyAdminForNewPendingBooking(booking).catch(() => { });

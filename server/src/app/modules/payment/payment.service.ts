@@ -716,6 +716,21 @@ const getCommissionBreakdown = async (
   };
 };
 
+const isMongoWriteConflict = (error: any): boolean => {
+  const msg = String(error?.message || error || '');
+  return (
+    error?.code === 112 ||
+    error?.codeName === 'WriteConflict' ||
+    error?.errorLabels?.includes?.('TransientTransactionError') ||
+    /Write conflict/i.test(msg)
+  );
+};
+
+/**
+ * Capture Stripe first (outside Mongo txn), then apply a short DB transaction.
+ * Holding a txn open during Stripe API calls caused:
+ * "Write conflict during plan execution and yielding is disabled".
+ */
 const captureAuthorizedBookingPayment = async (
   bookingId: string,
   driverId: string,
@@ -728,153 +743,226 @@ const captureAuthorizedBookingPayment = async (
     updateBookingStatus = true,
   } = options;
 
-  const session = await startSession();
-  let recalcRideId: string | null = null;
+  const bookingPre = await Booking.findById(bookingId);
+  if (!bookingPre) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
 
-  try {
-    session.startTransaction();
+  const paymentPre = await Payment.findOne({
+    booking: bookingId,
+    status: {
+      $in: [PAYMENT_STATUS.authorized, PAYMENT_STATUS.requires_reauthorization, PAYMENT_STATUS.paid],
+    },
+  });
 
-    const booking = await Booking.findById(bookingId).session(session);
-    if (!booking) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
+  // Already captured — just ensure driver is linked and exit
+  if (paymentPre?.status === PAYMENT_STATUS.paid && paymentPre.isPaid) {
+    await Booking.findByIdAndUpdate(bookingId, {
+      $set: {
+        driverId: new mongoose.Types.ObjectId(driverId),
+        ...(updateBookingStatus ? { bookingStatus: BOOKING_STATUS.accepted } : {}),
+      },
+    });
+    return paymentPre;
+  }
 
-    const payment = await Payment.findOne({
-      booking: bookingId,
-      status: { $in: [PAYMENT_STATUS.authorized, PAYMENT_STATUS.requires_reauthorization] },
-      isPaid: false,
-    }).session(session);
+  if (!paymentPre || paymentPre.isPaid) {
+    await Booking.findByIdAndUpdate(bookingId, {
+      $set: {
+        driverId: new mongoose.Types.ObjectId(driverId),
+        ...(updateBookingStatus ? { bookingStatus: BOOKING_STATUS.accepted } : {}),
+      },
+    });
+    return null;
+  }
 
-    booking.driverId = new mongoose.Types.ObjectId(driverId) as any;
+  if (paymentPre.status === PAYMENT_STATUS.requires_reauthorization) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Payment requires re-authorization before this ride can be started'
+    );
+  }
 
-    if (!payment) {
-      await booking.save({ session });
-      await session.commitTransaction();
-      return null;
-    }
+  const finalFare =
+    Math.round(
+      Number(paymentPre.amountToCapture || bookingPre.totalFare || paymentPre.amount) * 100,
+    ) / 100;
+  const captureAmount = Math.round(finalFare * 100);
 
-    if (payment.status === PAYMENT_STATUS.requires_reauthorization) {
+  // ── Stripe OUTSIDE Mongo transaction (critical) ──────────────────────────
+  let capturedIntent: Stripe.PaymentIntent | null = null;
+  if (paymentPre.paymentIntentId) {
+    const intent = await stripe.paymentIntents.retrieve(paymentPre.paymentIntentId);
+    if (intent.status === 'requires_capture') {
+      capturedIntent = await stripe.paymentIntents.capture(paymentPre.paymentIntentId, {
+        amount_to_capture: captureAmount,
+      });
+    } else if (intent.status === 'succeeded') {
+      capturedIntent = intent;
+    } else {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Payment requires re-authorization before this ride can be started'
+        `Payment cannot be captured. Current status: ${intent.status}`
       );
     }
-
-    const finalFare = Math.round(
-      Number(payment.amountToCapture || booking.totalFare || payment.amount) * 100
-    ) / 100;
-    const captureAmount = Math.round(finalFare * 100);
-
-    let capturedIntent: Stripe.PaymentIntent | null = null;
-    if (payment.paymentIntentId) {
-      const intent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
-      if (intent.status === 'requires_capture') {
-        capturedIntent = await stripe.paymentIntents.capture(payment.paymentIntentId, {
-          amount_to_capture: captureAmount,
-        });
-      } else if (intent.status === 'succeeded') {
-        capturedIntent = intent;
-      } else {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Payment cannot be captured. Current status: ${intent.status}`
-        );
-      }
-    }
-
-    if (capturedIntent && capturedIntent.status !== 'succeeded') {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Payment capture failed');
-    }
-
-    const passenger = await Passenger.findById(booking.passengerId).session(session);
-    if (!passenger) throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
-
-    const ride = booking.rideId
-      ? await Ride.findById(booking.rideId).session(session)
-      : null;
-    const rideType = (ride?.type || RIDE_TYPE.private) as 'private' | 'split';
-    const isMatchedSplit =
-      rideType === RIDE_TYPE.split && Number((passenger as any).surchargeAmount || 0) > 0;
-    const { platformCommission, providerEarning } = await getCommissionBreakdown(
-      finalFare,
-      rideType,
-      isMatchedSplit,
-    );
-
-    payment.provider = new mongoose.Types.ObjectId(driverId) as any;
-    payment.amount = finalFare;
-    payment.amountToCapture = finalFare;
-    payment.platformCommission = platformCommission;
-    payment.providerEarning = providerEarning;
-    payment.status = PAYMENT_STATUS.paid;
-    payment.isPaid = true;
-    await payment.save({ session });
-
-    booking.paymentStatus = PAYMENT_STATUS.paid as any;
-    if (updateBookingStatus) booking.bookingStatus = BOOKING_STATUS.accepted;
-    booking.totalFare = finalFare;
-    booking.amountPaid = finalFare;
-    await booking.save({ session });
-
-    await Passenger.findByIdAndUpdate(
-      booking.passengerId,
-      { paymentStatus: PAYMENT_STATUS.paid, paidAmount: finalFare },
-      { session }
-    );
-
-    if (ride) {
-      if (ride.type === RIDE_TYPE.split) {
-        payment.providerEarning = 0;
-        await payment.save({ session });
-      }
-      if (ride.type === RIDE_TYPE.split && recalculateSplit) recalcRideId = ride._id.toString();
-      if (incrementRideSeats) {
-        await Ride.findByIdAndUpdate(
-          ride._id,
-          {
-            $inc: {
-              bookedSeats: passenger.requestedSeats || 1,
-              malePassengers: passenger.malePassengers || 0,
-              femalePassengers: passenger.femalePassengers || 0,
-            },
-          },
-          { session }
-        );
-      }
-    }
-    // Provider wallet is credited only after ride completion.
-
-    if (createChat) {
-      const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
-      if (!existingChat) {
-        await Chat.create(
-          [
-            {
-              booking: booking._id,
-              participants: [booking.userId, booking.driverId as any],
-              status: CHAT_STATUS.accepted,
-            },
-          ],
-          { session }
-        );
-      }
-    }
-
-    await session.commitTransaction();
-
-    if (recalcRideId) {
-      try {
-        await recalculateSplitFares(recalcRideId, 'passenger_paid');
-      } catch (err) {
-        console.error('Recalculate error after capture:', err);
-      }
-    }
-
-    return payment;
-  } catch (error: any) {
-    await session.abortTransaction();
-    throw new ApiError(httpStatus.BAD_REQUEST, error.message || 'Payment capture failed');
-  } finally {
-    session.endSession();
   }
+
+  if (capturedIntent && capturedIntent.status !== 'succeeded') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Payment capture failed');
+  }
+
+  const passengerPre = await Passenger.findById(bookingPre.passengerId).lean();
+  if (!passengerPre) throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
+
+  const ridePre = bookingPre.rideId
+    ? await Ride.findById(bookingPre.rideId).select('type').lean()
+    : null;
+  const rideType = (ridePre?.type || RIDE_TYPE.private) as 'private' | 'split';
+  const isMatchedSplit =
+    rideType === RIDE_TYPE.split && Number((passengerPre as any).surchargeAmount || 0) > 0;
+  const { platformCommission, providerEarning } = await getCommissionBreakdown(
+    finalFare,
+    rideType,
+    isMatchedSplit,
+  );
+
+  let recalcRideId: string | null = null;
+  let savedPayment: any = null;
+
+  // ── Short Mongo txn with retry on write conflict ─────────────────────────
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const session = await startSession();
+    try {
+      session.startTransaction();
+
+      const booking = await Booking.findById(bookingId).session(session);
+      if (!booking) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
+
+      const payment = await Payment.findOne({
+        booking: bookingId,
+        status: { $in: [PAYMENT_STATUS.authorized, PAYMENT_STATUS.paid] },
+      }).session(session);
+
+      if (!payment) {
+        booking.driverId = new mongoose.Types.ObjectId(driverId) as any;
+        if (updateBookingStatus) booking.bookingStatus = BOOKING_STATUS.accepted;
+        await booking.save({ session });
+        await session.commitTransaction();
+        savedPayment = null;
+        break;
+      }
+
+      // Idempotent if another attempt already marked paid
+      if (payment.status === PAYMENT_STATUS.paid && payment.isPaid) {
+        booking.driverId = new mongoose.Types.ObjectId(driverId) as any;
+        if (updateBookingStatus) booking.bookingStatus = BOOKING_STATUS.accepted;
+        await booking.save({ session });
+        await session.commitTransaction();
+        savedPayment = payment;
+        break;
+      }
+
+      const passenger = await Passenger.findById(booking.passengerId).session(session);
+      if (!passenger) throw new ApiError(httpStatus.NOT_FOUND, 'Passenger not found');
+
+      const ride = booking.rideId
+        ? await Ride.findById(booking.rideId).session(session)
+        : null;
+
+      payment.provider = new mongoose.Types.ObjectId(driverId) as any;
+      payment.amount = finalFare;
+      payment.amountToCapture = finalFare;
+      payment.platformCommission = platformCommission;
+      payment.providerEarning =
+        ride?.type === RIDE_TYPE.split ? 0 : providerEarning;
+      payment.status = PAYMENT_STATUS.paid;
+      payment.isPaid = true;
+      await payment.save({ session });
+
+      booking.driverId = new mongoose.Types.ObjectId(driverId) as any;
+      booking.paymentStatus = PAYMENT_STATUS.paid as any;
+      if (updateBookingStatus) booking.bookingStatus = BOOKING_STATUS.accepted;
+      booking.totalFare = finalFare;
+      booking.amountPaid = finalFare;
+      await booking.save({ session });
+
+      await Passenger.findByIdAndUpdate(
+        booking.passengerId,
+        { paymentStatus: PAYMENT_STATUS.paid, paidAmount: finalFare },
+        { session },
+      );
+
+      if (ride) {
+        if (ride.type === RIDE_TYPE.split && recalculateSplit) {
+          recalcRideId = ride._id.toString();
+        }
+        if (incrementRideSeats) {
+          await Ride.findByIdAndUpdate(
+            ride._id,
+            {
+              $inc: {
+                bookedSeats: passenger.requestedSeats || 1,
+                malePassengers: passenger.malePassengers || 0,
+                femalePassengers: passenger.femalePassengers || 0,
+              },
+            },
+            { session },
+          );
+        }
+      }
+
+      if (createChat) {
+        const existingChat = await Chat.findOne({ booking: booking._id }).session(session);
+        if (!existingChat) {
+          await Chat.create(
+            [
+              {
+                booking: booking._id,
+                participants: [booking.userId, booking.driverId as any],
+                status: CHAT_STATUS.accepted,
+              },
+            ],
+            { session },
+          );
+        }
+      }
+
+      await session.commitTransaction();
+      savedPayment = payment;
+      break;
+    } catch (error: any) {
+      try {
+        await session.abortTransaction();
+      } catch {
+        /* ignore */
+      }
+
+      if (isMongoWriteConflict(error) && attempt < maxAttempts) {
+        console.warn(
+          `captureAuthorizedBookingPayment write conflict (attempt ${attempt}/${maxAttempts}), retrying...`,
+        );
+        await new Promise((r) => setTimeout(r, 50 * attempt));
+        continue;
+      }
+
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        error.message || 'Payment capture failed',
+      );
+    } finally {
+      session.endSession();
+    }
+  }
+
+  if (recalcRideId) {
+    try {
+      await recalculateSplitFares(recalcRideId, 'passenger_paid');
+    } catch (err) {
+      console.error('Recalculate error after capture:', err);
+    }
+  }
+
+  return savedPayment;
 };
 
 const cancelAuthorizedBookingPayment = async (bookingId: string) => {
