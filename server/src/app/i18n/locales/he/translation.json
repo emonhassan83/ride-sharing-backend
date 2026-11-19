@@ -598,7 +598,12 @@
     "Password has been reset successfully": "הסיסמה אופסה בהצלחה",
     "Driver Arrived": "הנהג הגיע",
     "Account Activated": "החשבון הופעל",
-    "Account Blocked": "החשבון נחסם"
+    "Account Blocked": "החשבון נחסם",
+    "Account Status Updated": "סטטוס החשבון עודכן",
+    "KYC Verification Submitted": "אימות KYC הוגש",
+    "KYC Verification Approved": "אימות KYC אושר",
+    "KYC Verification Rejected": "אימות KYC נדחה",
+    "New Rating Received": "התקבל דירוג חדש"
   },
   "patterns": {
     "dropoff_fare": "סה\"כ תעריף: €{{totalFare}} (בסיס: €{{baseFare}} + המתנה: €{{waitingCharge}})",
@@ -610,7 +615,7 @@
     "cannot_complete_status": "לא ניתן להשלים נסיעה - סטטוס: {{status}}",
     "endpoint_not_found": "נקודת הקצה המבוקשת {{url}} לא נמצאה!",
     "kyc_rejected_reason": "אימות ה-KYC שלך נדחה. סיבה: {{reason}}",
-    "chat_unread_title": "💬 {{senderName}} ({{count}} הודעות שלא נקראו)",
+    "chat_unread_title": "{{senderName}} ({{count}} הודעות שלא נקראו)",
     "entire_split_cancelled": "כל הנסיעה המשותפת בוטלה. {{count}} נוסעים הושפעו.",
     "remaining_passengers": "נותרו {{count}} נוסעים.",
     "wallet_refunded": "€{{amount}} הוחזרו לארנק שלך.",

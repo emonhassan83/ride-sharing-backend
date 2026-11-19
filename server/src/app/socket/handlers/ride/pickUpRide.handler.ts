@@ -141,7 +141,7 @@ export const pickUpRideHandler = eventHandler<any>(
       await notifyUserPush({
         userId: passenger.userId.toString(),
         message: 'You Have Been Picked Up!',
-        description: 'Driver has picked you up. Safe journey!',
+        description: 'Your driver has picked you up. Have a safe journey!',
         reference: rideId,
         modelType: modeType.Ride,
         data: {

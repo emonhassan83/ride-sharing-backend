@@ -629,12 +629,15 @@ const deleteUserProfile = async (
       { session }
     );
 
-    // Soft delete user and reset profile/KYC state so re-registration starts fresh
+    // Free the email and phone so the same credentials create a new user.
+    const stamp = Date.now();
     const deletedUser = await User.findByIdAndUpdate(
       userId,
       {
         isDeleted: true,
         deletedAt: new Date(),
+        email: `deleted.${uid}.${stamp}@example.com`,
+        phone: `d${uid}${stamp}`,
         profileImage: null,
         address: null,
         type: null,

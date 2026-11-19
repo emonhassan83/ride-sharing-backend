@@ -598,7 +598,12 @@
     "Password has been reset successfully": "Пароль успешно сброшен",
     "Driver Arrived": "Водитель прибыл",
     "Account Activated": "Аккаунт активирован",
-    "Account Blocked": "Аккаунт заблокирован"
+    "Account Blocked": "Аккаунт заблокирован",
+    "Account Status Updated": "Статус аккаунта обновлён",
+    "KYC Verification Submitted": "Документы KYC отправлены",
+    "KYC Verification Approved": "Верификация KYC одобрена",
+    "KYC Verification Rejected": "Верификация KYC отклонена",
+    "New Rating Received": "Получена новая оценка"
   },
   "patterns": {
     "dropoff_fare": "Итоговая стоимость: €{{totalFare}} (Базовая: €{{baseFare}} + Ожидание: €{{waitingCharge}})",
@@ -610,7 +615,7 @@
     "cannot_complete_status": "Невозможно завершить поездку - статус: {{status}}",
     "endpoint_not_found": "Запрашиваемый маршрут {{url}} не найден!",
     "kyc_rejected_reason": "Ваша KYC-верификация отклонена. Причина: {{reason}}",
-    "chat_unread_title": "💬 {{senderName}} (непрочитанных сообщений: {{count}})",
+    "chat_unread_title": "{{senderName}} (непрочитанных сообщений: {{count}})",
     "entire_split_cancelled": "Вся совместная поездка отменена. Затронуто пассажиров: {{count}}.",
     "remaining_passengers": "Осталось пассажиров: {{count}}.",
     "wallet_refunded": "€{{amount}} возвращено на ваш кошелёк.",

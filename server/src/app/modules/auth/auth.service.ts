@@ -43,6 +43,44 @@ const clearFcmTokenFromOtherUsers = async (fcmToken?: string | null, excludeUser
   await User.updateMany(filter, { $set: { fcmToken: null } });
 };
 
+const archivedIdentity = (userId: any) => {
+  const uid = String(userId);
+  const stamp = Date.now();
+  return {
+    email: `deleted.${uid}.${stamp}@example.com`,
+    phone: `d${uid}${stamp}`,
+  };
+};
+
+/** Free email/phone and drop driver profile data so a later signup is a new user. */
+const releaseDeletedAccount = async (user: any) => {
+  await purgeDeletedUserRelations(user._id);
+  const identity = archivedIdentity(user._id);
+  await User.updateOne(
+    { _id: user._id },
+    {
+      $set: {
+        email: identity.email,
+        phone: identity.phone,
+        isDeleted: true,
+        profileImage: null,
+        documents: [],
+        address: null,
+        type: null,
+        isKycVerified: false,
+        isProfileComplete: false,
+        isOnline: false,
+        fcmToken: null,
+        customerId: null,
+        stripeAccountId: null,
+        wallet: 0,
+        avgRating: 0,
+        totalRating: 0,
+      },
+    },
+  );
+};
+
 const purgeDeletedUserRelations = async (userId: any) => {
   const uid = String(userId);
   const userObjectId = Types.ObjectId.isValid(uid) ? new Types.ObjectId(uid) : null;
@@ -101,50 +139,12 @@ const createUser = async (payload: any) => {
     // Role resolution: prioritize newly submitted role if provided (allowing role re-selection!), else preserve previously selected role, else default to 'user'
     const resolvedRole = payload.role || existingUser.role || USER_ROLE.user;
 
-    // 2. Soft deleted user — clean old relations & recreate fresh state
+    // 2. Soft-deleted user keeps its old _id. Archive that identity and
+    // create a brand-new user below so car, KYC, and profile do not come back.
     if (existingUser.isDeleted) {
-      await purgeDeletedUserRelations(existingUser._id);
       await clearFcmTokenFromOtherUsers(fcmToken, existingUser._id);
-      existingUser.set({
-        ...rest,
-        name: payload.name || existingUser.name,
-        email,
-        phone,
-        countryCode: payload.countryCode || existingUser.countryCode,
-        role: resolvedRole,
-        fcmToken: fcmToken || null,
-        isDeleted: false,
-        deletedAt: null as any,
-        profileImage: null,
-        address: null,
-        type: null,
-        isKycVerified: false,
-        isProfileComplete: false,
-        isOnline: false,
-        documents: [],
-        customerId: null,
-        stripeAccountId: null,
-        gender: null,
-        dateOfBirth: null,
-        experience: null,
-        language: null,
-        wallet: 0,
-        avgRating: 0,
-        totalRating: 0,
-        isSignUpOtpVerified: false,
-        isLoginOTPVerified: false,
-        isResetPasswordVerified: false,
-        status:
-          resolvedRole === USER_ROLE.provider
-            ? USER_STATUS.pending
-            : payload.status || USER_STATUS.active,
-      });
-      const user = await existingUser.save();
-      return user;
-    }
-
-    // 3. Unverified user — update fields and re-save
-    if (!existingUser.isSignUpOtpVerified) {
+      await releaseDeletedAccount(existingUser);
+    } else if (!existingUser.isSignUpOtpVerified) {
       await clearFcmTokenFromOtherUsers(fcmToken, existingUser._id);
       existingUser.set({
         ...rest,
@@ -206,56 +206,15 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
     fcmToken: payload.fcmToken,
   };
 
-  if (user) {
+  if (user?.isDeleted) {
+    await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
+    await releaseDeletedAccount(user);
+  } else if (user) {
     if (user.registerWith !== REGISTER_WITH.google) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
         `This account is registered with ${user.registerWith}, please use that method.`
       );
-    }
-
-    if (user.isDeleted) {
-      await purgeDeletedUserRelations(user._id);
-      await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
-      const isProvider = (payload.role || user.role) === USER_ROLE.provider;
-      const updatedUser = await User.findByIdAndUpdate(
-        user._id,
-        {
-          ...updateData,
-          role: payload.role || user.role,
-          isDeleted: false,
-          deletedAt: null,
-          profileImage: payload.photoUrl || null,
-          address: null,
-          type: null,
-          isKycVerified: false,
-          isProfileComplete: false,
-          isOnline: false,
-          documents: [],
-          customerId: null,
-          stripeAccountId: null,
-          gender: null,
-          dateOfBirth: null,
-          experience: null,
-          language: null,
-          wallet: 0,
-          avgRating: 0,
-          totalRating: 0,
-          status: isProvider ? USER_STATUS.pending : USER_STATUS.active,
-          verification: { otp: 0, expiresAt: new Date(), status: true },
-          expireAt: null,
-        },
-        { returnDocument: 'after' }
-      );
-
-      if (!updatedUser) {
-        throw new ApiError(
-          StatusCodes.INTERNAL_SERVER_ERROR,
-          'Failed to reactivate deleted user.'
-        );
-      }
-
-      return generateTokens(updatedUser as any);
     }
 
     await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
@@ -303,56 +262,15 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
     fcmToken: payload.fcmToken,
   };
 
-  if (user) {
+  if (user?.isDeleted) {
+    await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
+    await releaseDeletedAccount(user);
+  } else if (user) {
     if (user.registerWith !== REGISTER_WITH.apple) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
         `This account is registered with ${user.registerWith}, please use that method.`
       );
-    }
-
-    if (user.isDeleted) {
-      await purgeDeletedUserRelations(user._id);
-      await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
-      const isProvider = (payload.role || user.role) === USER_ROLE.provider;
-      const updatedUser = await User.findByIdAndUpdate(
-        user._id,
-        {
-          ...updateData,
-          role: payload.role || user.role,
-          isDeleted: false,
-          deletedAt: null,
-          profileImage: payload.photoUrl || null,
-          address: null,
-          type: null,
-          isKycVerified: false,
-          isProfileComplete: false,
-          isOnline: false,
-          documents: [],
-          customerId: null,
-          stripeAccountId: null,
-          gender: null,
-          dateOfBirth: null,
-          experience: null,
-          language: null,
-          wallet: 0,
-          avgRating: 0,
-          totalRating: 0,
-          status: isProvider ? USER_STATUS.pending : USER_STATUS.active,
-          verification: { otp: 0, expiresAt: new Date(), status: true },
-          expireAt: null,
-        },
-        { returnDocument: 'after' }
-      );
-
-      if (!updatedUser) {
-        throw new ApiError(
-          StatusCodes.INTERNAL_SERVER_ERROR,
-          'Failed to reactivate deleted user.'
-        );
-      }
-
-      return generateTokens(updatedUser);
     }
 
     await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);

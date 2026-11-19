@@ -598,7 +598,12 @@
     "Password has been reset successfully": "Пароль успішно скинуто",
     "Driver Arrived": "Водій прибув",
     "Account Activated": "Акаунт активовано",
-    "Account Blocked": "Акаунт заблоковано"
+    "Account Blocked": "Акаунт заблоковано",
+    "Account Status Updated": "Статус облікового запису оновлено",
+    "KYC Verification Submitted": "Документи KYC надіслано",
+    "KYC Verification Approved": "Верифікацію KYC схвалено",
+    "KYC Verification Rejected": "Верифікацію KYC відхилено",
+    "New Rating Received": "Отримано нову оцінку"
   },
   "patterns": {
     "dropoff_fare": "Загальна вартість: €{{totalFare}} (Базова: €{{baseFare}} + Очікування: €{{waitingCharge}})",
@@ -610,7 +615,7 @@
     "cannot_complete_status": "Неможливо завершити поїздку - статус: {{status}}",
     "endpoint_not_found": "Запитуваний маршрут {{url}} не знайдено!",
     "kyc_rejected_reason": "Вашу KYC-верифікацію відхилено. Причина: {{reason}}",
-    "chat_unread_title": "💬 {{senderName}} (непрочитаних повідомлень: {{count}})",
+    "chat_unread_title": "{{senderName}} (непрочитаних повідомлень: {{count}})",
     "entire_split_cancelled": "Усю спільну поїздку скасовано. Зачеплено пасажирів: {{count}}.",
     "remaining_passengers": "Залишилося пасажирів: {{count}}.",
     "wallet_refunded": "€{{amount}} повернуто на ваш гаманець.",

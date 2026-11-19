@@ -23,6 +23,11 @@ export async function saveDriverLocation(
 
   // ── Redis GEOSET ──────────────────────────────────────────────────────────
   await redis.geoadd('drivers:location', lng, lat, driverId);
+  await redis.hset(`driver:${driverId}:details`, {
+    lastLat: String(lat),
+    lastLng: String(lng),
+    lastUpdate: Date.now().toString(),
+  });
 
   // ── Redis current location (short TTL for live tracking) ─────────────────
   await redis.set(

@@ -28,7 +28,7 @@ const stripe = new Stripe(config.pay?.secretKey as string, {
   typescript: true,
 });
 
-// Ã¢ââ¬Ã¢ââ¬ Load settings with fallback Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬Ã¢ââ¬
+// Load settings with fallback
 const getMatchingSettings = async (): Promise<{
   notifyHours: number;
   lastNotifyHours: number;
@@ -182,14 +182,14 @@ export const checkNoDriverFound = async () => {
     const creatorId = (ride as any).rideCreatedBy?.toString();
     io.to(`user:${creatorId}`).emit('ride:re-matching', {
       rideId: ride._id,
-      message: `We're still looking for a driver. ${notified} driver(s) notified.`,
+      message: `We're still looking for a driver. ${notified} ${notified === 1 ? 'driver' : 'drivers'} notified.`,
     });
 
     if (creatorId && notified > 0) {
       await notifyUserPush({
         userId: creatorId,
         message: 'Still Searching for a Driver',
-        description: `We're still trying to find a driver for your ride. ${notified} driver(s) have been notified.`,
+        description: `We're still trying to find a driver for your ride. ${notified} ${notified === 1 ? 'driver has' : 'drivers have'} been notified.`,
         reference: ride._id.toString(),
         modelType: modeType.Ride,
         data: {

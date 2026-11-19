@@ -598,7 +598,12 @@
     "Password has been reset successfully": "Ο κωδικός πρόσβασης επαναφέρθηκε με επιτυχία",
     "Driver Arrived": "Ο οδηγός έφτασε",
     "Account Activated": "Ο λογαριασμός ενεργοποιήθηκε",
-    "Account Blocked": "Ο λογαριασμός αποκλείστηκε"
+    "Account Blocked": "Ο λογαριασμός αποκλείστηκε",
+    "Account Status Updated": "Η κατάσταση λογαριασμού ενημερώθηκε",
+    "KYC Verification Submitted": "Η επαλήθευση KYC υποβλήθηκε",
+    "KYC Verification Approved": "Η επαλήθευση KYC εγκρίθηκε",
+    "KYC Verification Rejected": "Η επαλήθευση KYC απορρίφθηκε",
+    "New Rating Received": "Νέα βαθμολογία"
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",
@@ -610,7 +615,7 @@
     "cannot_complete_status": "Αδυναμία ολοκλήρωσης - κατάσταση: {{status}}",
     "endpoint_not_found": "Το ζητούμενο τελικό σημείο {{url}} δεν βρέθηκε!",
     "kyc_rejected_reason": "Η επαλήθευση KYC σας απορρίφθηκε. Αιτία: {{reason}}",
-    "chat_unread_title": "💬 {{senderName}} ({{count}} μη αναγνωσμένα μηνύματα)",
+    "chat_unread_title": "{{senderName}} ({{count}} μη αναγνωσμένα μηνύματα)",
     "entire_split_cancelled": "Ολόκληρη η κοινή διαδρομή ακυρώθηκε. Επηρεάστηκαν {{count}} επιβάτες.",
     "remaining_passengers": "Απομένουν {{count}} επιβάτες.",
     "wallet_refunded": "Επιστράφηκαν €{{amount}} στο πορτοφόλι σας.",

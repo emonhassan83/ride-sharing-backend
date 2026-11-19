@@ -646,14 +646,14 @@ export const checkSplitRidePendingMatches = async () => {
         ? new Date(passenger.createdAt).getTime()
         : now.getTime();
       const hoursSinceCreated = Math.max(0, (now.getTime() - createdAtMs) / 3600000);
-      const hasSearchedMinDuration =
-        hoursSinceCreated >= releaseHours || hoursUntilDeparture <= 0.25;
+      // Full matchingLastNotifyHours search, and only once pickup is inside
+      // that window. A 15-minute-before-pickup shortcut was converting rides
+      // after ~25 minutes when pickup was still about 40 minutes away.
       const inSoloWindow =
+        hoursSinceCreated >= releaseHours &&
         hoursUntilDeparture <= releaseHours &&
-        hoursUntilDeparture > -0.25 &&
-        hasSearchedMinDuration;
+        hoursUntilDeparture > -0.25;
 
-      // Convert to Solo only after minimum search duration (or within 15m of pickup).
       if (inSoloWindow) {
         console.log(
           `Solo fallback due | passenger: ${passenger._id} | hoursUntil: ${hoursUntilDeparture.toFixed(2)} | searchedHours: ${hoursSinceCreated.toFixed(2)}`,

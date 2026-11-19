@@ -247,12 +247,12 @@ const PATTERN_RULES: PatternRule[] = [
     extract: (m) => ({ otp: m[1] }),
   },
   {
-    regex: /^We're still trying to find a driver for your ride\.\s*(\d+)\s*driver\(s\)\s*have been notified\.$/i,
+    regex: /^We're still trying to find a driver for your ride\.\s*(\d+)\s*drivers? (?:has|have) been notified\.$/i,
     patternKey: 'still_searching_drivers',
     extract: (m) => ({ count: m[1] }),
   },
   {
-    regex: /^We're still looking for a driver\.\s*(\d+)\s*driver\(s\)\s*notified\.$/i,
+    regex: /^We're still looking for a driver\.\s*(\d+)\s*drivers?\s+notified\.$/i,
     patternKey: 'still_looking_drivers',
     extract: (m) => ({ count: m[1] }),
   },
@@ -292,7 +292,7 @@ const PATTERN_RULES: PatternRule[] = [
     extract: (m) => ({ reason: m[1] }),
   },
   {
-    regex: /^💬\s*(.+?)\s*\((\d+)\s*unread messages?\)$/i,
+    regex: /^(?:💬\s*)?(.+?)\s*\((\d+)\s*unread messages?\)$/i,
     patternKey: 'chat_unread_title',
     extract: (m) => ({ senderName: m[1], count: m[2] }),
   },

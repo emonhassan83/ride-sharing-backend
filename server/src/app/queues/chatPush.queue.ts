@@ -305,8 +305,8 @@ export const initChatPushWorker = (): Worker => {
       const effectiveUnread = Math.max(chatUnreadCount, parsedMessages.length);
       const title =
         effectiveUnread > 1
-          ? `💬 ${displaySenderName} (${effectiveUnread} unread messages)`
-          : `💬 ${displaySenderName}`;
+          ? `${displaySenderName} (${effectiveUnread} unread messages)`
+          : displaySenderName;
 
       const description = formattedLines.join('\n');
       const bookingIdStr = chatDoc?.booking ? chatDoc.booking.toString() : '';

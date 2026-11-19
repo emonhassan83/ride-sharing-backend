@@ -1,6 +1,7 @@
 // utils/notifyDrivers.utils.ts
+import { Types } from 'mongoose';
 import { User } from '../modules/user/user.model';
-import { USER_ROLE, USER_STATUS } from '../modules/user/user.constant';
+import { USER_STATUS } from '../modules/user/user.constant';
 import { ILatLng } from '../socket/interface/ride';
 import { Ride } from '../modules/ride/ride.model';
 import { hasDriverRideAtDateTime } from './geo.utils';
@@ -8,6 +9,10 @@ import { Vehicle } from '../modules/vehicle/vehicle.model';
 import { isVehicleType } from './luggage.utils';
 import { modeType } from '../modules/notification/notification.interface';
 import { notifyUserPush } from './notifyUser.utils';
+import { calculateDistance } from './location.utils';
+
+/** Location ping older than this is not "nearby right now". */
+const FRESH_LOCATION_MS = 45 * 60 * 1000;
 
 /** Socket (if online) + in-app notification + FCM push for a new ride request (both online & offline drivers). */
 export async function emitNewRideRequestToDriver(
@@ -161,13 +166,118 @@ async function getDriverCurrentLocation(
   return null;
 }
 
+function isUsablePoint(lat: number, lng: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
+/**
+ * True only when the driver has a recent GPS point inside the pickup radius.
+ * Saved profile locations and stale Redis GEO members are ignored, so a city
+ * full of old test accounts is not reported as "28 drivers notified".
+ */
+async function isFreshAndWithinRadius(
+  redis: any,
+  driverId: string,
+  pickup: ILatLng,
+  radiusKm: number,
+): Promise<boolean> {
+  let lat: number | null = null;
+  let lng: number | null = null;
+  let fresh = false;
+
+  try {
+    const currentRaw = await redis.get(`driver:${driverId}:current`);
+    if (currentRaw) {
+      const parsed = JSON.parse(currentRaw);
+      const currentLat = Number(parsed?.lat);
+      const currentLng = Number(parsed?.lng);
+      if (isUsablePoint(currentLat, currentLng)) {
+        lat = currentLat;
+        lng = currentLng;
+        fresh = true;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  if (!fresh) {
+    try {
+      const hash = await redis.hgetall(`driver:${driverId}:details`);
+      const updatedAt = Number(hash?.lastUpdate || 0);
+      const savedLat = Number(hash?.lastLat);
+      const savedLng = Number(hash?.lastLng);
+      if (
+        isUsablePoint(savedLat, savedLng) &&
+        updatedAt > 0 &&
+        Date.now() - updatedAt <= FRESH_LOCATION_MS
+      ) {
+        lat = savedLat;
+        lng = savedLng;
+        fresh = true;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!fresh || lat == null || lng == null) return false;
+  return calculateDistance({ lat, lng }, pickup) <= radiusKm;
+}
+
+async function collectFreshDriversWithinRadius(
+  redis: any,
+  pickup: ILatLng,
+  radiusKm: number,
+): Promise<Set<string>> {
+  const candidates = new Set<string>();
+
+  try {
+    const geo = (await redis.georadius(
+      'drivers:location',
+      pickup.lng,
+      pickup.lat,
+      radiusKm,
+      'km',
+    )) as string[];
+    for (const id of geo || []) candidates.add(String(id));
+  } catch {
+    /* ignore geo error */
+  }
+
+  try {
+    const online = (await redis.smembers('users:online')) as string[];
+    for (const id of online || []) candidates.add(String(id));
+  } catch {
+    /* ignore */
+  }
+
+  const nearby = new Set<string>();
+  for (const driverId of candidates) {
+    if (await isFreshAndWithinRadius(redis, driverId, pickup, radiusKm)) {
+      nearby.add(driverId);
+    }
+  }
+  return nearby;
+}
+
 async function markDriverNotifiedOnce(
   rideId: string,
   driverId: string
 ): Promise<boolean> {
+  if (!Types.ObjectId.isValid(driverId) || !Types.ObjectId.isValid(rideId)) {
+    return false;
+  }
+  const driverObjectId = new Types.ObjectId(driverId);
   const updatedRide = await Ride.findOneAndUpdate(
-    { _id: rideId, notifiedDriverIds: { $ne: driverId } },
-    { $addToSet: { notifiedDriverIds: driverId } },
+    { _id: rideId, notifiedDriverIds: { $ne: driverObjectId } },
+    { $addToSet: { notifiedDriverIds: driverObjectId } },
     { returnDocument: 'before' }
   )
     .select('_id')
@@ -196,62 +306,17 @@ export async function notifyNearbyDrivers(
   const rideType = ridePayload.rideType as string;
   const requestedSeats = (ridePayload.requestedSeats as number) || 1;
   const privateDriverIds = await privateMatchingDriverIds(ridePayload);
-
-  type GeoResult = Array<[string, string]>;
-  let redisOnlineDrivers: GeoResult = [];
-  try {
-    redisOnlineDrivers = (await redis.georadius(
-      'drivers:location',
-      pickup.lng,
-      pickup.lat,
-      radiusKm,
-      'km',
-      'WITHDIST'
-    )) as GeoResult;
-  } catch {
-    redisOnlineDrivers = [];
-  }
-
-  const candidateDriverIds = new Set<string>(
-    redisOnlineDrivers.map(([id]) => String(id))
+  const candidateDriverIds = await collectFreshDriversWithinRadius(
+    redis,
+    pickup,
+    radiusKm,
   );
-
-  // Include nearby drivers from DB within radiusKm (both online and offline drivers satisfying geo-radius condition)
-  try {
-    const dbNearby = await User.find({
-      role: USER_ROLE.provider,
-      isDeleted: false,
-      status: USER_STATUS.active,
-      isKycVerified: true,
-      location: {
-        $nearSphere: {
-          $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
-          $maxDistance: radiusKm * 1000,
-        },
-      },
-    })
-      .select('_id location isOnline')
-      .lean();
-
-    for (const d of dbNearby) {
-      const id = d._id.toString();
-      candidateDriverIds.add(id);
-      if (d.isOnline) {
-        const coords = d.location?.coordinates;
-        if (coords && coords.length === 2 && (coords[0] !== 0 || coords[1] !== 0)) {
-          await redis
-            .geoadd('drivers:location', coords[0], coords[1], id)
-            .catch(() => {});
-        }
-      }
-    }
-  } catch {
-    /* ignore geo query error */
-  }
 
   if (targetDriverIds?.length) {
     for (const tid of targetDriverIds) {
-      candidateDriverIds.add(String(tid));
+      if (await isFreshAndWithinRadius(redis, String(tid), pickup, radiusKm)) {
+        candidateDriverIds.add(String(tid));
+      }
     }
   }
 
@@ -303,15 +368,9 @@ export async function notifyNearbyDrivers(
     }
   };
 
-  // If specific target drivers requested, try them first
-  if (targetDriverIds?.length) {
-    await attemptNotify(targetDriverIds.map(String));
-  }
-
-  // If no target driver was notified (e.g. offline/busy) or no target specified, notify candidate drivers
-  if (notifiedCount === 0) {
-    await attemptNotify(candidateDriverIds);
-  }
+  // Every fresh driver inside the pickup radius. A selected id must not
+  // block the drivers who are actually nearby.
+  await attemptNotify(candidateDriverIds);
 
   if (notifiedIds.length) {
     await Ride.findByIdAndUpdate(rideId, {
@@ -353,57 +412,11 @@ export async function notifyNearbyDriversForSplitRide(
     return false;
   };
 
-  type GeoResult = Array<[string, string]>;
-  let redisOnlineDrivers: GeoResult = [];
-  try {
-    redisOnlineDrivers = (await redis.georadius(
-      'drivers:location',
-      pickup.lng,
-      pickup.lat,
-      15,
-      'km',
-      'WITHDIST'
-    )) as GeoResult;
-  } catch {
-    redisOnlineDrivers = [];
-  }
-
-  const candidateDriverIds = new Set<string>(
-    redisOnlineDrivers.map(([id]) => String(id))
+  const candidateDriverIds = await collectFreshDriversWithinRadius(
+    redis,
+    pickup,
+    10,
   );
-
-  // Include nearby drivers from DB within 15km (both online and offline drivers satisfying geo-radius condition)
-  try {
-    const dbNearby = await User.find({
-      role: USER_ROLE.provider,
-      isDeleted: false,
-      status: USER_STATUS.active,
-      isKycVerified: true,
-      location: {
-        $nearSphere: {
-          $geometry: { type: 'Point', coordinates: [pickup.lng, pickup.lat] },
-          $maxDistance: 15000,
-        },
-      },
-    })
-      .select('_id location isOnline')
-      .lean();
-
-    for (const d of dbNearby) {
-      const id = d._id.toString();
-      candidateDriverIds.add(id);
-      if (d.isOnline) {
-        const coords = d.location?.coordinates;
-        if (coords && coords.length === 2 && (coords[0] !== 0 || coords[1] !== 0)) {
-          await redis
-            .geoadd('drivers:location', coords[0], coords[1], id)
-            .catch(() => {});
-        }
-      }
-    }
-  } catch {
-    /* ignore geo query error */
-  }
 
   for (const driverId of candidateDriverIds) {
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);

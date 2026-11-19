@@ -185,7 +185,7 @@ export const submitRatingHandler = eventHandler<any>(
       if (driverUser?.fcmToken) {
         await sendNotification([driverUser.fcmToken], {
           receiver: driverId,
-          message: '⭐ New Rating Received!',
+          message: 'New Rating Received',
           description: `${reviewerId ? 'A passenger' : 'Someone'} gave you ${numericRating} stars${feedback ? `: "${feedback}"` : ''}`,
           reference: rideId,
           modelType: modeType.Ride,

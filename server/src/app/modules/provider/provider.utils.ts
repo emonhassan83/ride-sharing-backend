@@ -19,17 +19,17 @@ export const sendKycStatusNotification = async (
 
   switch (status) {
     case PROVIDER_STATUS.pending:
-      message = '📄 KYC Verification Submitted';
+      message = 'KYC Verification Submitted';
       description = 'Your KYC verification documents have been received and are under review.';
       break;
 
     case PROVIDER_STATUS.verified:
-      message = '✅ KYC Verification Approved';
+      message = 'KYC Verification Approved';
       description = 'Congratulations! Your KYC verification has been successfully approved.';
       break;
 
     case PROVIDER_STATUS.rejected:
-      message = '❌ KYC Verification Rejected';
+      message = 'KYC Verification Rejected';
       description = `Your KYC verification has been rejected. Reason: ${reason || 'No reason provided.'}`;
       break;
 

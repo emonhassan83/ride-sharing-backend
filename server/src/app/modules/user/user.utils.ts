@@ -18,15 +18,15 @@ export const sendUserStatusNotifYToUser = async (
   let description: string;
 
   if (status === 'active') {
-    message = '✅ Account Activated';
+    message = 'Account Activated';
     description =
       'Your account has been successfully activated. You can now access all available features.';
   } else if (status === 'blocked') {
-    message = '🚫 Account Blocked';
+    message = 'Account Blocked';
     description =
       'Your account has been blocked. Please contact support for further assistance.';
   } else {
-    message = '⏳ Account Status Updated';
+    message = 'Account Status Updated';
     description = 'Your account status has been updated.';
   }
 
