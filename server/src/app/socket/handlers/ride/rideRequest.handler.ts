@@ -25,7 +25,7 @@ export const rideRequestHandler = eventHandler<any>(
       pickup, destination, type, passengers,
       malePassengers, femalePassengers,
       departureDate, departureTime,
-      largeSuitcase, smallSuitcase, luggageNote, note,
+      largeSuitcase, smallSuitcase, luggageCounts, luggageNote, note,
       vehicleType,
       selectedDriverId, driverId,
     } = data;
@@ -45,6 +45,7 @@ export const rideRequestHandler = eventHandler<any>(
     const luggage = normalizeAndAssertLuggage({
       largeSuitcase,
       smallSuitcase,
+      luggageCounts,
       luggageNote,
       requestedSeats,
       rideType: isPrivate ? 'private' : 'split',

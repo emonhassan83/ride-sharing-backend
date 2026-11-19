@@ -42,6 +42,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       departureTime,
       largeSuitcase,
       smallSuitcase,
+      luggageCounts,
       luggageNote,
       note,
       rideId: requestedRideId,
@@ -61,6 +62,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
     const luggage = normalizeAndAssertLuggage({
       largeSuitcase,
       smallSuitcase,
+      luggageCounts,
       luggageNote,
       requestedSeats,
     });

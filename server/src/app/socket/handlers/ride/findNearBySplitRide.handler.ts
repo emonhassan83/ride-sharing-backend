@@ -45,6 +45,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
       passengers,
       largeSuitcase,
       smallSuitcase,
+      luggageCounts,
       luggageNote,
       note,
     } = data;
@@ -52,6 +53,7 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
     const luggage = normalizeAndAssertLuggage({
       largeSuitcase,
       smallSuitcase,
+      luggageCounts,
       luggageNote,
       requestedSeats,
     });

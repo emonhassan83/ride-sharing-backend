@@ -28,6 +28,7 @@ export const fareBreakdownHandler = eventHandler<any>(
       departureTime,
       largeSuitcase,
       smallSuitcase,
+      luggageCounts,
       luggageNote,
       note,
       vehicleType,
@@ -43,6 +44,7 @@ export const fareBreakdownHandler = eventHandler<any>(
     const luggage = normalizeAndAssertLuggage({
       largeSuitcase,
       smallSuitcase,
+      luggageCounts,
       luggageNote,
       requestedSeats,
       rideType: type === RIDE_TYPE.private ? 'private' : 'split',

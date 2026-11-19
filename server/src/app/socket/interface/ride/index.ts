@@ -37,6 +37,7 @@ export interface ISplitRideRequest {
   passengers: number;
   largeSuitcase?: number;
   smallSuitcase?: number;
+  luggageCounts?: number;
   luggageNote?: string;
   note?: string;
   /** Ride chosen from ride:find-nearby-split-ride */

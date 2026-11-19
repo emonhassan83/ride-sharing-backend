@@ -138,9 +138,20 @@ export const vehicleFitsParty = (
   return true;
 };
 
+const resolveLuggageCount = (
+  largeSuitcase: number,
+  smallSuitcase: number,
+  luggageCounts?: number,
+): number => {
+  const fromSizes = largeSuitcase + smallSuitcase;
+  const explicit = Math.max(0, Math.floor(Number(luggageCounts) || 0));
+  return Math.max(fromSizes, explicit);
+};
+
 export const normalizeAndAssertLuggage = (input: {
   largeSuitcase?: number;
   smallSuitcase?: number;
+  luggageCounts?: number;
   luggageNote?: string;
   requestedSeats: number;
   rideType?: 'private' | 'split';
@@ -177,7 +188,7 @@ export const normalizeAndAssertLuggage = (input: {
       largeSuitcase,
       smallSuitcase,
       luggageNote,
-      luggageCounts: largeSuitcase + smallSuitcase,
+      luggageCounts: resolveLuggageCount(largeSuitcase, smallSuitcase, input.luggageCounts),
       vehicleClass,
       sizeGuide: getLuggageSizeGuide(vehicleClass),
     };
@@ -206,7 +217,7 @@ export const normalizeAndAssertLuggage = (input: {
     largeSuitcase,
     smallSuitcase,
     luggageNote,
-    luggageCounts: largeSuitcase + smallSuitcase,
+    luggageCounts: resolveLuggageCount(largeSuitcase, smallSuitcase, input.luggageCounts),
     vehicleClass,
     sizeGuide: getLuggageSizeGuide(vehicleClass),
   };
@@ -223,7 +234,11 @@ export const toLuggageFyiView = (passengerOrPartial?: any) => {
     Math.floor(Number(passengerOrPartial?.smallSuitcase) || 0),
   );
   return {
-    luggageCounts: largeSuitcase + smallSuitcase,
+    luggageCounts: resolveLuggageCount(
+      largeSuitcase,
+      smallSuitcase,
+      passengerOrPartial?.luggageCounts,
+    ),
     largeSuitcase,
     smallSuitcase,
     luggageNote: (passengerOrPartial?.luggageNote ?? '').toString(),
