@@ -3,9 +3,8 @@ import { getRedisClient } from '../../../config/redis.config';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
-import { User } from '../../../modules/user/user.model';
 import { modeType } from '../../../modules/notification/notification.interface';
-import { sendNotification } from '../../../utils/sentPushNotification';
+import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
@@ -102,11 +101,17 @@ export const driverArrivedHandler = eventHandler<any>(
     const waitNotice = buildWaitTimeNotice();
 
     const notifyPassenger = async (passenger: any, isLastArrival = false) => {
-      await Passenger.findByIdAndUpdate(passenger._id, {
-        arriveAt: new Date(),
-        arrivedNotified: true,
-        status: PASSENGER_STATUS.driver_arrived,
-      });
+      const claimed = await Passenger.findOneAndUpdate(
+        { _id: passenger._id, arrivedNotified: { $ne: true } },
+        {
+          $set: {
+            arriveAt: new Date(),
+            arrivedNotified: true,
+            status: PASSENGER_STATUS.driver_arrived,
+          },
+        },
+      );
+      if (!claimed) return false;
 
       await redis.rpush(
         `ride:${rideId}:live`,
@@ -129,18 +134,19 @@ export const driverArrivedHandler = eventHandler<any>(
         waitTimeNotice: waitNotice,
       });
 
-      const riderUser = await User.findById(passenger.userId)
-        .select('fcmToken')
-        .lean();
-      if (riderUser?.fcmToken) {
-        sendNotification([riderUser.fcmToken], {
-          receiver: passenger.userId,
-          message: 'Driver Has Arrived!',
-          description: waitNotice.message,
-          reference: rideId,
-          modelType: modeType.Ride,
-        }).catch(() => {});
-      }
+      await notifyUserPush({
+        userId: passenger.userId.toString(),
+        message: 'Driver Has Arrived!',
+        description: waitNotice.message,
+        reference: rideId,
+        modelType: modeType.Ride,
+        dedupeKey: `driver-arrived:${passenger._id.toString()}`,
+        data: {
+          type: 'DRIVER_ARRIVED',
+          rideId: String(rideId),
+          passengerId: passenger._id.toString(),
+        },
+      });
 
       // Warning only - NO charge / NO price change (client rule).
       setTimeout(async () => {
@@ -161,16 +167,22 @@ export const driverArrivedHandler = eventHandler<any>(
           ...followUpNotice,
         });
 
-        if (riderUser?.fcmToken) {
-          sendNotification([riderUser.fcmToken], {
-            receiver: passenger.userId,
-            message: 'Please Board Soon',
-            description: followUpNotice.message,
-            reference: rideId,
-            modelType: modeType.Ride,
-          }).catch(() => {});
-        }
+        await notifyUserPush({
+          userId: passenger.userId.toString(),
+          message: 'Please Board Soon',
+          description: followUpNotice.message,
+          reference: rideId,
+          modelType: modeType.Ride,
+          dedupeKey: `board-soon:${passenger._id.toString()}`,
+          data: {
+            type: 'BOARD_SOON',
+            rideId: String(rideId),
+            passengerId: passenger._id.toString(),
+          },
+        });
       }, waitNotice.maxWaitMinutes * 60 * 1000);
+
+      return true;
     };
 
     if (ride.type === RIDE_TYPE.private) {
@@ -215,11 +227,13 @@ export const driverArrivedHandler = eventHandler<any>(
           thresholdMeters: ARRIVAL_THRESHOLD_METERS,
         });
 
-      await notifyPassenger(passenger, true);
+      const notified = await notifyPassenger(passenger, true);
 
       return callback?.({
         success: true,
-        message: 'Driver arrived notification sent',
+        message: notified
+          ? 'Driver arrived notification sent'
+          : 'Driver has already arrived',
         data: { passengerId: passenger._id, distanceMeters, waitTimeNotice: waitNotice },
       });
     }
@@ -257,7 +271,7 @@ export const driverArrivedHandler = eventHandler<any>(
           thresholdMeters: ARRIVAL_THRESHOLD_METERS,
         });
 
-      await notifyPassenger(passenger);
+      const notified = await notifyPassenger(passenger);
 
       const remaining = await Passenger.countDocuments({
         rideId,
@@ -271,7 +285,9 @@ export const driverArrivedHandler = eventHandler<any>(
 
       return callback?.({
         success: true,
-        message: 'Driver arrived notification sent',
+        message: notified
+          ? 'Driver arrived notification sent'
+          : 'Driver has already arrived',
         data: {
           passengerId: passenger._id,
           remainingUnnotified: remaining,

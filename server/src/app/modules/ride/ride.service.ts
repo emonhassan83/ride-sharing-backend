@@ -23,6 +23,7 @@ import {
   sendRideStartOtp,
   verifyRideStartOtp,
 } from '../../utils/rideStartOtp.utils';
+import { formatRideLocalDate } from '../../utils/rideSchedule.utils';
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -312,14 +313,39 @@ const buildTimeFilterVariants = (rawTime: unknown): string[] | null => {
   return Array.from(variants);
 };
 
+const toIsoDate = (raw: unknown): string | null => {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  const ymd = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (ymd) {
+    return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
+  }
+  const dmy = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+  return null;
+};
+
+/** True when the ride's calendar day is before today in the ride timezone. */
+const isPastDepartureDate = (
+  raw: unknown,
+  today = formatRideLocalDate(),
+): boolean => {
+  const iso = toIsoDate(raw);
+  return !!iso && iso < today;
+};
+
 const resolveRideStatusesFromQuery = (rawStatus: unknown): {
   isPendingList: boolean;
+  isUpcomingList: boolean;
   includesCancelledOrRejected: boolean;
   statuses: string[] | null;
 } => {
   if (!rawStatus || typeof rawStatus !== 'string') {
     return {
       isPendingList: false,
+      isUpcomingList: false,
       includesCancelledOrRejected: false,
       statuses: null,
     };
@@ -333,6 +359,7 @@ const resolveRideStatusesFromQuery = (rawStatus: unknown): {
   if (!tokens.length || tokens.includes('all')) {
     return {
       isPendingList: false,
+      isUpcomingList: false,
       includesCancelledOrRejected: true,
       statuses: [
         RIDE_STATUS.accepted,
@@ -382,12 +409,16 @@ const resolveRideStatusesFromQuery = (rawStatus: unknown): {
   const statusList = Array.from(resolved);
   const isPendingList =
     statusList.length === 1 && statusList[0] === RIDE_STATUS.pending;
+  const isUpcomingList =
+    tokens.some((token) => token === 'upcoming' || token === 'scheduled') ||
+    (statusList.length === 1 && statusList[0] === RIDE_STATUS.accepted);
   const includesCancelledOrRejected =
     statusList.includes(RIDE_STATUS.cancelled) ||
     statusList.includes(RIDE_STATUS.rejected);
 
   return {
     isPendingList,
+    isUpcomingList,
     includesCancelledOrRejected,
     statuses: statusList.length ? statusList : null,
   };
@@ -397,7 +428,7 @@ const getDriverRides = async (
   userId: string,
   query: Record<string, unknown>
 ) => {
-  const { isPendingList, includesCancelledOrRejected, statuses } =
+  const { isPendingList, isUpcomingList, includesCancelledOrRejected, statuses } =
     resolveRideStatusesFromQuery(query.status);
 
   const normalizedType = normalizeRideTypeValue(query.type ?? query.rideType);
@@ -419,18 +450,18 @@ const getDriverRides = async (
         ],
       }
     : {
-        driverId: userId,
+    driverId: userId,
         status: statuses
           ? statuses.length === 1
             ? statuses[0]
             : { $in: statuses }
           : {
-              $nin: [
-                RIDE_STATUS.pending,
-                RIDE_STATUS.cancelled,
-                RIDE_STATUS.rejected,
-              ],
-            },
+      $nin: [
+        RIDE_STATUS.pending,
+        RIDE_STATUS.cancelled,
+        RIDE_STATUS.rejected,
+      ],
+    },
       };
 
   if (normalizedType) {
@@ -443,9 +474,12 @@ const getDriverRides = async (
     baseRideCondition.departureTime = { $in: timeVariants };
   }
 
-  const driverRides = await Ride.find(baseRideCondition)
-    .select('_id status')
-    .lean();
+  const today = formatRideLocalDate();
+  const driverRides = (
+    await Ride.find(baseRideCondition).select('_id status departureDate').lean()
+  ).filter(
+    (ride) => !isUpcomingList || !isPastDepartureDate(ride.departureDate, today),
+  );
   const driverRideIds = driverRides.map(r => r._id);
   const cancelledOrRejectedRideIdSet = new Set(
     driverRides
@@ -472,13 +506,13 @@ const getDriverRides = async (
             $nin: [PASSENGER_STATUS.split_matching],
           }
         : {
-            $nin: [
-              PASSENGER_STATUS.pending,
-              PASSENGER_STATUS.cancelled,
-              PASSENGER_STATUS.rejected,
-              PASSENGER_STATUS.split_matching,
-            ],
-          },
+      $nin: [
+        PASSENGER_STATUS.pending,
+        PASSENGER_STATUS.cancelled,
+        PASSENGER_STATUS.rejected,
+        PASSENGER_STATUS.split_matching,
+      ],
+    },
   }).select('_id rideId status paymentStatus');
 
   const passengerIds = passengers.map(p => p._id);
@@ -624,7 +658,7 @@ const getRiderRides = async (
   userId: string,
   query: Record<string, unknown>,
 ) => {
-  const { isPendingList, includesCancelledOrRejected, statuses } =
+  const { isPendingList, isUpcomingList, includesCancelledOrRejected, statuses } =
     resolveRideStatusesFromQuery(query.status);
 
   const normalizedType = normalizeRideTypeValue(query.type ?? query.rideType);
@@ -657,13 +691,13 @@ const getRiderRides = async (
             ],
           }
         : {
-            $nin: [
-              PASSENGER_STATUS.pending,
-              PASSENGER_STATUS.cancelled,
-              PASSENGER_STATUS.rejected,
-              PASSENGER_STATUS.split_matching,
-            ],
-          },
+      $nin: [
+        PASSENGER_STATUS.pending,
+        PASSENGER_STATUS.cancelled,
+        PASSENGER_STATUS.rejected,
+        PASSENGER_STATUS.split_matching,
+      ],
+    },
   };
 
   if (dateVariants) {
@@ -708,11 +742,18 @@ const getRiderRides = async (
       })
     : passengerDocs;
 
-  if (!eligiblePassengers.length) {
+  const today = formatRideLocalDate();
+  const visiblePassengers = isUpcomingList
+    ? eligiblePassengers.filter(
+        (p) => !isPastDepartureDate(p.departureDate, today),
+      )
+    : eligiblePassengers;
+
+  if (!visiblePassengers.length) {
     return { meta: { page: 1, limit: 10, total: 0, totalPage: 0 }, result: [] };
   }
 
-  const rideIds = eligiblePassengers
+  const rideIds = visiblePassengers
     .map(p => p.rideId)
     .filter(Boolean) as any[];
 
@@ -733,7 +774,7 @@ const getRiderRides = async (
 
   const rideMap = new Map(rides.map(r => [r._id.toString(), r]));
 
-  const result = eligiblePassengers
+  const result = visiblePassengers
     .map(p => {
       const ride = p.rideId ? rideMap.get(p.rideId.toString()) : undefined;
       const booking = bookingMap.get(p._id.toString());

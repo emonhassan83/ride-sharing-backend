@@ -17,6 +17,7 @@ import onlineUsers from '../../utils/onlineUsers';
 import eventHandler from '../../utils/eventHandler';
 import { ILatLng } from '../../interface/ride';
 import { sendNotification } from '../../../utils/sentPushNotification';
+import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { recalculateSplitFares } from '../../../utils/splitFare.utils';
@@ -407,22 +408,37 @@ export const driverAcceptRideHandler = eventHandler<any>(
         booking.bookingStatus = BOOKING_STATUS.accepted;
       }
 
-      notifyAdminForNewPendingBooking(booking).catch(() => { });
+      const alreadyAccepted = [
+        PASSENGER_STATUS.confirmed,
+        PASSENGER_STATUS.driver_arrived,
+        PASSENGER_STATUS.in_progress,
+        PASSENGER_STATUS.picked_up,
+        PASSENGER_STATUS.dropped_off,
+        PASSENGER_STATUS.completed,
+      ].includes(passenger.status as any);
+      const firstAccept = !alreadyAccepted;
+
+      if (firstAccept) {
+        notifyAdminForNewPendingBooking(booking).catch(() => { });
+      }
 
       passenger.status = PASSENGER_STATUS.confirmed;
       await passenger.save();
 
-      const riderUser = await User.findById(passenger.userId)
-        .select('fcmToken')
-        .lean();
-      if (riderUser?.fcmToken) {
-        sendNotification([riderUser.fcmToken], {
-          receiver: passenger.userId,
+      if (firstAccept) {
+        await notifyUserPush({
+          userId: passenger.userId.toString(),
           message: 'Driver Accepted Your Ride!',
           description: `Your driver is on the way. ETA: ${estimatedArrival} minutes.`,
           reference: passenger._id.toString(),
           modelType: modeType.Passenger,
-        }).catch(() => { });
+          dedupeKey: `ride-accepted:${passenger._id.toString()}`,
+          data: {
+            type: 'RIDE_ACCEPTED',
+            rideId: String(rideId),
+            passengerId: passenger._id.toString(),
+          },
+        });
       }
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
@@ -456,7 +472,9 @@ await redis.hset(`ride:active:${rideId}`, {
         { rideFullyAccepted: true, ...price, waitTimeNotice: buildWaitTimeNotice() }
       );
 
-      io.to(`ride:${rideId}`).emit('ride:driver-accepted', payload);
+      io.to(`user:${passenger.userId.toString()}`)
+        .to(`ride:${rideId}`)
+        .emit('ride:driver-accepted', payload);
       console.log(
         `Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`
       );
@@ -594,22 +612,37 @@ await redis.hset(`ride:active:${rideId}`, {
         });
       }
 
-      notifyAdminForNewPendingBooking(booking).catch(() => { });
+      const alreadyAccepted = [
+        PASSENGER_STATUS.confirmed,
+        PASSENGER_STATUS.driver_arrived,
+        PASSENGER_STATUS.in_progress,
+        PASSENGER_STATUS.picked_up,
+        PASSENGER_STATUS.dropped_off,
+        PASSENGER_STATUS.completed,
+      ].includes(passenger.status as any);
+      const firstAccept = !alreadyAccepted;
+
+      if (firstAccept) {
+        notifyAdminForNewPendingBooking(booking).catch(() => { });
+      }
 
       passenger.status = PASSENGER_STATUS.confirmed;
       await passenger.save();
 
-      const riderUser = await User.findById(passenger.userId)
-        .select('fcmToken')
-        .lean();
-      if (riderUser?.fcmToken) {
-        sendNotification([riderUser.fcmToken], {
-          receiver: passenger.userId,
+      if (firstAccept) {
+        await notifyUserPush({
+          userId: passenger.userId.toString(),
           message: 'Driver Accepted Your Split Ride!',
           description: `Your booking is confirmed. ETA: ${estimatedArrival} minutes.`,
           reference: passenger._id.toString(),
           modelType: modeType.Passenger,
-        }).catch(() => { });
+          dedupeKey: `ride-accepted:${passenger._id.toString()}`,
+          data: {
+            type: 'RIDE_ACCEPTED',
+            rideId: String(rideId),
+            passengerId: passenger._id.toString(),
+          },
+        });
       }
 
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
@@ -657,7 +690,9 @@ await redis.hset(`ride:active:${rideId}`, {
         }
       );
 
-      io.to(`user:${passenger.userId.toString()}`).emit('ride:driver-accepted', payload);
+      io.to(`user:${passenger.userId.toString()}`)
+        .to(`ride:${rideId}`)
+        .emit('ride:driver-accepted', payload);
       console.log(
         `Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
       );

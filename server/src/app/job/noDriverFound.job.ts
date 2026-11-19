@@ -196,6 +196,8 @@ export const checkNoDriverFound = async () => {
           type: 'RIDE_RE_MATCHING',
           rideId: String(ride._id),
         },
+        dedupeKey: `still-searching:${ride._id.toString()}`,
+        dedupeTtlSeconds: 30 * 60,
       });
     }
   }

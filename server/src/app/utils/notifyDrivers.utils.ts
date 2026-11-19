@@ -6,10 +6,8 @@ import { Ride } from '../modules/ride/ride.model';
 import { hasDriverRideAtDateTime } from './geo.utils';
 import { Vehicle } from '../modules/vehicle/vehicle.model';
 import { isVehicleType } from './luggage.utils';
-import { sendNotification } from './sentPushNotification';
 import { modeType } from '../modules/notification/notification.interface';
-import { Notification } from '../modules/notification/notification.model';
-import { normalizeLanguage, translateText } from '../i18n/i18n';
+import { notifyUserPush } from './notifyUser.utils';
 
 /** Socket (if online) + in-app notification + FCM push for a new ride request (both online & offline drivers). */
 export async function emitNewRideRequestToDriver(
@@ -32,7 +30,7 @@ export async function emitNewRideRequestToDriver(
     return false;
   }
 
-  // Socket notification if driver is currently online
+  // One emit. The driver socket is in both rooms; two emits would deliver the event twice.
   if (driver.isOnline) {
     try {
       await redis.sadd('users:online', driverId);
@@ -40,64 +38,31 @@ export async function emitNewRideRequestToDriver(
       /* ignore redis error */
     }
 
-    io.to(`driver:${driverId}`).emit('ride:new-request', ridePayload);
-    io.to(`user:${driverId}`).emit('ride:new-request', ridePayload);
+    io.to(`driver:${driverId}`)
+      .to(`user:${driverId}`)
+      .emit('ride:new-request', ridePayload);
   }
 
-  const driverLang = normalizeLanguage(driver.language);
   const rideType = String(ridePayload?.rideType || '');
   const rawDescription =
     rideType === 'split'
       ? 'A new split ride request is available.'
       : 'A new private ride request is available.';
 
-  const notificationPayload = {
-    receiver: driverId,
-    message: translateText('New Ride Request', driverLang),
-    description: translateText(rawDescription, driverLang),
-    language: driverLang,
+  await notifyUserPush({
+    userId: driverId,
+    message: 'New Ride Request',
+    description: rawDescription,
     reference: rideId,
     modelType: modeType.Ride,
+    dedupeKey: `new-ride:${rideId}`,
     data: {
       type: 'NEW_RIDE_REQUEST',
       rideId: String(rideId),
       passengerId: String(ridePayload?._id || ''),
       rideType,
     },
-  };
-
-  const persistInApp = async () => {
-    await Notification.create({
-      receiver: driverId,
-      message: notificationPayload.message,
-      description: notificationPayload.description,
-      reference: rideId,
-      modelType: modeType.Ride,
-    });
-  };
-
-  try {
-    let persisted = false;
-
-    if (driver?.fcmToken) {
-      const response = await sendNotification(
-        [driver.fcmToken],
-        notificationPayload,
-      );
-      persisted = !!(response && (response as any).successCount > 0);
-    }
-
-    if (!persisted) {
-      await persistInApp();
-    }
-  } catch (error) {
-    console.error(`Notify new-ride-request failed for driver ${driverId}:`, error);
-    try {
-      await persistInApp();
-    } catch {
-      /* ignore fallback errors */
-    }
-  }
+  });
 
   return true;
 }

@@ -86,8 +86,9 @@ export const sendNotification = async (
     // Firebase Admin v14 uses messaging.sendEach() instead of admin.messaging().sendEachForMulticast()
     const response = await messaging.sendEach(messages);
 
-    if (response.successCount > 0) {
-      // Create a single database entry for the notification instead of inside a loop
+    if (response.successCount > 0 && !payload?.skipPersist) {
+      // Create a single database entry for the notification instead of inside a loop.
+      // Callers that already saved the in-app row pass skipPersist.
       await Notification.create(localizedPayload);
     }
 
