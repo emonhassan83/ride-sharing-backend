@@ -13,21 +13,32 @@ import { transferRideOwnership } from '../../../utils/splitFare.utils';
 
 const notifyDriverCancelled = async (
   io: any,
-  driverId: { toString(): string } | string | undefined | null,
+  ride: { driverId?: any; notifiedDriverIds?: any[] },
   rideId: string,
   message: string,
+  extra?: Record<string, any>,
 ) => {
-  if (!driverId) return;
-  const id = driverId.toString();
-  io.to(`driver:${id}`).emit('ride:cancelled', { rideId, message });
-  await notifyUserPush({
-    userId: id,
-    message: 'Ride Cancelled by Rider',
-    description: message,
-    reference: rideId,
-    modelType: modeType.Ride,
-    data: { type: 'RIDE_CANCELLED_BY_RIDER', rideId: String(rideId) },
-  });
+  const driverIds = new Set<string>();
+  if (ride.driverId) driverIds.add(ride.driverId.toString());
+  for (const id of ride.notifiedDriverIds || []) {
+    if (id) driverIds.add(id.toString());
+  }
+  if (!driverIds.size) return;
+
+  const payload = { rideId, message, ...extra };
+  await Promise.all(
+    [...driverIds].map(async (id) => {
+      io.to(`driver:${id}`).to(`user:${id}`).emit('ride:cancelled-by-rider', payload);
+      await notifyUserPush({
+        userId: id,
+        message: 'Ride Cancelled by Rider',
+        description: message,
+        reference: rideId,
+        modelType: modeType.Ride,
+        data: { type: 'RIDE_CANCELLED_BY_RIDER', rideId: String(rideId) },
+      });
+    }),
+  );
 };
 
 const cancelAndNotifyRemaining = async (
@@ -106,9 +117,10 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
       await redisCleanup();
       await notifyDriverCancelled(
         io,
-        ride.driverId,
+        ride,
         rideId,
         'Rider cancelled before acceptance.',
+        { rideCancelled: true },
       );
       return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
     }
@@ -138,11 +150,12 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
         );
         await notifyDriverCancelled(
           io,
-          ride.driverId,
+          ride,
           rideId,
           remainingAfterCreator.length === 0
             ? 'All passengers cancelled.'
             : 'Only one passenger remaining. Ride cancelled.',
+          { rideCancelled: true },
         );
         return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
       }
@@ -155,7 +168,9 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
           cancelledBy: CANCELLED_BY.user, cancelledAt: new Date(),
         });
         await redisCleanup();
-        await notifyDriverCancelled(io, ride.driverId, rideId, 'All passengers cancelled.');
+        await notifyDriverCancelled(io, ride, rideId, 'All passengers cancelled.', {
+          rideCancelled: true,
+        });
         return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
       }
     }
@@ -188,31 +203,25 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
         remaining,
         'Only one passenger remaining. Ride cancelled.',
       );
-      await notifyDriverCancelled(io, ride.driverId, rideId, 'All passengers cancelled.');
+      await notifyDriverCancelled(io, ride, rideId, 'All passengers cancelled.', {
+        rideCancelled: true,
+      });
       return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
     }
 
     const remainingSeats = (updatedRide?.totalSeats ?? 0) - (updatedRide?.bookedSeats ?? 0);
 
-    if (ride.driverId) {
-      const driverId = ride.driverId.toString();
-      io.to(`driver:${driverId}`).emit('ride:passenger-cancelled', {
-        rideId, passengerId: passenger._id, remainingSeats,
-        message: 'A passenger cancelled.',
-      });
-      await notifyUserPush({
-        userId: driverId,
-        message: 'Passenger Cancelled',
-        description: 'A passenger cancelled before driver acceptance.',
-        reference: rideId,
-        modelType: modeType.Ride,
-        data: {
-          type: 'PASSENGER_CANCELLED',
-          rideId: String(rideId),
-          passengerId: String(passenger._id),
-        },
-      });
-    }
+    await notifyDriverCancelled(
+      io,
+      ride,
+      rideId,
+      'A passenger cancelled before driver acceptance.',
+      {
+        rideCancelled: false,
+        passengerId: passenger._id,
+        remainingSeats,
+      },
+    );
 
     for (const p of remaining) {
       const coUserId = p.userId?.toString();
