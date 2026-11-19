@@ -137,14 +137,13 @@ export const driverArrivedHandler = eventHandler<any>(
       await notifyUserPush({
         userId: passenger.userId.toString(),
         message: 'Driver Has Arrived!',
-        description: waitNotice.message,
-        reference: rideId,
+        description: 'Your driver has arrived at your pickup location',
+        reference: String(rideId),
         modelType: modeType.Ride,
-        dedupeKey: `driver-arrived:${passenger._id.toString()}`,
         data: {
           type: 'DRIVER_ARRIVED',
           rideId: String(rideId),
-          passengerId: passenger._id.toString(),
+          passengerId: String(passenger._id),
         },
       });
 

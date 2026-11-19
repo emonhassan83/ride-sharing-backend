@@ -52,9 +52,13 @@ export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
     input;
 
   const slot = await claimNotificationSlot(userId, dedupeKey, dedupeTtlSeconds);
-  if (slot === '') return;
+  if (slot === '') {
+    console.warn(`notifyUserPush skipped duplicate user=${userId} key=${dedupeKey}`);
+    return;
+  }
 
   let persisted = false;
+  let pushed = false;
 
   try {
     const user = await User.findById(userId)
@@ -75,17 +79,26 @@ export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
       modelType,
     };
 
-    // Save the in-app row first so the list updates even when FCM is slow or missing.
-    await Notification.create(inAppRow);
-    persisted = true;
+    try {
+      await Notification.create(inAppRow);
+      persisted = true;
+    } catch (error) {
+      console.error(`in-app notification create failed for user ${userId}:`, error);
+    }
 
     if (user?.fcmToken) {
-      await sendNotification([user.fcmToken], {
+      const response = await sendNotification([user.fcmToken], {
         ...inAppRow,
         language: userLang,
         skipPersist: true,
         ...(data ? { data } : {}),
       });
+      pushed = !!response && response.successCount > 0;
+      if (!pushed) {
+        console.error(`FCM not delivered for user ${userId}:`, response);
+      }
+    } else {
+      console.warn(`notifyUserPush: no fcmToken for user ${userId}`);
     }
   } catch (error) {
     console.error(`notifyUserPush failed for user ${userId}:`, error);
@@ -103,8 +116,9 @@ export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
         /* ignore */
       }
     }
-    if (!persisted) {
-      await releaseNotificationSlot(slot);
-    }
+  }
+
+  if (!persisted && !pushed) {
+    await releaseNotificationSlot(slot);
   }
 }
