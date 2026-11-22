@@ -3,10 +3,7 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Set time zone to Cyprus (Europe/Nicosia)
-RUN apk add --no-cache tzdata curl && \
-    ln -sf /usr/share/zoneinfo/Europe/Nicosia /etc/localtime && \
-    echo "Europe/Nicosia" > /etc/timezone
+RUN apk add --no-cache curl
 
 COPY package*.json ./
 RUN npm install
@@ -23,10 +20,8 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Set time zone to Cyprus (Europe/Nicosia)
-RUN apk add --no-cache tzdata curl && \
-    ln -sf /usr/share/zoneinfo/Europe/Nicosia /etc/localtime && \
-    echo "Europe/Nicosia" > /etc/timezone
+# tzdata only; the zone itself comes from TIME_ZONE in .env at runtime.
+RUN apk add --no-cache tzdata curl
 
 COPY package*.json ./
 RUN npm install --omit=dev
@@ -34,9 +29,6 @@ RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production
-ENV TZ=Europe/Nicosia
-ENV TIME_ZONE=Europe/Nicosia
-ENV RIDE_TIME_ZONE=Europe/Nicosia
 
 EXPOSE 8080
 

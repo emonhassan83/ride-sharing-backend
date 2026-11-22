@@ -4,8 +4,8 @@ import DailyRotateFile from 'winston-daily-rotate-file';
 import { createLogger, format, transports } from 'winston';
 const { combine, timestamp, label, printf } = format;
 
-const getActiveWorkerTimeZone = () =>
-  process.env.TIME_ZONE || env.timeZone || 'Europe/Nicosia';
+// Resolved from .env TIME_ZONE in env.ts (aliases like "dhaka" normalised there).
+const getActiveWorkerTimeZone = () => env.timeZone;
 
 const myFormat = printf((info) => {
   const { level, message, label, timestamp } = info;

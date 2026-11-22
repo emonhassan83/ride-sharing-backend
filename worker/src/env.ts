@@ -1,11 +1,14 @@
 import { TEnv } from '@/app/@types/system.types';
 import { getEnv } from '@/app/utils/env.utils';
 
+/** Used only when .env has no (or an invalid) TIME_ZONE. Set TIME_ZONE in .env. */
+const DEFAULT_TIME_ZONE = 'Europe/Nicosia';
+
 const resolveWorkerTimeZone = (raw?: string | null): string => {
   const cleaned = String(raw || '')
     .trim()
     .replace(/^['"]|['"]$/g, '');
-  if (!cleaned) return 'Europe/Nicosia';
+  if (!cleaned) return DEFAULT_TIME_ZONE;
   const lower = cleaned.toLowerCase();
   if (lower === 'cyprus' || lower === 'nicosia' || lower === 'europe/nicosia') {
     return 'Europe/Nicosia';
@@ -17,7 +20,8 @@ const resolveWorkerTimeZone = (raw?: string | null): string => {
     Intl.DateTimeFormat(undefined, { timeZone: cleaned });
     return cleaned;
   } catch {
-    return 'Europe/Nicosia';
+    console.warn(`⚠️ Invalid TIME_ZONE "${cleaned}", falling back to ${DEFAULT_TIME_ZONE}`);
+    return DEFAULT_TIME_ZONE;
   }
 };
 

@@ -3,6 +3,7 @@ import path from 'path';
 
 dotenv.config({ path: path.join(process.cwd(), '.env') });
 
+/** Used only when .env has no (or an invalid) TIME_ZONE. Set TIME_ZONE in .env. */
 export const DEFAULT_TIME_ZONE = 'Europe/Nicosia';
 
 export const resolveTimeZone = (raw?: string | null): string => {

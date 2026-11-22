@@ -7,7 +7,8 @@ Key Changes:
 - `server/src/app/job/splitRidePendingMatch.job.ts`: new `isSoloFallbackDue()` used by both `releaseLoneSplitRidesToSolo` and the backlog loop. Due when pickup is within `matchingLastNotifyHours` and (full search done OR pickup <= 15 min away). Backlog passengers still unmatched at pickup are now cancelled at pickup (was 15 min after), so they can't keep matching after departure.
 
 Pending/Next Steps:
-- Rides store wall-clock `departureTime` without a timezone; the server interprets it in `RIDE_TIME_ZONE`/`TIME_ZONE` (docker-compose hard-codes Europe/Nicosia, overriding .env). Testers in Bangladesh see rides "past due" that the server still considers hours away.
+- Rides store wall-clock `departureTime` without a timezone; the server interprets it in `RIDE_TIME_ZONE`/`TIME_ZONE` from `.env`. Testers in another zone than the server's `.env` see rides "past due" that the server still considers hours away.
+- Timezone is now `.env`-only: removed hardcoded `TZ/TIME_ZONE/RIDE_TIME_ZONE=Europe/Nicosia` and `/etc/localtime` symlinks from docker-compose and all four Dockerfiles (the image's `RIDE_TIME_ZONE` used to beat `.env` `TIME_ZONE`). `user.model` timeZone default now uses `config.timeZone`; worker logger uses resolved `env.timeZone`. Only remaining literal is the single `DEFAULT_TIME_ZONE` fallback (server `env.config.ts`, worker `env.ts`) when `.env` has none. Tests stay pinned to Nicosia in `vitest.config.mts` on purpose.
 
 ---
 

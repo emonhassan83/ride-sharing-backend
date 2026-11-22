@@ -2,9 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache tzdata dumb-init && \
-    ln -sf /usr/share/zoneinfo/Europe/Nicosia /etc/localtime && \
-    echo "Europe/Nicosia" > /etc/timezone
+# tzdata only; the zone itself comes from TIME_ZONE in .env at runtime.
+RUN apk add --no-cache tzdata dumb-init
 
 COPY package*.json ./
 COPY tsconfig.json ./
@@ -14,9 +13,6 @@ COPY src ./src
 RUN npm install
 
 ENV NODE_ENV=development
-ENV TZ=Europe/Nicosia
-ENV TIME_ZONE=Europe/Nicosia
-ENV RIDE_TIME_ZONE=Europe/Nicosia
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["npm", "run", "dev"]

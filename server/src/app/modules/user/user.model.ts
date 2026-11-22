@@ -73,7 +73,7 @@ const userSchema = new Schema<TUser, UserModal>(
     },
     timeZone: {
       type: String,
-      default: () => process.env.TIME_ZONE || 'Europe/Nicosia',
+      default: () => config.timeZone,
     },
     dateOfBirth: { type: String, required: false },
     gender: { type: String, enum: Object.values(GENDER), required: false },

@@ -3,10 +3,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Set time zone to Cyprus (Europe/Nicosia)
-RUN apk add --no-cache tzdata && \
-    ln -sf /usr/share/zoneinfo/Europe/Nicosia /etc/localtime && \
-    echo "Europe/Nicosia" > /etc/timezone
+# tzdata only; the zone itself comes from TIME_ZONE in .env at runtime.
+RUN apk add --no-cache tzdata
 
 # Copy package files
 COPY package*.json ./
@@ -23,9 +21,6 @@ EXPOSE 8080
 
 # Set development environment
 ENV NODE_ENV=development
-ENV TZ=Europe/Nicosia
-ENV TIME_ZONE=Europe/Nicosia
-ENV RIDE_TIME_ZONE=Europe/Nicosia
 
 # Use ts-node-dev for watch mode (--respawn to restart on changes, --transpile-only for faster compilation)
 CMD ["npm", "run", "dev"]
