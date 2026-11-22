@@ -12,7 +12,10 @@
     "lint:fix": "lint . --fix",
     "prettier:check": "prettier --ignore-path .gitignore --write \"**/*.+(js|ts|json)\"",
     "prettier:fix": "prettier --write .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:types": "tsc --noEmit -p tests/tsconfig.json"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -29,10 +32,12 @@
     "@types/nodemailer": "^8.0.1",
     "@typescript-eslint/eslint-plugin": "^8.62.1",
     "@typescript-eslint/parser": "^8.62.1",
+    "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^10.6.0",
     "eslint-config-prettier": "^10.1.8",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1078.0",

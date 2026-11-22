@@ -1,0 +1,22 @@
+{
+  // Type-checks the worker test suite (the production tsconfig.json only covers `src`).
+  // Usage (from worker/): npm run test:types
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "types": ["node"],
+    "typeRoots": ["../node_modules/@types"],
+    // tests use `import.meta.url` (Vitest runs them as ESM); the production build stays CommonJS
+    "module": "esnext",
+    // `paths` are resolved against the inherited `baseUrl` (= worker/)
+    "paths": {
+      "@/*": ["src/*"],
+      "@tests/*": ["tests/*"]
+    },
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["./**/*.ts", "../src/**/*.ts"],
+  "exclude": ["../node_modules", "../dist"]
+}

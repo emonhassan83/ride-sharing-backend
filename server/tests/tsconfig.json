@@ -1,0 +1,21 @@
+{
+  // Type-checks the test suite. The production tsconfig.json only covers `src`, so it never
+  // sees (or emits) anything under tests/. Being the nearest tsconfig to the test files, this
+  // is also the one editors use for them.
+  // Usage (from server/): npm run test:types
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "types": ["node"],
+    // Vitest runs tests as ESM (`import.meta.url` is allowed); the production build stays CommonJS.
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@src/*": ["../src/*"],
+      "@tests/*": ["./*"]
+    }
+  },
+  "include": ["./**/*.ts", "../src/**/*.ts"],
+  "exclude": ["../node_modules", "../dist"]
+}
