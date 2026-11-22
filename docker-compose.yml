@@ -64,9 +64,7 @@ services:
       - ./server/.env
     environment:
       - NODE_ENV=development
-      - TZ=Europe/Nicosia
-      - TIME_ZONE=Europe/Nicosia
-      - RIDE_TIME_ZONE=Europe/Nicosia
+      # Timezone comes from ./server/.env (TIME_ZONE, optional RIDE_TIME_ZONE).
     volumes:
       - ./server/src:/app/src
     healthcheck:
