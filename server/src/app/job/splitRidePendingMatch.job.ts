@@ -25,6 +25,7 @@ import {
   notifyRiderDriversNotified,
 } from '../utils/notifyDrivers.utils';
 import {
+  formatRideLocalDate,
   getDepartureDateTime,
   getMatchingLastNotifyHours,
 } from '../utils/rideSchedule.utils';
@@ -408,7 +409,6 @@ const createPeerMatchedSplitRide = async (host: any, peer: any) => {
 };
 
 const releaseUnmatchedSplitToSolo = async (passenger: any) => {
-  const io = getIO();
   const redis = getRedisClient();
 
   const booking = await Booking.findOne({ passengerId: passenger._id });
@@ -468,7 +468,27 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
 
   await redis.del(`split:matching:passenger:${passenger._id}`);
 
-  const rider = await User.findById(passenger.userId)
+  const notified = await dispatchSoloFallbackRide(ride, attachedPassenger, booking);
+
+  console.log(
+    `✅ Split unmatched released as Solo | passenger: ${passenger._id} | ride: ${ride._id} | drivers: ${notified}`,
+  );
+};
+
+/**
+ * After a rider has been moved onto a PRIVATE ride as Solo fallback:
+ * notify nearby drivers, tell drivers who saw the split request that it is now
+ * Solo, and tell the rider how many drivers have it. Returns new drivers notified.
+ */
+const dispatchSoloFallbackRide = async (
+  ride: any,
+  attachedPassenger: any,
+  booking: any,
+): Promise<number> => {
+  const io = getIO();
+  const redis = getRedisClient();
+
+  const rider = await User.findById(attachedPassenger.userId)
     .select('_id name profileImage')
     .lean();
 
@@ -481,7 +501,7 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     },
     rideId: {
       _id: ride._id,
-      type: ride.type,
+      type: RIDE_TYPE.private,
       id: (ride as any).id || '',
     },
     bookingId: booking._id.toString(),
@@ -489,7 +509,7 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     destination: attachedPassenger.destination,
     departureDate: ride.departureDate,
     departureTime: ride.departureTime,
-    rideType: ride.type,
+    rideType: RIDE_TYPE.private,
     vehicleType: (ride as any).vehicleType || null,
     requestedSeats: attachedPassenger.requestedSeats || 1,
     estimatedFare: attachedPassenger.estimatedFare || booking.totalFare || 0,
@@ -502,6 +522,8 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     ...toLuggageFyiView(attachedPassenger),
   };
 
+  const pickupCoords =
+    attachedPassenger.pickup?.coordinates || ride.pickup?.coordinates || [];
   const notified = await notifyNearbyDrivers(
     ride._id.toString(),
     { lat: pickupCoords[1], lng: pickupCoords[0] },
@@ -537,12 +559,12 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
   };
 
   // Passenger
-  io.to(`user:${passenger.userId}`).emit(
+  io.to(`user:${attachedPassenger.userId}`).emit(
     'split-ride:converted-to-solo',
     convertedPayload,
   );
 
-  // Drivers who received this Solo request (and any already on notifiedDriverIds)
+  // Drivers who received this request (split or Solo) so their list updates.
   const refreshedRide = await Ride.findById(ride._id)
     .select('notifiedDriverIds')
     .lean();
@@ -560,7 +582,7 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
 
   await notifyRiderDriversNotified({
     io,
-    userId: passenger.userId.toString(),
+    userId: attachedPassenger.userId.toString(),
     rideId: ride._id.toString(),
     passengerId: attachedPassenger._id.toString(),
     bookingId: booking._id.toString(),
@@ -568,9 +590,129 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     variant: 'solo_fallback',
   });
 
-  console.log(
-    `✅ Split unmatched released as Solo | passenger: ${passenger._id} | ride: ${ride._id} | drivers: ${notified}`,
+  return notified;
+};
+
+/**
+ * Lone split rides → Solo, `matchingLastNotifyHours` (1h) before pickup.
+ *
+ * The backlog loader only sees passengers still in `split_matching` with no
+ * ride. A rider who is already ON a split Ride (booked via `ride-request` with
+ * type=split, or whose split partner cancelled) but is still alone with no
+ * driver was never converted — the no-driver job just cancelled it at pickup.
+ * Rides with 2+ matched riders stay split (that is a real shared trip).
+ */
+const releaseLoneSplitRidesToSolo = async (releaseHours: number) => {
+  const now = new Date();
+  const horizonLocal = formatRideLocalDate(
+    new Date(now.getTime() + (releaseHours + 24) * 3600000),
   );
+  const yesterdayLocal = formatRideLocalDate(
+    new Date(now.getTime() - 24 * 3600000),
+  );
+
+  const rides = await Ride.find({
+    type: RIDE_TYPE.split,
+    status: RIDE_STATUS.pending,
+    $or: [{ driverId: { $exists: false } }, { driverId: null }],
+    departureDate: { $gte: yesterdayLocal, $lte: horizonLocal },
+  })
+    .sort({ departureDate: 1, departureTime: 1 })
+    .limit(BATCH_SIZE)
+    .lean();
+
+  for (const ride of rides) {
+    try {
+      const departureDateTime = getDepartureDateTime(
+        ride.departureDate,
+        ride.departureTime,
+      );
+      const hoursUntilDeparture =
+        (departureDateTime.getTime() - now.getTime()) / 3600000;
+      const hoursSinceCreated =
+        (now.getTime() - new Date((ride as any).createdAt || now).getTime()) /
+        3600000;
+
+      // Same window as the backlog Solo fallback (SPLIT-015 minimum search).
+      if (hoursUntilDeparture > releaseHours || hoursUntilDeparture <= 0) continue;
+      if (hoursSinceCreated < releaseHours) continue;
+
+      const rideId = ride._id.toString();
+      const locked = await acquireSplitJoinLock(rideId);
+      if (!locked) continue;
+
+      try {
+        const active = await Passenger.find({
+          rideId: ride._id,
+          status: {
+            $nin: [
+              PASSENGER_STATUS.cancelled,
+              PASSENGER_STATUS.rejected,
+              PASSENGER_STATUS.split_matching,
+            ],
+          },
+        }).lean();
+        if (active.length !== 1) continue;
+
+        const lone: any = active[0];
+        if (lone.status !== PASSENGER_STATUS.pending) continue;
+        if (
+          !(
+            [
+              PASSENGER_PAYMENT_STATUS.authorized,
+              PASSENGER_PAYMENT_STATUS.paid,
+            ] as string[]
+          ).includes(lone.paymentStatus)
+        ) {
+          continue; // unpaid requests are not being matched at all
+        }
+
+        const booking = await Booking.findOne({
+          passengerId: lone._id,
+          rideId: ride._id,
+        });
+        if (!booking) continue;
+
+        // Atomic flip: a driver accepting in parallel wins, and a second job
+        // instance cannot convert the same ride twice.
+        const converted = await Ride.findOneAndUpdate(
+          {
+            _id: ride._id,
+            type: RIDE_TYPE.split,
+            status: RIDE_STATUS.pending,
+            $or: [{ driverId: { $exists: false } }, { driverId: null }],
+          },
+          { type: RIDE_TYPE.private },
+          { returnDocument: 'after' },
+        ).lean();
+        if (!converted) continue;
+
+        const attachedPassenger = await Passenger.findByIdAndUpdate(
+          lone._id,
+          {
+            matchedVia: 'solo_fallback',
+            fallbackReason: 'unmatched_within_1h_of_pickup',
+            originalRideIntent: 'split',
+          },
+          { returnDocument: 'after' },
+        ).lean();
+
+        const notified = await dispatchSoloFallbackRide(
+          converted,
+          attachedPassenger || lone,
+          booking,
+        );
+
+        console.log(
+          `✅ Lone split ride converted to Solo | ride: ${rideId} | passenger: ${lone._id} | hoursUntil: ${hoursUntilDeparture.toFixed(2)} | new drivers: ${notified}`,
+        );
+      } finally {
+        await releaseSplitJoinLock(rideId);
+      }
+    } catch (error) {
+      console.error('Lone split → Solo error:', error);
+    }
+  }
 };
 
 const loadSplitMatchingBacklog = async () => {
@@ -628,6 +770,13 @@ export const checkSplitRidePendingMatches = async () => {
   const redis = getRedisClient();
   const now = new Date();
   const releaseHours = await getMatchingLastNotifyHours();
+
+  // Riders already on a split Ride but still alone with no driver.
+  try {
+    await releaseLoneSplitRidesToSolo(releaseHours);
+  } catch (error) {
+    console.error('Lone split → Solo phase error:', error);
+  }
 
   const passengers = await loadSplitMatchingBacklog();
 

@@ -86,6 +86,14 @@ const nearbyDriversSentence = (count: number): string =>
  * ride whose drivers were already notified, would tell the rider "0 drivers".
  *
  * Must be called AFTER the driver-notify step for the ride.
+ *
+ * Variants:
+ *  - matching:      first dispatch after payment / split match.
+ *  - rematch:       no-driver job re-notify. Push once per `rematchStage`
+ *                   ('initial' | 'final') and again whenever the count grows,
+ *                   so the rider hears at rematch time without a push every
+ *                   few minutes. Socket is emitted on every run.
+ *  - solo_fallback: split → Solo conversion.
  */
 export async function notifyRiderDriversNotified(input: {
   io: any;
@@ -94,7 +102,8 @@ export async function notifyRiderDriversNotified(input: {
   passengerId: string;
   bookingId?: string;
   newlyNotified: number;
-  variant?: 'matching' | 'solo_fallback';
+  variant?: 'matching' | 'rematch' | 'solo_fallback';
+  rematchStage?: 'initial' | 'final';
 }): Promise<number> {
   const {
     io,
@@ -104,6 +113,7 @@ export async function notifyRiderDriversNotified(input: {
     bookingId,
     newlyNotified,
     variant = 'matching',
+    rematchStage = 'initial',
   } = input;
   if (!userId || !rideId) return newlyNotified;
 
@@ -122,12 +132,15 @@ export async function notifyRiderDriversNotified(input: {
   }
 
   const isSolo = variant === 'solo_fallback';
+  const isRematch = variant === 'rematch';
   const found = total > 0;
   const title = isSolo
     ? 'Converted to Solo Ride'
-    : found
-      ? 'Drivers Notified'
-      : 'Searching for Drivers';
+    : isRematch
+      ? 'Still Searching for a Driver'
+      : found
+        ? 'Drivers Notified'
+        : 'Searching for Drivers';
   const description = isSolo
     ? found
       ? `No split match found. Your ride was released as Solo. ${nearbyDriversSentence(total)}`
@@ -139,30 +152,41 @@ export async function notifyRiderDriversNotified(input: {
   try {
     const lang = await resolveUserLanguage(userId);
     io?.to(`user:${userId}`).emit('ride:drivers-notified', {
-        rideId: String(rideId),
-        passengerId: String(passengerId),
-        bookingId: bookingId ? String(bookingId) : undefined,
-        notifiedDrivers: total,
-        newlyNotifiedDrivers: newlyNotified,
-        matchedVia: isSolo ? 'solo_fallback' : undefined,
-        title: translateText(title, lang),
-        message: translateText(description, lang),
-      });
+      rideId: String(rideId),
+      passengerId: String(passengerId),
+      bookingId: bookingId ? String(bookingId) : undefined,
+      notifiedDrivers: total,
+      newlyNotifiedDrivers: newlyNotified,
+      phase: variant,
+      matchedVia: isSolo ? 'solo_fallback' : undefined,
+      title: translateText(title, lang),
+      message: translateText(description, lang),
+    });
   } catch {
     /* socket may not be initialized */
   }
 
-  // One push per ride + outcome. "Searching" → later "found" still gets through;
-  // retries with the same outcome do not.
+  // matching / solo: one push per ride + outcome ("searching" → later "found"
+  // still gets through; retries with the same outcome do not).
+  // rematch: one push per stage + driver count.
+  const dedupeKey = isRematch
+    ? `drivers-notified:rematch:${rideId}:${rematchStage}:${total}`
+    : `drivers-notified:${variant}:${rideId}:${found ? 'found' : 'none'}`;
+
   await notifyUserPush({
     userId,
     message: title,
     description,
     reference: String(rideId),
     modelType: isSolo ? modeType.Passenger : modeType.Ride,
-    dedupeKey: `drivers-notified:${variant}:${rideId}:${found ? 'found' : 'none'}`,
+    dedupeKey,
+    dedupeTtlSeconds: isRematch ? 48 * 60 * 60 : undefined,
     data: {
-      type: isSolo ? 'SPLIT_TO_SOLO' : 'DRIVERS_NOTIFIED',
+      type: isSolo
+        ? 'SPLIT_TO_SOLO'
+        : isRematch
+          ? 'RIDE_RE_MATCHING'
+          : 'DRIVERS_NOTIFIED',
       rideId: String(rideId),
       passengerId: String(passengerId),
       notifiedDrivers: total,

@@ -8,7 +8,10 @@ import { User } from '../modules/user/user.model';
 import { Setting } from '../modules/settings/settings.model';
 import { modeType } from '../modules/notification/notification.interface';
 import { notifyUserPush } from '../utils/notifyUser.utils';
-import { notifyNearbyDrivers } from '../utils/notifyDrivers.utils';
+import {
+  notifyNearbyDrivers,
+  notifyRiderDriversNotified,
+} from '../utils/notifyDrivers.utils';
 import { getIO } from '../socket/socket.init';
 import { Booking } from '../modules/booking/booking.model';
 import { Payment } from '../modules/payment/payment.model';
@@ -179,25 +182,36 @@ export const checkNoDriverFound = async () => {
       lastNotifiedAt: now.getTime().toString(),
     });
 
-    const creatorId = (ride as any).rideCreatedBy?.toString();
-    io.to(`user:${creatorId}`).emit('ride:re-matching', {
+    // Tell every waiting rider on this ride (not only rideCreatedBy — on a
+    // peer-matched split ride that is just the host) how many drivers have it.
+    // Previously: push only when NEW drivers were found, so with the same
+    // nearby drivers the rider heard nothing at rematch time.
+    const waitingRiders = await Passenger.find({
       rideId: ride._id,
-      message: `We're still looking for a driver. ${notified} ${notified === 1 ? 'driver' : 'drivers'} notified.`,
-    });
+      status: PASSENGER_STATUS.pending,
+    })
+      .select('_id userId')
+      .lean();
 
-    if (creatorId && notified > 0) {
-      await notifyUserPush({
-        userId: creatorId,
-        message: 'Still Searching for a Driver',
-        description: `We're still trying to find a driver for your ride. ${notified} ${notified === 1 ? 'driver has' : 'drivers have'} been notified.`,
-        reference: ride._id.toString(),
-        modelType: modeType.Ride,
-        data: {
-          type: 'RIDE_RE_MATCHING',
-          rideId: String(ride._id),
-        },
-        dedupeKey: `still-searching:${ride._id.toString()}`,
-        dedupeTtlSeconds: 30 * 60,
+    for (const rider of waitingRiders) {
+      const riderId = rider.userId?.toString();
+      if (!riderId) continue;
+
+      const total = await notifyRiderDriversNotified({
+        io,
+        userId: riderId,
+        rideId: ride._id.toString(),
+        passengerId: rider._id.toString(),
+        newlyNotified: notified,
+        variant: 'rematch',
+        rematchStage: isFinalContinuousWindow ? 'final' : 'initial',
+      });
+
+      // Legacy event kept for older app builds.
+      io.to(`user:${riderId}`).emit('ride:re-matching', {
+        rideId: ride._id,
+        notifiedDrivers: total,
+        message: `We're still looking for a driver. ${total} ${total === 1 ? 'driver' : 'drivers'} notified.`,
       });
     }
   }
@@ -226,26 +240,36 @@ export const checkNoDriverFound = async () => {
     },
   });
   const confirmedSet = new Set(confirmedRideIds.map((id: any) => String(id)));
-  const finalCancelRideIds = trulyUnassignedRides
+  const candidateCancelRideIds = trulyUnassignedRides
     .map((r) => r._id.toString())
     .filter((id) => !confirmedSet.has(id));
 
-  if (!finalCancelRideIds.length) return;
+  if (!candidateCancelRideIds.length) return;
 
-  // Bulk cancel rides only after pickup time has passed and no driver accepted.
-  await Ride.updateMany(
-    {
-      _id: { $in: finalCancelRideIds },
-      status: RIDE_STATUS.pending,
-      $or: [{ driverId: { $exists: false } }, { driverId: null }],
-    },
-    {
-      status: RIDE_STATUS.cancelled,
-      cancellationReason: 'no_driver_found',
-      cancelledBy: CANCELLED_BY.system,
-      cancelledAt: now,
-    }
-  );
+  // Claim each ride atomically: only the run that actually flips it to
+  // cancelled refunds and notifies. The old bulk updateMany didn't check the
+  // result, so an overlapping run (or a second server instance on the same
+  // DB) re-sent "Ride Cancelled — No Driver Found" to the same rider.
+  const finalCancelRideIds: string[] = [];
+  for (const rideId of candidateCancelRideIds) {
+    const claimed = await Ride.findOneAndUpdate(
+      {
+        _id: rideId,
+        status: RIDE_STATUS.pending,
+        $or: [{ driverId: { $exists: false } }, { driverId: null }],
+      },
+      {
+        status: RIDE_STATUS.cancelled,
+        cancellationReason: 'no_driver_found',
+        cancelledBy: CANCELLED_BY.system,
+        cancelledAt: now,
+      },
+      { projection: { _id: 1 } },
+    ).lean();
+    if (claimed) finalCancelRideIds.push(rideId);
+  }
+
+  if (!finalCancelRideIds.length) return;
 
   const bookingsToRefund = await Booking.find({
     rideId: { $in: finalCancelRideIds },
@@ -369,6 +393,7 @@ export const checkNoDriverFound = async () => {
       description,
       reference: p.rideId?.toString() || '',
       modelType: modeType.Ride,
+      dedupeKey: `no-driver-cancelled:${String(p.rideId || '')}`,
       data: {
         type: 'RIDE_CANCELLED_NO_DRIVER',
         rideId: String(p.rideId || ''),
