@@ -1,3 +1,16 @@
+Date/Session: 2026-11-22
+
+Completed Tasks:
+- Fixed lone/unmatched split rides never converting to Solo when booked less than ~1h10m before pickup (Solo window was only `[created+1h, departure]`, 10 minutes or empty).
+
+Key Changes:
+- `server/src/app/job/splitRidePendingMatch.job.ts`: new `isSoloFallbackDue()` used by both `releaseLoneSplitRidesToSolo` and the backlog loop. Due when pickup is within `matchingLastNotifyHours` and (full search done OR pickup <= 15 min away). Backlog passengers still unmatched at pickup are now cancelled at pickup (was 15 min after), so they can't keep matching after departure.
+
+Pending/Next Steps:
+- Rides store wall-clock `departureTime` without a timezone; the server interprets it in `RIDE_TIME_ZONE`/`TIME_ZONE` (docker-compose hard-codes Europe/Nicosia, overriding .env). Testers in Bangladesh see rides "past due" that the server still considers hours away.
+
+---
+
 Date/Session: 2026-07-01
 
 Completed Tasks:

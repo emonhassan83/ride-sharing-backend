@@ -47,6 +47,33 @@ import { getRouteGeometry } from '../utils/maps.utils';
 import { toLuggageFyiView } from '../utils/luggage.utils';
 
 const BATCH_SIZE = 25;
+
+/**
+ * Last-call Solo cutoff: an unmatched split rider is converted no later than
+ * this long before pickup, even if the full `releaseHours` search has not run.
+ * Must be > 0 — `checkNoDriverFound` cancels any driverless ride at pickup,
+ * so a conversion at/after pickup would be cancelled in the same minute.
+ */
+const SOLO_LAST_CALL_HOURS = 0.25;
+
+/**
+ * Solo fallback is due once pickup is inside the `releaseHours` window AND
+ * either the rider has had the full `releaseHours` of split search (SPLIT-015:
+ * no early conversion) or pickup is within SOLO_LAST_CALL_HOURS.
+ *
+ * Without the last-call branch, a ride booked less than ~`releaseHours` + a
+ * few minutes ahead (e.g. booked 12:35 for 13:45) had a 10-minute window or
+ * none at all, and stayed a lone split ride until the no-driver job killed it.
+ */
+const isSoloFallbackDue = (
+  hoursUntilDeparture: number,
+  hoursSinceCreated: number,
+  releaseHours: number,
+): boolean =>
+  hoursUntilDeparture > 0 &&
+  hoursUntilDeparture <= releaseHours &&
+  (hoursSinceCreated >= releaseHours ||
+    hoursUntilDeparture <= SOLO_LAST_CALL_HOURS);
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-06-24.dahlia',
   typescript: true,
@@ -633,9 +660,11 @@ const releaseLoneSplitRidesToSolo = async (releaseHours: number) => {
         (now.getTime() - new Date((ride as any).createdAt || now).getTime()) /
         3600000;
 
-      // Same window as the backlog Solo fallback (SPLIT-015 minimum search).
-      if (hoursUntilDeparture > releaseHours || hoursUntilDeparture <= 0) continue;
-      if (hoursSinceCreated < releaseHours) continue;
+      // Same rule as the backlog Solo fallback (SPLIT-015 minimum search,
+      // with a last-call conversion for late bookings).
+      if (!isSoloFallbackDue(hoursUntilDeparture, hoursSinceCreated, releaseHours)) {
+        continue;
+      }
 
       const rideId = ride._id.toString();
       const locked = await acquireSplitJoinLock(rideId);
@@ -806,13 +835,13 @@ export const checkSplitRidePendingMatches = async () => {
         ? new Date(passenger.createdAt).getTime()
         : now.getTime();
       const hoursSinceCreated = Math.max(0, (now.getTime() - createdAtMs) / 3600000);
-      // Full matchingLastNotifyHours search, and only once pickup is inside
-      // that window. A 15-minute-before-pickup shortcut was converting rides
-      // after ~25 minutes when pickup was still about 40 minutes away.
-      const inSoloWindow =
-        hoursSinceCreated >= releaseHours &&
-        hoursUntilDeparture <= releaseHours &&
-        hoursUntilDeparture > -0.25;
+      // Full matchingLastNotifyHours search once pickup is inside that window;
+      // late bookings get a last-call conversion 15 min before pickup.
+      const inSoloWindow = isSoloFallbackDue(
+        hoursUntilDeparture,
+        hoursSinceCreated,
+        releaseHours,
+      );
 
       if (inSoloWindow) {
         console.log(
@@ -822,7 +851,9 @@ export const checkSplitRidePendingMatches = async () => {
         continue;
       }
 
-      if (hoursUntilDeparture <= -0.25) {
+      // Pickup reached while still unmatched (job was down / missed the
+      // last-call window). Matching after pickup makes no sense — release.
+      if (hoursUntilDeparture <= 0) {
         await cancelUnmatchedSplitPassenger(
           passenger,
           'departure_passed_unmatched',
