@@ -366,18 +366,19 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
     expect(ride.status).toBe('pending');
     expect(leaver.status).toBe('cancelled');
     expect(creator.status).toBe('pending');
+    // 4 total - 2 still booked after the leaver's seat is released
     expect(io.payloadTo(`driver:${driverA}`, 'ride:cancelled-by-rider')).toEqual({
       rideId,
       message: 'A passenger cancelled before driver acceptance.',
       rideCancelled: false,
       passengerId: leaver._id,
-      remainingSeats: 3,
+      remainingSeats: 2,
     });
     for (const co of [creator, other]) {
       expect(io.payloadTo(`user:${co.userId}`, 'ride:co-passenger-cancelled')).toEqual({
         rideId,
         cancelledPassengerId: leaver._id,
-        remainingSeats: 3,
+        remainingSeats: 2,
         message: 'Another passenger cancelled.',
       });
     }
@@ -404,9 +405,9 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
     expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
   });
 
-  it('the only rider on a split ride cancels: ride cancelled with reason "Last passenger cancelled"', async () => {
+  it('the only rider on a split ride cancels (not the creator): ride cancelled with reason "Last passenger cancelled"', async () => {
     const only = makePassenger({ userId: creatorId });
-    const ride = split({ notifiedDriverIds: [driverA] });
+    const ride = split({ notifiedDriverIds: [driverA], rideCreatedBy: oidStr() });
     wire({ ride, passengers: [only] });
 
     await run({ rideId });
@@ -450,7 +451,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
     expect(ride.status).toBe('cancelled');
   });
 
-  // BUG-REPORT CANCEL-7 | low | rideCancelBeforeAccept.handler.ts:179-181
+  // BUG-REPORT CANCEL-7 | low | rideCancelBeforeAccept.handler.ts:88
   // Cancelling a ride that is already cancelled answers "Cannot cancel: driver already accepted",
   // which is false and misleads the rider. Fix: return a status-specific message (e.g. "Ride is no
   // longer pending") for any non-pending status.

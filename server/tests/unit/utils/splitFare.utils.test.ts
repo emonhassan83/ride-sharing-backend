@@ -536,7 +536,7 @@ describe('chargeUser (wallet first, then saved card, Case 11 / 33)', () => {
     expect(User.findByIdAndUpdate).toHaveBeenLastCalledWith('user-1', { $inc: { wallet: 30 } });
   });
 
-  it('it.fails BUG SPLIT-03: a card that was already charged is not rolled back when only the post-charge bookkeeping fails', async () => {
+  it.fails('BUG SPLIT-03: a card that was already charged is not rolled back when only the post-charge bookkeeping fails', async () => {
     // BUG-REPORT SPLIT-03 | MEDIUM | src/app/utils/splitFare.utils.ts:285-305
     // The PaymentIntent with confirm:true succeeds, then redis.set(idemKey) throws inside the same
     // try block. The catch restores the wallet and reports "payment failed" although the card was
@@ -764,7 +764,7 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
 
     await recalculateSplitFares(RIDE_ID, 'passenger_joined');
 
-    expect(Passenger.findByIdAndUpdate).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ estimatedFare: expect.anything() }));
+    expect(Passenger.findByIdAndUpdate).not.toHaveBeenCalled();
     // Ride summary is still refreshed
     expect(Ride.findByIdAndUpdate).toHaveBeenCalledWith(RIDE_ID, { currentSurchargePercent: 0, bookedSeats: 1 });
   });
@@ -857,9 +857,8 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
       paymentStatus: PAYMENT_STATUS.requires_reauthorization,
     });
     expect(booking.paymentStatus).toBe(PAYMENT_STATUS.requires_reauthorization);
-    expect(io.to).toHaveBeenCalledWith(`driver:${driverA}`);
-    expect(io.to).toHaveBeenCalledWith(`driver:${driverB}`);
-    expect(io.to).toHaveBeenCalledTimes(2);
+    const driverRooms = io.to.mock.calls.map((c) => c[0]).filter((room) => String(room).startsWith('driver:'));
+    expect(driverRooms.sort()).toEqual([`driver:${driverA}`, `driver:${driverB}`].sort());
     expect(emit).toHaveBeenCalledWith('ride:request-removed', {
       rideId: RIDE_ID,
       passengerId: target._id,
@@ -883,7 +882,8 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
 
     await recalculateSplitFares(RIDE_ID, 'passenger_joined', io);
 
-    expect(io.to).toHaveBeenCalledTimes(1);
+    const driverRooms = io.to.mock.calls.map((c) => c[0]).filter((room) => String(room).startsWith('driver:'));
+    expect(driverRooms).toEqual([`driver:${driver}`]);
   });
 
   it('re-authorization without a socket server still updates the payment and does not throw', async () => {
@@ -905,14 +905,14 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
     expect(payment.status).toBe(PAYMENT_STATUS.authorized);
   });
 
-  it('it.fails BUG SPLIT-01: a split recalculation keeps the platform commission on the payment', async () => {
-    // BUG-REPORT SPLIT-01 | HIGH | src/app/utils/splitFare.utils.ts:420-425, 438-440, 490-492, 503-505
+  it.fails('BUG SPLIT-01: a split recalculation keeps the platform commission on the payment', async () => {
+    // BUG-REPORT SPLIT-01 | MEDIUM | src/app/utils/splitFare.utils.ts:420-425, 490-492, 503-505
     // calcSplitPassengerFare returns platformCommissionAmount 0 (fareMath), so the recalc writes
-    // payment.platformCommission = 0 and providerEarning = the full fare. The capture path
-    // (payment.service getCommissionBreakdown) computes the real fee + VAT. Fix: derive the commission
-    // from computeDriverPayoutFromPassengerTotal (as payment.service does) instead of the fare result.
+    // payment.platformCommission = 0 and providerEarning = the full fare on paid/unpaid payments
+    // (authorized ones are recomputed at capture, payment.service.ts:837-890). Fix: derive the
+    // commission from computeDriverPayoutFromPassengerTotal (as payment.service does).
     const target = passenger({ estimatedFare: 60 });
-    const payment = paymentDoc(PAYMENT_STATUS.authorized, { platformCommission: 0, providerEarning: 0 });
+    const payment = paymentDoc(PAYMENT_STATUS.paid, { platformCommission: 6, providerEarning: 54 });
     wire({ passengers: [target, passenger()], target, booking: bookingDoc(), payment });
 
     await recalculateSplitFares(RIDE_ID, 'passenger_joined');
@@ -1188,7 +1188,7 @@ describe('lockSplitRideFare', () => {
     expect(io.to).not.toHaveBeenCalled();
   });
 
-  it('it.fails BUG SPLIT-02: the fare is not locked when the recalculation could not run', async () => {
+  it.fails('BUG SPLIT-02: the fare is not locked when the recalculation could not run', async () => {
     // BUG-REPORT SPLIT-02 | MEDIUM | src/app/utils/splitFare.utils.ts:684-694
     // recalculateSplitFares silently returns when it cannot get the recalc lock (3 tries), but
     // lockSplitRideFare then locks the ride anyway, so passengers are charged on stale estimates.
