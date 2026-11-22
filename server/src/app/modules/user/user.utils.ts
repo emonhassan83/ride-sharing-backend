@@ -30,7 +30,9 @@ export const sendUserStatusNotifYToUser = async (
     description = 'Your account status has been updated.';
   }
 
-  // 1. Send FCM push (when fcmToken exists) + guarantee in-app Notification DB row
+  // One FCM + one in-app row. Called only when updateUserStatus actually
+  // flipped the status (atomic conditional update), so no dedupe key here —
+  // a dedupe TTL would swallow a legit active → blocked → active toggle.
   await notifyUserPush({
     userId: userIdStr,
     message,
@@ -44,14 +46,17 @@ export const sendUserStatusNotifYToUser = async (
     },
   });
 
-  // 2. Increment unread notification counter in Redis
   try {
     await incrementUnreadCount(userIdStr);
   } catch {
     /* ignore redis counter errors */
   }
 
-  // 3. Emit real-time Socket.IO notification & status update events
+  // Emit ONCE, to the user's own room only. Every socket (rider or driver)
+  // joins `user:{id}`, so one emit = one delivery per socket. The old code
+  // emitted to `{id}`, `user:{id}`, `driver:{id}` AND broadcast
+  // `notification::{id}` to everyone → 3–4 copies of the same notification.
+  // Event name matches the app-wide convention (notification.services.ts).
   try {
     const io = getIO();
     const socketPayload = {
@@ -64,22 +69,15 @@ export const sendUserStatusNotifYToUser = async (
       createdAt: moment().format('YYYY-MM-DD'),
     };
 
-    io.to(userIdStr).emit('notification', socketPayload);
-    io.to(`user:${userIdStr}`).emit('notification', socketPayload);
-    io.to(`driver:${userIdStr}`).emit('notification', socketPayload);
-    io.emit(`notification::${userIdStr}`, socketPayload);
-
-    const statusChangedPayload = {
+    io.to(`user:${userIdStr}`).emit(`notification::${userIdStr}`, socketPayload);
+    io.to(`user:${userIdStr}`).emit('user:status-changed', {
       userId: userIdStr,
       status,
       isBlocked: status === 'blocked',
       message,
       description,
       timestamp: Date.now(),
-    };
-    io.to(userIdStr).emit('user:status-changed', statusChangedPayload);
-    io.to(`user:${userIdStr}`).emit('user:status-changed', statusChangedPayload);
-    io.to(`driver:${userIdStr}`).emit('user:status-changed', statusChangedPayload);
+    });
   } catch {
     /* socket may not be initialized in scripts */
   }

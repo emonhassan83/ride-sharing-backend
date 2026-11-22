@@ -10,6 +10,7 @@ import { isVehicleType } from './luggage.utils';
 import { modeType } from '../modules/notification/notification.interface';
 import { notifyUserPush } from './notifyUser.utils';
 import { calculateDistance } from './location.utils';
+import { resolveUserLanguage, translateText } from '../i18n/i18n';
 
 /** Location ping older than this is not "nearby right now". */
 const FRESH_LOCATION_MS = 45 * 60 * 1000;
@@ -70,6 +71,105 @@ export async function emitNewRideRequestToDriver(
   });
 
   return true;
+}
+
+const nearbyDriversSentence = (count: number): string =>
+  `${count} nearby ${count === 1 ? 'driver has' : 'drivers have'} been notified.`;
+
+/**
+ * Tell the RIDER how many drivers have received their ride request
+ * (socket `ride:drivers-notified` + one push / in-app row).
+ *
+ * The count is the cumulative distinct drivers on `ride.notifiedDriverIds`
+ * (plus an assigned driver), not just the ones newly reached by this call.
+ * Otherwise a retried payment confirm, or a second split passenger joining a
+ * ride whose drivers were already notified, would tell the rider "0 drivers".
+ *
+ * Must be called AFTER the driver-notify step for the ride.
+ */
+export async function notifyRiderDriversNotified(input: {
+  io: any;
+  userId: string;
+  rideId: string;
+  passengerId: string;
+  bookingId?: string;
+  newlyNotified: number;
+  variant?: 'matching' | 'solo_fallback';
+}): Promise<number> {
+  const {
+    io,
+    userId,
+    rideId,
+    passengerId,
+    bookingId,
+    newlyNotified,
+    variant = 'matching',
+  } = input;
+  if (!userId || !rideId) return newlyNotified;
+
+  let total = newlyNotified;
+  try {
+    const ride = await Ride.findById(rideId)
+      .select('notifiedDriverIds driverId')
+      .lean();
+    const ids = new Set<string>(
+      ((ride as any)?.notifiedDriverIds || []).map((id: any) => String(id)),
+    );
+    if ((ride as any)?.driverId) ids.add(String((ride as any).driverId));
+    total = Math.max(newlyNotified, ids.size);
+  } catch {
+    /* fall back to newlyNotified */
+  }
+
+  const isSolo = variant === 'solo_fallback';
+  const found = total > 0;
+  const title = isSolo
+    ? 'Converted to Solo Ride'
+    : found
+      ? 'Drivers Notified'
+      : 'Searching for Drivers';
+  const description = isSolo
+    ? found
+      ? `No split match found. Your ride was released as Solo. ${nearbyDriversSentence(total)}`
+      : 'No split match found. Your ride was released to drivers as a Solo trip.'
+    : found
+      ? `We're looking for a driver. ${nearbyDriversSentence(total)}`
+      : 'We are still looking for a nearby driver.';
+
+  try {
+    const lang = await resolveUserLanguage(userId);
+    io?.to(`user:${userId}`).emit('ride:drivers-notified', {
+        rideId: String(rideId),
+        passengerId: String(passengerId),
+        bookingId: bookingId ? String(bookingId) : undefined,
+        notifiedDrivers: total,
+        newlyNotifiedDrivers: newlyNotified,
+        matchedVia: isSolo ? 'solo_fallback' : undefined,
+        title: translateText(title, lang),
+        message: translateText(description, lang),
+      });
+  } catch {
+    /* socket may not be initialized */
+  }
+
+  // One push per ride + outcome. "Searching" → later "found" still gets through;
+  // retries with the same outcome do not.
+  await notifyUserPush({
+    userId,
+    message: title,
+    description,
+    reference: String(rideId),
+    modelType: isSolo ? modeType.Passenger : modeType.Ride,
+    dedupeKey: `drivers-notified:${variant}:${rideId}:${found ? 'found' : 'none'}`,
+    data: {
+      type: isSolo ? 'SPLIT_TO_SOLO' : 'DRIVERS_NOTIFIED',
+      rideId: String(rideId),
+      passengerId: String(passengerId),
+      notifiedDrivers: total,
+    },
+  });
+
+  return total;
 }
 
 /** Private rides: drivers whose active vehicle can accommodate the requested vehicleType. */

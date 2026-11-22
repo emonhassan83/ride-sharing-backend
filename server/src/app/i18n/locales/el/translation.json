@@ -603,7 +603,11 @@
     "KYC Verification Submitted": "Η επαλήθευση KYC υποβλήθηκε",
     "KYC Verification Approved": "Η επαλήθευση KYC εγκρίθηκε",
     "KYC Verification Rejected": "Η επαλήθευση KYC απορρίφθηκε",
-    "New Rating Received": "Νέα βαθμολογία"
+    "New Rating Received": "Νέα βαθμολογία",
+    "Drivers Notified": "Οι οδηγοί ειδοποιήθηκαν",
+    "Searching for Drivers": "Αναζήτηση οδηγών",
+    "We are still looking for a nearby driver.": "Συνεχίζουμε να αναζητούμε κοντινό οδηγό.",
+    "Ride request created. Complete payment to notify nearby drivers.": "Το αίτημα διαδρομής δημιουργήθηκε. Ολοκληρώστε την πληρωμή για να ειδοποιηθούν οι κοντινοί οδηγοί."
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",
@@ -645,6 +649,8 @@
     "ride_start_verification_code": "Ο κωδικός επαλήθευσης για την έναρξη της διαδρομής είναι {{otp}}. Μοιραστείτε τον με τον οδηγό σας κατά την επιβίβαση.",
     "account_registered_with": "Αυτός ο λογαριασμός είναι εγγεγραμμένος μέσω {{method}}, χρησιμοποιήστε αυτήν τη μέθοδο.",
     "refund_status_updated": "Η κατάσταση του αιτήματος επιστροφής χρημάτων ενημερώθηκε σε \"{{status}}\".",
-    "refund_initiated_by": "Υποβλήθηκε αίτημα επιστροφής χρημάτων από τον/την {{name}}."
+    "refund_initiated_by": "Υποβλήθηκε αίτημα επιστροφής χρημάτων από τον/την {{name}}.",
+    "drivers_notified_count": "Αναζητούμε οδηγό. Κοντινοί οδηγοί που ειδοποιήθηκαν: {{count}}.",
+    "solo_drivers_notified_count": "Δεν βρέθηκε κοινή διαδρομή. Η διαδρομή σας στάλθηκε ως ιδιωτική διαδρομή. Κοντινοί οδηγοί που ειδοποιήθηκαν: {{count}}."
   }
 }

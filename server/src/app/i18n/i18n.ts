@@ -257,6 +257,16 @@ const PATTERN_RULES: PatternRule[] = [
     extract: (m) => ({ count: m[1] }),
   },
   {
+    regex: /^We're looking for a driver\.\s*(\d+)\s*nearby drivers? (?:has|have) been notified\.$/i,
+    patternKey: 'drivers_notified_count',
+    extract: (m) => ({ count: m[1] }),
+  },
+  {
+    regex: /^No split match found\. Your ride was released as Solo\.\s*(\d+)\s*nearby drivers? (?:has|have) been notified\.$/i,
+    patternKey: 'solo_drivers_notified_count',
+    extract: (m) => ({ count: m[1] }),
+  },
+  {
     regex: /^OTP verified for\s*(.+)$/i,
     patternKey: 'otp_verified_for',
     extract: (m) => ({ type: m[1] }),

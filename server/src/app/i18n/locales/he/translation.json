@@ -603,7 +603,11 @@
     "KYC Verification Submitted": "אימות KYC הוגש",
     "KYC Verification Approved": "אימות KYC אושר",
     "KYC Verification Rejected": "אימות KYC נדחה",
-    "New Rating Received": "התקבל דירוג חדש"
+    "New Rating Received": "התקבל דירוג חדש",
+    "Drivers Notified": "נהגים קיבלו התראה",
+    "Searching for Drivers": "מחפשים נהגים",
+    "We are still looking for a nearby driver.": "אנו עדיין מחפשים נהג קרוב.",
+    "Ride request created. Complete payment to notify nearby drivers.": "בקשת הנסיעה נוצרה. השלם את התשלום כדי להודיע לנהגים קרובים."
   },
   "patterns": {
     "dropoff_fare": "סה\"כ תעריף: €{{totalFare}} (בסיס: €{{baseFare}} + המתנה: €{{waitingCharge}})",
@@ -645,6 +649,8 @@
     "ride_start_verification_code": "קוד האימות שלך לתחילת הנסיעה הוא {{otp}}. שתף קוד זה עם הנהג בעת העלייה לרכב.",
     "account_registered_with": "חשבון זה רשום באמצעות {{method}}, אנא השתמש בשיטה זו.",
     "refund_status_updated": "סטטוס בקשת ההחזר הכספי שלך עודכן ל-\"{{status}}\".",
-    "refund_initiated_by": "בקשת החזר כספי נפתחה על ידי {{name}}."
+    "refund_initiated_by": "בקשת החזר כספי נפתחה על ידי {{name}}.",
+    "drivers_notified_count": "אנו מחפשים נהג. מספר הנהגים הקרובים שקיבלו התראה: {{count}}.",
+    "solo_drivers_notified_count": "לא נמצאה התאמה לנסיעה משותפת. הנסיעה שלך שוחררה כנסיעה פרטית. מספר הנהגים הקרובים שקיבלו התראה: {{count}}."
   }
 }

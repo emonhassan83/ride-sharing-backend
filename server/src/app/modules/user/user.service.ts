@@ -475,8 +475,7 @@ const updateUserStatus = async (
 ): Promise<TUser | null> => {
   const { status } = payload;
 
-  //* if the user is is not exist
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).select('_id status isDeleted').lean();
   if (!user || user?.isDeleted) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found!');
   }
@@ -486,18 +485,27 @@ const updateUserStatus = async (
     updateFields.isOnline = false;
   }
 
-  const result = await User.findByIdAndUpdate(
-    userId,
+  const selectFields = 'name fcmToken email phone status isDeleted isOnline';
+
+  // Conditional update: only the request that actually flips the status gets a
+  // document back. Retries / double-clicks / concurrent admin calls match
+  // nothing here, so the user is notified exactly once per real change.
+  const changed = await User.findOneAndUpdate(
+    { _id: userId, status: { $ne: status } },
     updateFields,
-    {
+    { returnDocument: 'after' },
+  ).select(selectFields);
+
+  const statusChanged = !!changed;
+  const result =
+    changed ||
+    (await User.findByIdAndUpdate(userId, updateFields, {
       returnDocument: 'after',
-    }
-  ).select('name fcmToken email phone status isDeleted isOnline');
+    }).select(selectFields));
   if (!result) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
   }
 
-  // If user/driver is blocked, immediately remove them from active online/geo dispatch sets in Redis
   if (status === USER_STATUS.blocked) {
     try {
       const redis = getRedisClient();
@@ -513,8 +521,10 @@ const updateUserStatus = async (
     }
   }
 
-  // sent notify to user
-  await sendUserStatusNotifYToUser(status, result);
+  // Only notify when this call actually changed the status.
+  if (statusChanged) {
+    await sendUserStatusNotifYToUser(status, result);
+  }
 
   return result;
 };

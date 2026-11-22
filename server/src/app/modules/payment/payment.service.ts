@@ -23,6 +23,7 @@ import {
   emitNewRideRequestToDriver,
   notifyNearbyDrivers,
   notifyNearbyDriversForSplitRide,
+  notifyRiderDriversNotified,
 } from '../../utils/notifyDrivers.utils';
 import { getRedisClient } from '../../config/redis.config';
 import { recalculateSplitFares } from '../../utils/splitFare.utils';
@@ -210,18 +211,20 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
   if (ride.type === RIDE_TYPE.split) {
     const existingDriverId = (ride as any).driverId?.toString();
     if (existingDriverId) {
-      await emitNewRideRequestToDriver(
+      const sent = await emitNewRideRequestToDriver(
         io,
         redis,
         existingDriverId,
         ride._id.toString(),
         ridePayload,
       );
-      notified = 1;
+      notified = sent ? 1 : 0;
 
-      await Ride.findByIdAndUpdate(ride._id, {
-        $addToSet: { notifiedDriverIds: existingDriverId },
-      });
+      if (sent) {
+        await Ride.findByIdAndUpdate(ride._id, {
+          $addToSet: { notifiedDriverIds: existingDriverId },
+        });
+      }
     } else {
       const pickupCoords = (passenger as any).pickup?.coordinates || (ride as any).pickup?.coordinates;
       notified = await notifyNearbyDriversForSplitRide(
@@ -265,7 +268,20 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
     ride._id.toString(),
   );
 
-  return notified;
+  // rideRequest / splitRideRequest only create the request; drivers are
+  // notified here, after payment authorization. Tell the rider how many.
+  // Returns the cumulative count so a retried confirm never reports 0.
+  const riderUserId = booking.userId?.toString();
+  if (!riderUserId) return notified;
+
+  return notifyRiderDriversNotified({
+    io,
+    userId: riderUserId,
+    rideId: ride._id.toString(),
+    passengerId: passenger._id.toString(),
+    bookingId: booking._id.toString(),
+    newlyNotified: notified,
+  });
 };
 
 /* =====================================================

@@ -603,7 +603,11 @@
     "KYC Verification Submitted": "Документы KYC отправлены",
     "KYC Verification Approved": "Верификация KYC одобрена",
     "KYC Verification Rejected": "Верификация KYC отклонена",
-    "New Rating Received": "Получена новая оценка"
+    "New Rating Received": "Получена новая оценка",
+    "Drivers Notified": "Водители уведомлены",
+    "Searching for Drivers": "Поиск водителей",
+    "We are still looking for a nearby driver.": "Мы продолжаем искать водителя поблизости.",
+    "Ride request created. Complete payment to notify nearby drivers.": "Запрос на поездку создан. Завершите оплату, чтобы уведомить водителей поблизости."
   },
   "patterns": {
     "dropoff_fare": "Итоговая стоимость: €{{totalFare}} (Базовая: €{{baseFare}} + Ожидание: €{{waitingCharge}})",
@@ -645,6 +649,8 @@
     "ride_start_verification_code": "Ваш код подтверждения для начала поездки: {{otp}}. Сообщите его водителю при посадке.",
     "account_registered_with": "Этот аккаунт зарегистрирован через {{method}}, пожалуйста, используйте этот способ.",
     "refund_status_updated": "Статус вашего запроса на возврат средств обновлён на «{{status}}».",
-    "refund_initiated_by": "Пользователь {{name}} создал запрос на возврат средств."
+    "refund_initiated_by": "Пользователь {{name}} создал запрос на возврат средств.",
+    "drivers_notified_count": "Мы ищем водителя. Уведомлено водителей поблизости: {{count}}.",
+    "solo_drivers_notified_count": "Попутчики не найдены. Ваша поездка передана как индивидуальная. Уведомлено водителей поблизости: {{count}}."
   }
 }

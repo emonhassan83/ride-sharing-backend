@@ -216,6 +216,9 @@ export const rideRequestHandler = eventHandler<any>(
 
     ridePayload.bookingId = booking._id.toString();
 
+    // No drivers are notified at create time. Matching starts after payment
+    // authorization (PaymentService.startRideMatchingAfterPayment), which
+    // then sends the rider `ride:drivers-notified` with the driver count.
     const notifiedCount = 0;
 
     // ── Redis ──
@@ -231,7 +234,7 @@ export const rideRequestHandler = eventHandler<any>(
       departureTime,
       departureTimestamp: departureDateTime.getTime().toString(),
       notifiedCount:      notifiedCount.toString(),
-      lastNotifiedAt:     notifiedCount > 0 ? Date.now().toString() : '',
+      lastNotifiedAt:     '',
       selectedDriverId:   requestedDriverId ? requestedDriverId.toString() : '',
       matchingStatus:     'awaiting_payment',
       vehicleType:        type === 'private' ? luggage.vehicleClass : '',
@@ -247,9 +250,7 @@ export const rideRequestHandler = eventHandler<any>(
 
     return callback?.({
       success: true,
-      message: notifiedCount > 0
-        ? `Ride request created. ${notifiedCount} nearby driver(s) notified.`
-        : 'Ride request created. We will keep looking for a driver.',
+      message: 'Ride request created. Complete payment to notify nearby drivers.',
       data: {
         rideId:            ride._id.toString(),
         passengerId:       passenger._id.toString(),

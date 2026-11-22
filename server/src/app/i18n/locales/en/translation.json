@@ -603,7 +603,11 @@
     "KYC Verification Submitted": "KYC Verification Submitted",
     "KYC Verification Approved": "KYC Verification Approved",
     "KYC Verification Rejected": "KYC Verification Rejected",
-    "New Rating Received": "New Rating Received"
+    "New Rating Received": "New Rating Received",
+    "Drivers Notified": "Drivers Notified",
+    "Searching for Drivers": "Searching for Drivers",
+    "We are still looking for a nearby driver.": "We are still looking for a nearby driver.",
+    "Ride request created. Complete payment to notify nearby drivers.": "Ride request created. Complete payment to notify nearby drivers."
   },
   "patterns": {
     "dropoff_fare": "Total fare: €{{totalFare}} (Base: €{{baseFare}} + Waiting: €{{waitingCharge}})",

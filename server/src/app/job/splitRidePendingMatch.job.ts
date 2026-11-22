@@ -22,6 +22,7 @@ import {
   emitNewRideRequestToDriver,
   notifyNearbyDrivers,
   notifyNearbyDriversForSplitRide,
+  notifyRiderDriversNotified,
 } from '../utils/notifyDrivers.utils';
 import {
   getDepartureDateTime,
@@ -256,13 +257,14 @@ const notifyMatchedRideDriver = async (ride: any, passenger: any, booking: any) 
 
   const driverId = ride.driverId?.toString();
   if (driverId) {
-    await emitNewRideRequestToDriver(
+    const sent = await emitNewRideRequestToDriver(
       io,
       redis,
       driverId,
       ride._id.toString(),
       ridePayload,
     );
+    if (!sent) return 0;
     await Ride.findByIdAndUpdate(ride._id, { $addToSet: { notifiedDriverIds: driverId } });
     return 1;
   }
@@ -372,13 +374,29 @@ const createPeerMatchedSplitRide = async (host: any, peer: any) => {
   await recalculateSplitFares(ride._id.toString(), 'passenger_joined');
 
   await notifyMatchedRideDriver(ride, attachedHost.toObject(), hostBooking);
+  // Peer share of the same ride request — drivers already notified above.
   await notifyMatchedRideDriver(ride, attachedPeer.toObject(), peerBooking);
 
   for (const p of [attachedHost, attachedPeer]) {
-    io.to(`user:${p.userId}`).emit('split-ride:matched', {
+    const userId = p.userId?.toString();
+    if (!userId) continue;
+
+    // Cumulative count: the peer's call above notifies 0 *new* drivers, but
+    // both riders must see how many drivers actually have this ride.
+    const notifiedDrivers = await notifyRiderDriversNotified({
+      io,
+      userId,
+      rideId: ride._id.toString(),
+      passengerId: p._id.toString(),
+      bookingId: (p._id.equals(attachedHost._id) ? hostBooking : peerBooking)._id.toString(),
+      newlyNotified: 0,
+    });
+
+    io.to(`user:${userId}`).emit('split-ride:matched', {
       rideId: ride._id,
       passengerId: p._id,
       matchedVia: 'auto_peer',
+      notifiedDrivers,
       message: 'Your split ride request has been matched with another rider.',
     });
   }
@@ -540,22 +558,15 @@ const releaseUnmatchedSplitToSolo = async (passenger: any) => {
     );
   }
 
-  const user = await User.findById(passenger.userId).select('fcmToken').lean();
-  if (user?.fcmToken) {
-    sendNotification([user.fcmToken], {
-      receiver: passenger.userId,
-      message: 'Converted to Solo Ride',
-      description:
-        'No split match found. Your ride was released to drivers as a Solo trip.',
-      reference: attachedPassenger._id.toString(),
-      modelType: modeType.Passenger,
-      data: {
-        type: 'SPLIT_TO_SOLO',
-        rideId: ride._id.toString(),
-        passengerId: attachedPassenger._id.toString(),
-      },
-    }).catch(() => {});
-  }
+  await notifyRiderDriversNotified({
+    io,
+    userId: passenger.userId.toString(),
+    rideId: ride._id.toString(),
+    passengerId: attachedPassenger._id.toString(),
+    bookingId: booking._id.toString(),
+    newlyNotified: notified,
+    variant: 'solo_fallback',
+  });
 
   console.log(
     `✅ Split unmatched released as Solo | passenger: ${passenger._id} | ride: ${ride._id} | drivers: ${notified}`,
@@ -710,17 +721,29 @@ export const checkSplitRidePendingMatches = async () => {
                     ride._id.toString(),
                     'passenger_joined',
                   );
-                  await notifyMatchedRideDriver(
+                  const newlyNotified = await notifyMatchedRideDriver(
                     ride,
                     attachedPassenger.toObject(),
                     booking,
                   );
+
+                  // Previously the rider got only `split-ride:matched` here and
+                  // never learned how many drivers have the ride.
+                  const notifiedDrivers = await notifyRiderDriversNotified({
+                    io: getIO(),
+                    userId: passenger.userId.toString(),
+                    rideId: ride._id.toString(),
+                    passengerId: passenger._id.toString(),
+                    bookingId: booking._id.toString(),
+                    newlyNotified,
+                  });
 
                   getIO().to(`user:${passenger.userId}`).emit('split-ride:matched', {
                     rideId: ride._id,
                     passengerId: passenger._id,
                     bookingId: booking._id,
                     matchedVia: 'auto_existing',
+                    notifiedDrivers,
                     message:
                       'Your split ride request has been matched to an existing ride.',
                   });
