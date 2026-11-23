@@ -4,7 +4,7 @@ import sendResponse from '../../utils/sendResponse'
 import { chatService } from './chat.service'
 
 const createChat = catchAsync(async (req: Request, res: Response) => {
-  const chat = await chatService.createChat(req.body)
+  const chat = await chatService.createChat(req.body, req.user.userId)
 
   sendResponse(res, {
     code: 200,
@@ -44,7 +44,7 @@ const getChatById = catchAsync(async (req: Request, res: Response) => {
 })
 
 const updateChat = catchAsync(async (req: Request, res: Response) => {
-  const result = await chatService.updateChatList(req.params.id as string, req.body)
+  const result = await chatService.updateChatList(req.params.id as string, req.user.userId, req.body)
 
   sendResponse(res, {
     code: 200,
@@ -54,7 +54,7 @@ const updateChat = catchAsync(async (req: Request, res: Response) => {
 })
 
 const deleteChat = catchAsync(async (req: Request, res: Response) => {
-  const result = await chatService.deleteChatList(req.params.id as string)
+  const result = await chatService.deleteChatList(req.params.id as string, req.user.userId)
 
   sendResponse(res, {
     code: 200,

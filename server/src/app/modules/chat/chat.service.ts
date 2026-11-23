@@ -9,13 +9,21 @@ import { Message } from '../messages/messages.model';
 import { Booking } from '../booking/booking.model';
 import { CHAT_STATUS } from './chat.constants';
 
-const createChat = async (payload: TChat) => {
+const createChat = async (payload: TChat, requesterId: string) => {
   const { participants, booking: bookingId } = payload;
 
   if (!participants || participants.length !== 2) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       'Exactly two participants are required to create a chat'
+    );
+  }
+  // The caller must be one of the two participants; otherwise anyone could
+  // open (or fetch, via the "already exists" path) a chat for any booking.
+  if (!participants.some((p) => String(p) === String(requesterId))) {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      'You are not a participant of this chat'
     );
   }
   if (!bookingId) {
@@ -186,48 +194,62 @@ const getSingleChat = async (chatId: string, userId: string) => {
   }
 };
 
+// Every by-id chat endpoint is scoped to the chat's participants. Before this,
+// any logged-in user could read any chat (with the other side's email and
+// phone), rename it, rewrite its participants, or delete it. A chat the
+// requester is not part of answers 404, so its existence is not revealed.
 const getChatBookingById = async (bookingId: string, userId: string) => {
-  const result = await Chat.findOne({ booking: bookingId }).populate({
+  const result = await Chat.findOne({
+    booking: bookingId,
+    participants: userId,
+  }).populate({
     path: 'participants',
     select: 'name profileImage email phone',
     match: { _id: { $ne: userId } },
   });
-  if (!result) throw new ApiError(httpStatus.BAD_REQUEST, 'Chat not found');
-
-  // const isParticipant = result.participants.some(
-  //   (participant: any) => participant._id.toString() === userId
-  // );
-  // if (!isParticipant) {
-  //   throw new ApiError(
-  //     httpStatus.FORBIDDEN,
-  //     'You are not a participant of this chat'
-  //   );
-  // }
+  if (!result) throw new ApiError(httpStatus.NOT_FOUND, 'Chat not found');
 
   return result;
 };
 
 const getChatById = async (currentUser: string, chatId: string) => {
-  const result = await Chat.findById(chatId).populate({
+  const result = await Chat.findOne({
+    _id: chatId,
+    participants: currentUser,
+  }).populate({
     path: 'participants',
     select: 'name profileImage email phone',
     match: { _id: { $ne: currentUser } },
   });
-  if (!result) throw new ApiError(httpStatus.BAD_REQUEST, 'Chat not found');
+  if (!result) throw new ApiError(httpStatus.NOT_FOUND, 'Chat not found');
 
   return result;
 };
 
-const updateChatList = async (id: string, payload: Partial<TChat>) => {
-  const result = await Chat.findByIdAndUpdate(id, payload, { returnDocument: 'after' });
-  if (!result) throw new ApiError(httpStatus.BAD_REQUEST, 'Chat not found');
+const updateChatList = async (
+  id: string,
+  userId: string,
+  payload: Record<string, unknown>
+) => {
+  // Only these fields are editable; participants and booking are never taken
+  // from the request body.
+  const update: Record<string, unknown> = {};
+  if (payload.name !== undefined) update.name = payload.name;
+  if (payload.status !== undefined) update.status = payload.status;
+
+  const result = await Chat.findOneAndUpdate(
+    { _id: id, participants: userId },
+    { $set: update },
+    { returnDocument: 'after' }
+  );
+  if (!result) throw new ApiError(httpStatus.NOT_FOUND, 'Chat not found');
   return result;
 };
 
-const deleteChatList = async (id: string) => {
+const deleteChatList = async (id: string, userId: string) => {
+  const result = await Chat.findOneAndDelete({ _id: id, participants: userId });
+  if (!result) throw new ApiError(httpStatus.NOT_FOUND, 'Chat not found');
   await deleteFromS3(`images/messages/${id}`);
-  const result = await Chat.findByIdAndDelete(id);
-  if (!result) throw new ApiError(httpStatus.BAD_REQUEST, 'Chat not found');
   return result;
 };
 

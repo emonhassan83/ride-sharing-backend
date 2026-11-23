@@ -1,6 +1,9 @@
 # App integration: backend changes from QA round 4 (23 Nov 2026)
 
-For the rider and driver app developers. Everything below is live on the backend.
+For the rider and driver app developers. Everything below is merged into the backend `main`
+branch. **It is only live on a server after that server is redeployed from `main`.** Before
+testing, check that `PATCH /api/v1/auth/fcm-token` with an empty body returns `400`; a `404`
+means the server is still running an older build (see section 8).
 Nothing is removed: old events and fields still work, so each item can ship on its own.
 The order is by impact.
 
@@ -206,3 +209,51 @@ Tick each item on a real device against the dev server. Check the wallet balance
 - [ ] Pay by card, cancel before a driver accepts: the hold is released, and the cancel and refund notifications arrive (B-11).
 - [ ] Two riders join the same split ride: the driver sees both at once, and the second rider sees the ride under Pending (B-07, B-08).
 - [ ] No driver accepts: the ride is auto-cancelled, a notification arrives, and it shows under History, Cancelled (B-12, B-13).
+
+---
+
+## 8. Questions from the app team (answered)
+
+**Is this deployed?** Not when the app team checked: dev (`72.244.153.29:8080`) and prod
+(`api.splitride.com.cy`) both returned `404` for the new endpoints. The code is on `main`;
+the `development` branch is behind it and does not include QA rounds 1 to 4. Both servers need
+a redeploy from `main`. Quick check after the deploy:
+
+| Request | Old build | New build |
+|---|---|---|
+| `PATCH /auth/fcm-token` with `{}` | `404` | `400` (validation) |
+| `GET /ride/<any id>/cancellation-quote` with a token | `404` "endpoint not found" | `404` "Ride not found" or `200` |
+| `GET /setting/generals` | no `waitNoticeFeeAmount` | has `waitNoticeFeeAmount`, `waitNoticeMaxMinutes`, `tripStartEarlyWindowMinutes` |
+| `GET /notification` (new rows) | no `type` | `type` and `data.screen` |
+
+Notifications created before the deploy keep their old shape; only new ones have `type`/`screen`.
+
+**B-19 still shows "ETA: 11 minutes".** That build is old (see above). On the new build the
+"confirmed for <date> at <time>" text is used only when pickup is **more than 30 minutes** after
+the accept. A ride accepted 11 minutes before pickup still correctly shows the ETA.
+
+**Start OTP over REST.** `POST /api/v1/ride/send-start-otp` supports `resend` exactly like the
+socket event: `{ "rideId": "…", "passengerId": "…", "resend": true }`. This body is **not** strict,
+so the extra field never causes `400`. Without `resend` the current code is reused and not
+re-sent; with `resend: true` the same code is re-sent and its lifetime extended. The code only
+changes after it expires. (Only `PATCH /auth/fcm-token` has a strict body.)
+
+**Who sees the OTP?** The driver app shows the OTP entry sheet. The rider only sees the code
+(push, socket `driver:send-start-otp` on the rider's room, and email) and reads it to the driver.
+
+**Chat push (`screen: chat`) only has `chatId`.** Fetch the chat with
+`GET /api/v1/chats/:chatId` (note `chats`, plural). It returns the chat with the other participant
+(`name`, `profileImage`, `email`, `phone`) and `booking`. `GET /api/v1/chats/booking/:bookingId`
+also works. Only the chat's two participants can read it; anyone else gets `404`, so fall back to
+the chat list in that case.
+
+**Logout and FCM token.** `POST /api/v1/auth/logout` already clears the stored FCM token (and
+revokes every token issued before it), so the old account stops getting pushes. Call it before
+clearing local auth. If the app logs out without calling it (e.g. offline), the next login on
+that phone moves the token to the new account anyway. Also call
+`FirebaseMessaging.deleteToken()` on logout if you want to be sure.
+
+**Wait fee: `waitNoticeFeeAmount` or `waitingTimeMinutes`?** Use `waitNoticeFeeAmount` (EUR, now 20)
+and `waitNoticeMaxMinutes` (now 5) for the "be ready" text. They are different settings:
+`waitingTimeMinutes` is how long a driver waits before a no-show, and `dayFareWaitingCharge`
+is the waiting charge inside the fare calculation. Neither belongs in that text.

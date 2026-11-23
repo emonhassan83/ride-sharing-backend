@@ -1,3 +1,15 @@
+Date/Session: 2026-11-23 (app team: "nothing is deployed" + questions)
+
+Completed Tasks:
+- App team found none of round 4 on dev (`72.244.153.29:8080`) or prod. Cause: the code is only on `main`; `origin/development` is 76 commits behind and has none of QA rounds 1 to 4. Servers need a redeploy from `main`.
+- Answered the app team's questions in `docs/APP_INTEGRATION_ROUND4.md` section 8 (REST OTP `resend`, who sees the OTP, chat by id, logout/FCM, wait fee keys, B-19 30-minute rule) and replaced "Everything below is live" with a deploy check.
+- Security fix: `/chats/:id` (GET/PUT/DELETE) and `/chats/booking/:bookingId` had no participant check (any user could read the other side's email/phone, edit, or delete a chat; PUT could rewrite `participants`). Now scoped to participants (404 otherwise), PUT only sets `name`/`status`, POST `/chats` requires the caller to be a participant. Test: `tests/integration/chatSecurity.int.test.ts` (4/6 fail on the old code).
+
+Next Steps:
+- Merge `main` into `development` and redeploy both servers. `development` has one commit not on `main` (`5ada35d`, `minimumFareApplied`/`minimumFareAdjustment` compared against `actualFare` in `fareMath.utils.ts`); keep it on purpose or drop it on purpose.
+
+---
+
 Date/Session: 2026-11-23 (app doc checklist)
 
 Completed Tasks:
