@@ -11,6 +11,16 @@ export const PASSENGER_STATUS = {
     completed: 'completed',
 } as const;
 
+// A rider in one of these states has boarded: the driver can no longer cancel
+// the ride (driver:cancel-ride answers CANNOT_CANCEL_AFTER_PICKUP).
+export const DRIVER_CANCEL_BLOCKING_PASSENGER_STATUSES: Array<
+    (typeof PASSENGER_STATUS)[keyof typeof PASSENGER_STATUS]
+> = [
+    PASSENGER_STATUS.picked_up,
+    PASSENGER_STATUS.dropped_off,
+    PASSENGER_STATUS.completed,
+];
+
 export const PAYMENT_STATUS = {
     pending: 'pending',
     paid: 'paid',

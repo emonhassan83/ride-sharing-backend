@@ -650,7 +650,9 @@
     "Your refund request has been updated.": "Ваш запит на повернення оновлено.",
     "This refund request has already been processed.": "Цей запит на повернення вже оброблено.",
     "Failed to update refund status": "Не вдалося оновити статус повернення",
-    "Invalid ID format": "Неправильний формат ідентифікатора"
+    "Invalid ID format": "Неправильний формат ідентифікатора",
+    "Refresh token is required": "Потрібен токен оновлення",
+    "Invalid or expired refresh token. Please log in again.": "Недійсний або прострочений токен оновлення. Увійдіть знову."
   },
   "patterns": {
     "dropoff_fare": "Загальна вартість: €{{totalFare}} (Базова: €{{baseFare}} + Очікування: €{{waitingCharge}})",

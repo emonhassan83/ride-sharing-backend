@@ -5,7 +5,11 @@ import { Ride } from './ride.model';
 import QueryBuilder from '../../builder/QueryBuilder';
 import { RIDE_STATUS, RIDE_TYPE } from './ride.constant';
 import { Passenger } from '../passenger/passenger.model';
-import { PASSENGER_STATUS, PAYMENT_STATUS } from '../passenger/passenger.constant';
+import {
+  DRIVER_CANCEL_BLOCKING_PASSENGER_STATUSES,
+  PASSENGER_STATUS,
+  PAYMENT_STATUS,
+} from '../passenger/passenger.constant';
 import { Booking } from '../booking/booking.model';
 import { Payment } from '../payment/payment.model';
 import { Provider } from '../provider/provider.model';
@@ -705,16 +709,50 @@ const getDriverRides = async (
     bookingRefsByRide.get(key)!.push(b.id);
   }
 
+  // Boarding state, so the driver app can hide Cancel before the server refuses
+  // it. Counted over every passenger of the ride with the same statuses that
+  // driver:cancel-ride rejects (CANNOT_CANCEL_AFTER_PICKUP), not only the ones
+  // listed here.
+  const boardedCounts = await Passenger.aggregate([
+    {
+      $match: {
+        rideId: { $in: rideIds },
+        status: { $in: DRIVER_CANCEL_BLOCKING_PASSENGER_STATUSES },
+      },
+    },
+    { $group: { _id: '$rideId', count: { $sum: 1 } } },
+  ]);
+  const boardedByRide = new Map<string, number>(
+    boardedCounts.map((row: any) => [String(row._id), Number(row.count) || 0]),
+  );
+
+  const passengerDetailsByRide = new Map<string, any[]>();
+  for (const p of allPassengers as any[]) {
+    const key = String(p.rideId?._id || p.rideId);
+    if (!passengerDetailsByRide.has(key)) passengerDetailsByRide.set(key, []);
+    passengerDetailsByRide.get(key)!.push({
+      passengerId: p._id,
+      name: p.userId?.name || '',
+      status: p.status,
+      requestedSeats: p.requestedSeats || 1,
+    });
+  }
+
   const resultWithPassengers = result.map(ride => {
     const plain: any = ride.toObject ? ride.toObject() : ride;
-    const bookingShortIds = bookingRefsByRide.get(ride._id.toString()) || [];
+    const rideKey = ride._id.toString();
+    const bookingShortIds = bookingRefsByRide.get(rideKey) || [];
+    const pickedUpCount = boardedByRide.get(rideKey) || 0;
     return {
       ...plain,
       rideShortId: plain.id || null,
       bookingShortIds,
       // Private rides have exactly one booking: expose it as the primary reference.
       bookingShortId: plain.type === RIDE_TYPE.private ? bookingShortIds[0] || null : null,
-      passengers: passengerMap.get(ride._id.toString()) || [],
+      passengers: passengerMap.get(rideKey) || [],
+      passengerDetails: passengerDetailsByRide.get(rideKey) || [],
+      pickedUpCount,
+      canDriverCancel: pickedUpCount === 0,
     };
   });
 

@@ -123,6 +123,7 @@ const notifyRiderOwnCancellation = async (
   rideId: string,
   passengerId: string,
   result: TReleaseResult,
+  cancelInfo: Record<string, unknown>,
 ) => {
   const description =
     result.refundAmount > 0
@@ -131,10 +132,14 @@ const notifyRiderOwnCancellation = async (
         ? 'Your ride has been cancelled. The payment hold on your card has been released.'
         : 'Your ride has been cancelled.';
 
+  // The fee fields are also in the ack. They are repeated here because the event
+  // arrives before the ack (the ack waits for the driver notifications) and some
+  // clients emit without an ack callback.
   io.to(`user:${userId}`).emit('ride:cancelled', {
     rideId,
     passengerId,
     cancelledBy: CANCELLED_BY.user,
+    ...cancelInfo,
     refundAmount: result.refundAmount,
     paymentReleased: result.holdReleased,
     message: description,
@@ -256,6 +261,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
       rideId,
       passenger._id.toString(),
       releaseResult,
+      cancelInfo,
     );
 
     const redisCleanup = async () => {

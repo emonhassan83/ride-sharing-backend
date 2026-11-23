@@ -376,7 +376,8 @@ export const initChatPushWorker = (): Worker => {
         modelType: modeType.Booking,
         data: {
           type: 'CHAT_MESSAGE',
-          chatId,
+          screen: 'chat',
+          chatId: String(chatId),
           senderId,
           senderName: displaySenderName,
           bookingId: bookingIdStr,

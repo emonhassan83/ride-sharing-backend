@@ -322,6 +322,21 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       );
     }
 
+    // The cancelling rider used to get only the ack, which is sent last (after
+    // fare recalculation and every driver/co-rider push). Confirm the cancel
+    // right away with the same numbers as the ack.
+    io.to(`user:${userId}`).emit('ride:cancelled', {
+      rideId,
+      passengerId: passenger._id.toString(),
+      cancelledBy: CANCELLED_BY.user,
+      refundAmount,
+      refundReason,
+      ...feeInfo,
+      message: refundAmount > 0
+        ? `Your ride has been cancelled. €${refundAmount.toFixed(2)} has been refunded to your wallet.`
+        : 'Your ride has been cancelled.',
+    });
+
     // ── PRIVATE RIDE ──
     if (ride.type === RIDE_TYPE.private) {
       await Ride.findByIdAndUpdate(rideId, {

@@ -5,7 +5,10 @@ import {
   RIDE_STATUS,
   RIDE_TYPE,
 } from '../../../modules/ride/ride.constant';
-import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
+import {
+  DRIVER_CANCEL_BLOCKING_PASSENGER_STATUSES,
+  PASSENGER_STATUS,
+} from '../../../modules/passenger/passenger.constant';
 import { BOOKING_STATUS, PAYMENT_STATUS } from '../../../modules/booking/booking.constant';
 import {
   REFUND_STATUS,
@@ -226,13 +229,7 @@ export const driverCancelRideHandler = eventHandler<any>(
     // then refused the ride, so the driver was never paid).
     const boardedPassenger = await Passenger.exists({
       rideId,
-      status: {
-        $in: [
-          PASSENGER_STATUS.picked_up,
-          PASSENGER_STATUS.dropped_off,
-          PASSENGER_STATUS.completed,
-        ],
-      },
+      status: { $in: DRIVER_CANCEL_BLOCKING_PASSENGER_STATUSES },
     });
     if (boardedPassenger)
       return callback?.({

@@ -363,6 +363,25 @@ describe('ride:cancel-after-accept - PRIVATE ride refund window', () => {
     });
   });
 
+  it('sends the cancelling rider ride:cancelled with the same fee fields as the ack', async () => {
+    const p = makePassenger();
+    wire(makeWorld(makeRide(), [p], [paidBooking(p)]));
+    await run({ rideId, reason: 'Changed plans' });
+
+    expect(io.payloadTo(`user:${riderId}`, 'ride:cancelled')).toEqual({
+      rideId,
+      passengerId: String(p._id),
+      cancelledBy: 'user',
+      refundAmount: 25.5,
+      refundReason: 'outside_refund_restriction_window',
+      paidAmount: 25.5,
+      feeAmount: 0,
+      feePercent: 0,
+      refundDestination: 'wallet',
+      message: 'Your ride has been cancelled. €25.50 has been refunded to your wallet.',
+    });
+  });
+
   it('notifies the driver on the socket and by push, carrying the refund amount', async () => {
     const p = makePassenger();
     wire(makeWorld(makeRide(), [p], [paidBooking(p)]));

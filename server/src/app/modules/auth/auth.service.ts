@@ -23,7 +23,7 @@ import {
 import { generateOtp } from '../../utils/generateOtp';
 import { OtpRedisService } from '../../redis/helpers/otp';
 import twilio from 'twilio';
-import jwt, { Secret } from 'jsonwebtoken';
+import jwt, { JwtPayload, Secret } from 'jsonwebtoken';
 import { getEmailQueueInstance } from '../../utils/queueHelper';
 import { Provider } from '../provider/provider.model';
 import { Vehicle } from '../vehicle/vehicle.model';
@@ -683,14 +683,33 @@ const logoutUser = async (userId: string) => {
   return null;
 };
 
-const refreshToken = async (token: string) => {
-  //* checking if the given token is valid
-  const decoded = verifyToken(token, config.jwt.accessSecret as string);
+// POST /auth/refresh-auth. It used to verify the refresh token with the ACCESS
+// secret (so every real refresh token was rejected), read the token only from a
+// cookie (mobile apps send JSON), find the user by email (phone users have none)
+// and answer 500 for an expired token. The app now sends
+// { "refreshToken": "..." } and gets a new access token, or 401 and logs in again.
+const refreshToken = async (token: string | undefined) => {
+  if (!token || typeof token !== 'string') {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Refresh token is required');
+  }
 
-  //* checking if the user is exist
-  const user = await User.isExistUserByEmail(decoded?.email);
+  let decoded: JwtPayload;
+  try {
+    decoded = verifyToken(token, config.jwt.refreshSecret as string);
+  } catch {
+    throw new ApiError(
+      StatusCodes.UNAUTHORIZED,
+      'Invalid or expired refresh token. Please log in again.'
+    );
+  }
+
+  const user = decoded?.userId
+    ? await User.findById(decoded.userId)
+    : decoded?.email
+      ? await User.isExistUserByEmail(decoded.email)
+      : null;
   if (!user || user?.isDeleted) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'This user is not found !');
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'This user is not found !');
   }
 
   // A token from before the last logout cannot mint a new session (issue 15).

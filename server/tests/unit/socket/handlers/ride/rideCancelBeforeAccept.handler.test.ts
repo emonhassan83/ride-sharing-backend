@@ -284,6 +284,17 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
       }),
     );
     expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: expect.objectContaining({ rideCancelled: true, feeAmount: 0, feePercent: 0 }) });
+    // The rider's own ride:cancelled event carries the same fee fields as the ack.
+    expect(io.payloadTo(`user:${rider}`, 'ride:cancelled')).toEqual(
+      expect.objectContaining({
+        rideId,
+        cancelledBy: 'user',
+        feeAmount: 0,
+        feePercent: 0,
+        refundAmount: 0,
+        refundDestination: null,
+      }),
+    );
   });
 
   it('defaults the reason to "Cancelled by rider" for passenger and ride', async () => {

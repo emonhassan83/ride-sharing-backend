@@ -650,7 +650,9 @@
     "Your refund request has been updated.": "בקשת ההחזר שלך עודכנה.",
     "This refund request has already been processed.": "בקשת ההחזר הזו כבר טופלה.",
     "Failed to update refund status": "עדכון סטטוס ההחזר נכשל",
-    "Invalid ID format": "פורמט מזהה לא תקין"
+    "Invalid ID format": "פורמט מזהה לא תקין",
+    "Refresh token is required": "נדרש אסימון רענון",
+    "Invalid or expired refresh token. Please log in again.": "אסימון הרענון אינו תקף או שפג תוקפו. יש להתחבר מחדש."
   },
   "patterns": {
     "dropoff_fare": "סה\"כ תעריף: €{{totalFare}} (בסיס: €{{baseFare}} + המתנה: €{{waitingCharge}})",

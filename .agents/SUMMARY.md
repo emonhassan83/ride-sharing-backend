@@ -1,3 +1,17 @@
+Date/Session: 2026-11-23 (app team follow-up: cancel ack, boarding state, refresh, chat push)
+
+Completed Tasks:
+- Cancel: both cancel handlers already ack, but the ack comes last (after all pushes). The cancelling rider's `ride:cancelled` now carries `feeAmount`/`feePercent`/`refundAmount`/`refundDestination`; after-accept previously sent the canceller no `ride:cancelled` at all.
+- `GET /ride/driver-rides`: added `pickedUpCount`, `canDriverCancel`, `passengerDetails`. Shared constant `DRIVER_CANCEL_BLOCKING_PASSENGER_STATUSES` (also used by `driverCancelRide`).
+- `POST /auth/refresh-auth` was broken: verified with the access secret, cookie only, user by email, 500 on bad token. Now body `{ refreshToken }` (cookie fallback), refresh secret, user by id, 401. Removed a bogus cookie in `loginWithPhone`.
+- Chat push: `screen: 'chat'` set explicitly.
+- Docs: `docs/APP_INTEGRATION_ROUND4.md` section 2, 5 and the section 8 follow-up. Test: `tests/integration/appTeamFollowUp.int.test.ts`.
+
+Next Steps:
+- Redeploy dev and prod from `main` (unchanged from the entry below).
+
+---
+
 Date/Session: 2026-11-23 (app team: "nothing is deployed" + questions)
 
 Completed Tasks:

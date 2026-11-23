@@ -56,8 +56,11 @@ REST: `GET /api/v1/ride/:rideId/cancellation-quote`
 | `departureAt` | ISO UTC pickup time |
 
 The cancel acks return the same numbers as `data.feeAmount`, `data.feePercent`, `data.refundAmount`
-and `data.refundDestination`, so the result screen can use them. The fee percentages are admin
-settings and can change at any time, which is why they must not be hard-coded.
+and `data.refundDestination`, so the result screen can use them. The same four fields are also in
+the `ride:cancelled` event sent to the cancelling rider (both `ride:cancel-before-accept` and
+`ride:cancel-after-accept`). That event arrives **before** the ack, because the ack is sent only after
+every driver/co-rider notification. The fee percentages are admin settings and can change at any
+time, which is why they must not be hard-coded.
 
 ---
 
@@ -127,8 +130,8 @@ Decide behaviour from `code`, never from `message` (messages are translated).
 | `code` | App behaviour |
 |---|---|
 | `TRIP_START_TOO_EARLY` | "You can start from HH:MM". `data.earliestStartAt` is ISO UTC (default window 30 min, see `tripStartEarlyWindowMinutes` in generals) |
-| `CANNOT_CANCEL_AFTER_PICKUP` | Hide/disable driver Cancel once anyone is on board |
-| `UNAUTHORIZED`, `INVALID_TOKEN`, `TOKEN_EXPIRED` | Refresh the token / re-login |
+| `CANNOT_CANCEL_AFTER_PICKUP` | Hide/disable driver Cancel once anyone is on board (use `canDriverCancel` from `GET /ride/driver-rides`) |
+| `UNAUTHORIZED`, `INVALID_TOKEN`, `TOKEN_EXPIRED` | Refresh the token with `POST /auth/refresh-auth` (section 8); if that answers `401`, log in again |
 | `FORBIDDEN`, `NOT_FOUND`, `BAD_REQUEST`, `CONFLICT`, `VALIDATION_ERROR`, `INVALID_VALUE`, `DUPLICATE_KEY`, `TOO_MANY_REQUESTS` | Show `message` |
 | `INTERNAL_ERROR`, `UPSTREAM_ERROR`, `ERROR` | Generic "Something went wrong", offer retry |
 
@@ -257,3 +260,53 @@ that phone moves the token to the new account anyway. Also call
 and `waitNoticeMaxMinutes` (now 5) for the "be ready" text. They are different settings:
 `waitingTimeMinutes` is how long a driver waits before a no-show, and `dayFareWaitingCharge`
 is the waiting charge inside the fare calculation. Neither belongs in that text.
+
+### Follow-up questions (second message)
+
+**Cancel ack does not arrive, only `ride:cancelled`.** The backend does send an ack for both cancel
+events. It is sent last, after every driver and co-rider notification, so it arrives after
+`ride:cancelled`. The app only gets it if it emits with an ack callback (Flutter
+`socket_io_client`: `socket.emitWithAck(...)` or `socket.emit(event, data, ack: (res) {...})`).
+In any case, the fee fields are now also in the cancelling rider's `ride:cancelled` event:
+
+```json
+{ "rideId": "…", "passengerId": "…", "cancelledBy": "user",
+  "feeAmount": 0, "feePercent": 0, "refundAmount": 20, "refundDestination": "wallet",
+  "message": "…" }
+```
+
+Before acceptance it also has `paymentReleased`. After acceptance it also has `paidAmount` and
+`refundReason`. Before this change, the rider who cancelled after acceptance got no
+`ride:cancelled` at all.
+
+**Boarding state in `GET /ride/driver-rides`.** Each ride now has:
+
+| Field | Meaning |
+|---|---|
+| `pickedUpCount` | Riders on this ride who are `picked_up`, `dropped_off` or `completed` |
+| `canDriverCancel` | `pickedUpCount === 0`. Exactly the rule `driver:cancel-ride` enforces |
+| `passengerDetails` | `[{ passengerId, name, status, requestedSeats }]` |
+
+`passengers` is unchanged (a list of rider **names**, not ids). Hide Cancel when
+`canDriverCancel` is `false`, and still handle `CANNOT_CANCEL_AFTER_PICKUP`, because the list can be stale.
+
+**Token refresh.** `POST /api/v1/auth/refresh-auth` existed but never worked (it checked the refresh
+token with the wrong secret and only read a cookie). It is fixed:
+
+```
+POST /api/v1/auth/refresh-auth
+Content-Type: application/json
+
+{ "refreshToken": "<refreshToken from the login response>" }
+```
+
+`200` → `data.accessToken` (the refresh token stays the same). `401` (missing, invalid or expired
+token, or the user logged out) → send the user to login. No `Authorization` header is needed. Retry
+the failed request once with the new token. Do not loop.
+
+**Chat push.** Confirmed: every chat push has `data.type = "CHAT_MESSAGE"`, `data.screen = "chat"`
+and a non-empty `data.chatId` (no push is sent without one). It also has `bookingId` (may be `""`),
+`senderId`, `senderName`, `unreadCount` and `totalUnreadCount`. All values are strings.
+
+**Production.** Deployment is not done from this repository. Both servers still need a redeploy from
+`main` (see the table at the top of this section).

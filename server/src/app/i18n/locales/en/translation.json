@@ -650,7 +650,9 @@
     "Your refund request has been updated.": "Your refund request has been updated.",
     "This refund request has already been processed.": "This refund request has already been processed.",
     "Failed to update refund status": "Failed to update refund status",
-    "Invalid ID format": "Invalid ID format"
+    "Invalid ID format": "Invalid ID format",
+    "Refresh token is required": "Refresh token is required",
+    "Invalid or expired refresh token. Please log in again.": "Invalid or expired refresh token. Please log in again."
   },
   "patterns": {
     "dropoff_fare": "Total fare: €{{totalFare}} (Base: €{{baseFare}} + Waiting: €{{waitingCharge}})",

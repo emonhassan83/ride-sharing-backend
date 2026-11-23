@@ -650,7 +650,9 @@
     "Your refund request has been updated.": "Το αίτημα επιστροφής χρημάτων ενημερώθηκε.",
     "This refund request has already been processed.": "Αυτό το αίτημα επιστροφής χρημάτων έχει ήδη διεκπεραιωθεί.",
     "Failed to update refund status": "Αποτυχία ενημέρωσης της κατάστασης επιστροφής χρημάτων",
-    "Invalid ID format": "Μη έγκυρη μορφή αναγνωριστικού"
+    "Invalid ID format": "Μη έγκυρη μορφή αναγνωριστικού",
+    "Refresh token is required": "Απαιτείται το refresh token",
+    "Invalid or expired refresh token. Please log in again.": "Μη έγκυρο ή ληγμένο refresh token. Συνδεθείτε ξανά."
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",

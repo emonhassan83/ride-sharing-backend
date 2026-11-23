@@ -90,13 +90,8 @@ const loginWithEmail = catchAsync(async (req, res) => {
 const loginWithPhone = catchAsync(async (req, res) => {
   const result = await AuthService.loginWithPhone(req.body);
 
-  res.cookie('refreshToken', refreshToken, {
-    secure: config.environment === 'production',
-    httpOnly: true,
-    sameSite: 'none',
-    maxAge: 1000 * 60 * 60 * 24 * 365,
-  });
-
+  // No tokens exist yet at this step (an OTP is only sent). The old code set a
+  // "refreshToken" cookie to the refresh controller function itself.
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Otp sent successfully please checked your phone!',
@@ -152,8 +147,9 @@ const logout = catchAsync(async (req, res) => {
 });
 
 const refreshToken = catchAsync(async (req, res) => {
-  const { refreshToken } = req.cookies;
-  const result = await AuthService.refreshToken(refreshToken);
+  // Mobile apps send it in the body; the web admin still has the cookie.
+  const token = req.body?.refreshToken || req.cookies?.refreshToken;
+  const result = await AuthService.refreshToken(token);
 
   sendResponse(res, {
     code: StatusCodes.OK,
