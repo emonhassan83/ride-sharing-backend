@@ -10,6 +10,7 @@ import { getIO } from '../../socket.init';
 import {
   enqueueChatPushNotification,
   isUserActiveInChat,
+  refreshUserActiveInChat,
 } from '../../../queues/chatPush.queue';
 
 export const sendMessageHandler = eventHandler(
@@ -67,6 +68,9 @@ export const sendMessageHandler = eventHandler(
         });
       }
       const finalReceiverId = otherParticipant._id.toString();
+
+      // The sender is visibly in this chat: keep their presence alive.
+      await refreshUserActiveInChat(chat._id.toString(), userId);
 
       // Check if receiver is currently active inside this specific chat screen
       const receiverActiveInChat = await isUserActiveInChat(

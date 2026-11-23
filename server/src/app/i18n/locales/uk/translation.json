@@ -325,7 +325,7 @@
     "No default vehicle set. Please set a default vehicle before going online.": "Автомобіль за замовчуванням не вибрано. Оберіть його перед виходом на лінію.",
     "No driver assigned to this ride": "На цю поїздку не призначено водія",
     "No drivers available within 10 km for the selected date and time.": "У радіусі 10 км немає доступних водіїв на вибрані дату та час.",
-    "No matching split ride found yet. Complete payment; we will keep matching peers until the 1h Solo fallback.": "Відповідну спільну поїздку поки не знайдено. Завершіть оплату, і ми продовжимо пошук попутників.",
+    "No matching split ride found yet. Complete payment and we will keep looking for a ride partner until 1 hour before pickup. If no partner is found by then, your ride continues as a Solo ride.": "Відповідну спільну поїздку ще не знайдено. Завершіть оплату, і ми шукатимемо попутника до 1 години перед посадкою. Якщо до того часу попутника не знайдеться, поїздка продовжиться як індивідуальна (Solo).",
     "No matching split ride was found. Booking has been cancelled.": "Відповідну спільну поїздку не знайдено. Бронювання скасовано.",
     "No matching split ride was found. Your booking has been cancelled.": "Відповідну спільну поїздку не знайдено. Ваше бронювання скасовано.",
     "No messages found for this chat": "Повідомлень у цьому чаті не знайдено",
@@ -607,7 +607,15 @@
     "Drivers Notified": "Водіїв сповіщено",
     "Searching for Drivers": "Пошук водіїв",
     "We are still looking for a nearby driver.": "Ми продовжуємо шукати водія поблизу.",
-    "Ride request created. Complete payment to notify nearby drivers.": "Запит на поїздку створено. Завершіть оплату, щоб сповістити водіїв поблизу."
+    "Ride request created. Complete payment to notify nearby drivers.": "Запит на поїздку створено. Завершіть оплату, щоб сповістити водіїв поблизу.",
+    "Please enter a valid email address.": "Введіть дійсну адресу електронної пошти.",
+    "You are offline. Go online to accept rides.": "Ви не в мережі. Вийдіть на лінію, щоб приймати поїздки.",
+    "Your session has ended. Please log in again.": "Ваш сеанс завершено. Будь ласка, увійдіть знову.",
+    "Driver On The Way": "Водій у дорозі",
+    "Driver has started the trip and is heading to the pickup location.": "Водій розпочав поїздку і прямує до місця посадки.",
+    "Payment Needs Attention": "Потрібна увага до оплати",
+    "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.": "Водій спробував прийняти вашу поїздку, але оплату не вдалося завершити. Перевірте спосіб оплати.",
+    "Trip already started": "Поїздка вже розпочалася"
   },
   "patterns": {
     "dropoff_fare": "Загальна вартість: €{{totalFare}} (Базова: €{{baseFare}} + Очікування: €{{waitingCharge}})",
@@ -651,6 +659,19 @@
     "refund_status_updated": "Статус вашого запиту на повернення коштів оновлено на «{{status}}».",
     "refund_initiated_by": "Користувач {{name}} створив запит на повернення коштів.",
     "drivers_notified_count": "Ми шукаємо водія. Сповіщено водіїв поблизу: {{count}}.",
-    "solo_drivers_notified_count": "Попутників не знайдено. Вашу поїздку передано як індивідуальну. Сповіщено водіїв поблизу: {{count}}."
+    "solo_drivers_notified_count": "Попутників не знайдено. Вашу поїздку передано як індивідуальну. Сповіщено водіїв поблизу: {{count}}.",
+    "validation_required": "Поле «{{field}}» є обов’язковим.",
+    "validation_invalid_value": "Поле «{{field}}» містить недопустиме значення.",
+    "validation_one_of": "Поле «{{field}}» має бути одним із: {{values}}.",
+    "validation_invalid_format": "Поле «{{field}}» має неправильний формат.",
+    "validation_min_chars": "Поле «{{field}}» має містити щонайменше {{min}} символів.",
+    "validation_min_items": "Поле «{{field}}» має містити щонайменше {{min}} елементів.",
+    "validation_min_value": "Значення поля «{{field}}» має бути не меншим за {{min}}.",
+    "validation_max_chars": "Поле «{{field}}» має містити не більше {{max}} символів.",
+    "validation_max_items": "Поле «{{field}}» має містити не більше {{max}} елементів.",
+    "validation_max_value": "Значення поля «{{field}}» має бути не більшим за {{max}}.",
+    "validation_greater_than": "Значення поля «{{field}}» має бути більшим за {{min}}.",
+    "validation_less_than": "Значення поля «{{field}}» має бути меншим за {{max}}.",
+    "validation_unexpected_field": "Неочікуване поле: {{field}}."
   }
 }

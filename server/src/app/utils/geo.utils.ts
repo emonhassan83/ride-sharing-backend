@@ -8,6 +8,7 @@ import { Vehicle } from '../modules/vehicle/vehicle.model';
 import { IDriverAvailability } from '../socket/interface/ride';
 import { calculateDistance } from './location.utils';
 import { getRealDistanceAndETA } from './maps.utils';
+import { getDriverLiveState } from './driverAvailability.utils';
 
 const DESTINATION_MATCH_RADIUS_KM = 5;
 
@@ -273,7 +274,9 @@ export async function fetchDriversWithinRadius(
   requestedSeats: number,
   passengerDestination: { lat: number; lng: number },
   departureDate: string,
-  departureTime: string
+  departureTime: string,
+  /** Socket.io server, used to recognise drivers who are connected right now. */
+  io?: any
 ): Promise<any[]> {
   // ── Step 1: Online drivers from Redis GEOSET ──────────────────────────────
   type GeoRadiusResult = Array<[driverId: string, distance: string]>;
@@ -344,6 +347,11 @@ export async function fetchDriversWithinRadius(
   const driversData: any[] = [];
 
   for (const { driverId, geoDistanceKm } of mergedDriverIds.values()) {
+    // ── Live check: same rule as ride dispatch, so the rider never sees a
+    //    driver on the map who would not receive the request (issues 61 / 63).
+    const { live } = await getDriverLiveState(redis, driverId, io);
+    if (!live) continue;
+
     // ── Availability check ──────────────────────────────────────────────────
     const availability = await hasDriverRideAtDateTime(
       driverId,

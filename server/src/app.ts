@@ -1,3 +1,4 @@
+import './app/config/zod.config'; // global Zod messages; must load before any schema is used
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { Request, Response } from 'express';

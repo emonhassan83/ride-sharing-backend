@@ -8,11 +8,20 @@ import { Chat } from '../modules/chat/chat.models';
 import { Message } from '../modules/messages/messages.model';
 import { sendNotification } from '../utils/sentPushNotification';
 import { modeType } from '../modules/notification/notification.interface';
+import { getIO } from '../socket/socket.init';
 
 const CHAT_PUSH_QUEUE_NAME = 'chat-push-queue';
 const CHAT_PUSH_DEBOUNCE_DELAY_MS = 2500; // 2.5 seconds debounce window
 const CHAT_BUFFER_TTL_SECONDS = 3600; // 1 hour buffer safety expiry
-const CHAT_ACTIVE_TTL_SECONDS = 86400; // 24 hours presence safety expiry
+/**
+ * "User is looking at this chat" lasts this long unless refreshed by activity
+ * in the chat (join-chat, send-message, typing, seen). Issue 52: it used to be
+ * 24 hours, so a driver who opened the chat once and then went back to the map
+ * (socket still connected, no leave-chat) never got another chat push.
+ */
+export const CHAT_ACTIVE_TTL_SECONDS = 120;
+/** Legacy presence value from before presence was bound to a socket id. */
+const LEGACY_PRESENCE_VALUE = '1';
 
 let _chatPushQueue: Queue | null = null;
 let _chatPushWorker: Worker | null = null;
@@ -36,14 +45,27 @@ export const getChatPushQueue = (): Queue => {
   return _chatPushQueue;
 };
 
+/** True when the socket that marked the presence is still connected to this server. */
+const isPresenceSocketConnected = (socketId: string): boolean => {
+  try {
+    return getIO().sockets.sockets.has(socketId);
+  } catch {
+    return true; // Socket.io not initialised (e.g. worker context): trust the key
+  }
+};
+
 export const isUserActiveInChat = async (
   chatId: string,
   userId: string,
 ): Promise<boolean> => {
   try {
     const redis = getRedisClient();
-    const exists = await redis.exists(getChatActiveKey(chatId, userId));
-    return exists === 1;
+    const value = await redis.get(getChatActiveKey(chatId, userId));
+    if (!value) return false;
+    if (value === LEGACY_PRESENCE_VALUE) return true;
+    // Presence left by a socket that has since died (network blip, app killed,
+    // reconnect with a new socket) no longer suppresses pushes.
+    return isPresenceSocketConnected(value);
   } catch {
     return false;
   }
@@ -52,19 +74,43 @@ export const isUserActiveInChat = async (
 export const setUserActiveInChat = async (
   chatId: string,
   userId: string,
+  socketId?: string,
 ): Promise<void> => {
   const redis = getRedisClient();
   const activeKey = getChatActiveKey(chatId, userId);
   const userSetKey = getUserActiveChatsKey(userId);
 
   await Promise.all([
-    redis.setex(activeKey, CHAT_ACTIVE_TTL_SECONDS, '1'),
+    redis.setex(activeKey, CHAT_ACTIVE_TTL_SECONDS, socketId || LEGACY_PRESENCE_VALUE),
     redis.sadd(userSetKey, chatId),
     redis.expire(userSetKey, CHAT_ACTIVE_TTL_SECONDS),
   ]);
 
   // Clear any buffered messages or pending push job for this chat
   await clearPendingChatPushBatch(chatId, userId);
+};
+
+/**
+ * Extend presence while the user is visibly active in the chat. Does nothing
+ * when the user is not marked present (EXPIRE on a missing key is a no-op), so
+ * it can never mark someone present who left the chat.
+ */
+export const refreshUserActiveInChat = async (
+  chatId: string,
+  userId: string,
+): Promise<void> => {
+  try {
+    const redis = getRedisClient();
+    const extended = await redis.expire(
+      getChatActiveKey(chatId, userId),
+      CHAT_ACTIVE_TTL_SECONDS,
+    );
+    if (extended === 1) {
+      await redis.expire(getUserActiveChatsKey(userId), CHAT_ACTIVE_TTL_SECONDS);
+    }
+  } catch {
+    /* ignore */
+  }
 };
 
 export const removeUserActiveFromChat = async (
@@ -182,18 +228,24 @@ export const enqueueChatPushNotification = async (params: {
 
   // 3. Debounce Job in BullMQ: jobId = batch_<userId>_<chatId> with 2.5s delay
   const queue = getChatPushQueue();
-  const jobId = getChatBatchJobId(receiverId, chatId);
+  const baseJobId = getChatBatchJobId(receiverId, chatId);
+  let jobId = baseJobId;
 
   try {
-    const existingJob = await queue.getJob(jobId);
+    const existingJob = await queue.getJob(baseJobId);
     if (existingJob) {
       const state = await existingJob.getState();
       if (state === 'delayed' || state === 'waiting' || state === 'waiting-children') {
         await existingJob.remove();
+      } else if (state === 'active') {
+        // The batch for this chat is being sent right now and has already
+        // taken the buffer. BullMQ silently ignores add() with an existing
+        // jobId, which left this message in the buffer with no job (issue 52).
+        jobId = `${baseJobId}_${Date.now()}`;
       }
     }
   } catch {
-    /* ignore if job already active/completed */
+    /* ignore lookup errors; add() below still schedules a job */
   }
 
   await queue.add(
@@ -240,9 +292,14 @@ export const initChatPushWorker = (): Worker => {
         return { skipped: true, reason: 'receiver_active_in_chat' };
       }
 
-      // 2. Fetch last 4 buffered messages and delete buffer key immediately
-      const rawMessages = await redis.lrange(bufferKey, -4, -1);
-      await redis.del(bufferKey);
+      // 2. Take the last 4 buffered messages and clear the buffer in ONE atomic
+      //    step. Separate LRANGE + DEL lost any message pushed in between.
+      const [[, ranged]] = (await redis
+        .multi()
+        .lrange(bufferKey, -4, -1)
+        .del(bufferKey)
+        .exec()) as [[Error | null, string[]], [Error | null, number]];
+      const rawMessages: string[] = Array.isArray(ranged) ? ranged : [];
 
       if (!rawMessages.length) {
         return { skipped: true, reason: 'empty_buffer' };

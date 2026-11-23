@@ -6,7 +6,10 @@ import { chatService } from '../../../modules/chat/chat.service';
 import { Types } from 'mongoose';
 import { callbackFn } from '../../../utils/callbackFn';
 import { Message } from '../../../modules/messages/messages.model';
-import { clearPendingChatPushBatch } from '../../../queues/chatPush.queue';
+import {
+  clearPendingChatPushBatch,
+  refreshUserActiveInChat,
+} from '../../../queues/chatPush.queue';
 
 export const seenHandler = eventHandler(async (socket: TSocket, { chatId }: any, callback: any) => {
   const userId = socket.auth._id.toString();
@@ -23,6 +26,7 @@ export const seenHandler = eventHandler(async (socket: TSocket, { chatId }: any,
 
     // Clear any pending push buffer/job for this chat
     await clearPendingChatPushBatch(chatId.toString(), userId);
+    await refreshUserActiveInChat(chatId.toString(), userId);
 
     // 1. Current user exits all messages seen
     await Message.updateMany(

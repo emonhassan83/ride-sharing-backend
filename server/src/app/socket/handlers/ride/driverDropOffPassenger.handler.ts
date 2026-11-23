@@ -87,11 +87,24 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
       const baseFare = passenger.estimatedFare || passenger.totalFare || 0;
       const totalFare = baseFare;
 
-      await Passenger.findByIdAndUpdate(passenger._id, {
-        status: PASSENGER_STATUS.dropped_off,
-        droppedOffAt: new Date(),
-        totalFare,
-      });
+      // Atomic: a double tap used to drop off (and notify) the passenger twice (issue 9).
+      const transitioned = await Passenger.findOneAndUpdate(
+        {
+          _id: passenger._id,
+          status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
+        },
+        {
+          $set: {
+            status: PASSENGER_STATUS.dropped_off,
+            droppedOffAt: new Date(),
+            totalFare,
+          },
+        },
+        { returnDocument: 'after' },
+      );
+      if (!transitioned) {
+        return { totalFare, distanceKm, durationSeconds, alreadyDroppedOff: true };
+      }
 
       await redis.rpush(
         locationKey,
@@ -111,6 +124,9 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
           description: `Total fare: €${totalFare} (Base: €${baseFare} + Waiting: €${waitingCharge})`,
           reference: String(rideId),
           modelType: modeType.Ride,
+          // Shared with driver:complete-trip: the rider gets ONE "trip finished"
+          // push with the fare, not "dropped off" + "Trip Completed!" (issue 9).
+          dedupeKey: `trip-finished:${passenger._id.toString()}`,
           data: {
             type: 'PASSENGER_DROPPED_OFF',
             rideId: String(rideId),

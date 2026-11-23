@@ -6,6 +6,7 @@ import ApiError from '../errors/ApiError';
 import catchAsync from '../utils/catchAsync';
 import { config } from '../config/env.config';
 import { TUserRole, USER_ROLE } from '../modules/user/user.constant';
+import { isTokenRevoked, SESSION_ENDED_MESSAGE } from '../modules/auth/auth.utils';
 import {
   hasExplicitRequestLanguage,
   normalizeLanguage,
@@ -41,11 +42,15 @@ const auth = (allowedRoles: string | TUserRole[] = 'common') =>
 
     // Fetch user from DB
     const user = await User.findById(decoded.userId)
-      .select('role status isDeleted language')
+      .select('role status isDeleted language tokensValidAfter')
       .lean();
 
     if (!user) {
       throw new ApiError(StatusCodes.UNAUTHORIZED, 'User not found');
+    }
+
+    if (isTokenRevoked(decoded, user.tokensValidAfter)) {
+      throw new ApiError(StatusCodes.UNAUTHORIZED, SESSION_ENDED_MESSAGE);
     }
 
     if (user.isDeleted) {

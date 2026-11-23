@@ -325,7 +325,7 @@
     "No default vehicle set. Please set a default vehicle before going online.": "לא הוגדר רכב ברירת מחדל. אנא הגדר רכב ברירת מחדל לפני מעבר למצב מקוון.",
     "No driver assigned to this ride": "לא שויך נהג לנסיעה זו",
     "No drivers available within 10 km for the selected date and time.": "אין נהגים זמינים בטווח של 10 ק\"מ עבור התאריך והשעה שנבחרו.",
-    "No matching split ride found yet. Complete payment; we will keep matching peers until the 1h Solo fallback.": "טרם נמצאה נסיעה משותפת מתאימה. השלם את התשלום ונמשיך לחפש שותפים לנסיעה.",
+    "No matching split ride found yet. Complete payment and we will keep looking for a ride partner until 1 hour before pickup. If no partner is found by then, your ride continues as a Solo ride.": "עדיין לא נמצאה נסיעה משותפת מתאימה. השלם את התשלום ונמשיך לחפש שותף לנסיעה עד שעה לפני האיסוף. אם לא יימצא שותף עד אז, הנסיעה שלך תמשיך כנסיעה פרטית (Solo).",
     "No matching split ride was found. Booking has been cancelled.": "לא נמצאה נסיעה משותפת מתאימה. ההזמנה בוטלה.",
     "No matching split ride was found. Your booking has been cancelled.": "לא נמצאה נסיעה משותפת מתאימה. הזמנתך בוטלה.",
     "No messages found for this chat": "לא נמצאו הודעות עבור צ'אט זה",
@@ -607,7 +607,15 @@
     "Drivers Notified": "נהגים קיבלו התראה",
     "Searching for Drivers": "מחפשים נהגים",
     "We are still looking for a nearby driver.": "אנו עדיין מחפשים נהג קרוב.",
-    "Ride request created. Complete payment to notify nearby drivers.": "בקשת הנסיעה נוצרה. השלם את התשלום כדי להודיע לנהגים קרובים."
+    "Ride request created. Complete payment to notify nearby drivers.": "בקשת הנסיעה נוצרה. השלם את התשלום כדי להודיע לנהגים קרובים.",
+    "Please enter a valid email address.": "יש להזין כתובת אימייל תקינה.",
+    "You are offline. Go online to accept rides.": "אתה במצב לא מקוון. עבור למצב מקוון כדי לקבל נסיעות.",
+    "Your session has ended. Please log in again.": "ההתחברות שלך הסתיימה. יש להתחבר מחדש.",
+    "Driver On The Way": "הנהג בדרך",
+    "Driver has started the trip and is heading to the pickup location.": "הנהג יצא לדרך ובדרכו לנקודת האיסוף.",
+    "Payment Needs Attention": "נדרשת פעולה בנוגע לתשלום",
+    "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.": "נהג ניסה לקבל את הנסיעה שלך, אך לא ניתן היה להשלים את התשלום. יש לבדוק את אמצעי התשלום.",
+    "Trip already started": "הנסיעה כבר התחילה"
   },
   "patterns": {
     "dropoff_fare": "סה\"כ תעריף: €{{totalFare}} (בסיס: €{{baseFare}} + המתנה: €{{waitingCharge}})",
@@ -651,6 +659,19 @@
     "refund_status_updated": "סטטוס בקשת ההחזר הכספי שלך עודכן ל-\"{{status}}\".",
     "refund_initiated_by": "בקשת החזר כספי נפתחה על ידי {{name}}.",
     "drivers_notified_count": "אנו מחפשים נהג. מספר הנהגים הקרובים שקיבלו התראה: {{count}}.",
-    "solo_drivers_notified_count": "לא נמצאה התאמה לנסיעה משותפת. הנסיעה שלך שוחררה כנסיעה פרטית. מספר הנהגים הקרובים שקיבלו התראה: {{count}}."
+    "solo_drivers_notified_count": "לא נמצאה התאמה לנסיעה משותפת. הנסיעה שלך שוחררה כנסיעה פרטית. מספר הנהגים הקרובים שקיבלו התראה: {{count}}.",
+    "validation_required": "השדה {{field}} הוא שדה חובה.",
+    "validation_invalid_value": "לשדה {{field}} יש ערך לא תקין.",
+    "validation_one_of": "השדה {{field}} חייב להיות אחד מהבאים: {{values}}.",
+    "validation_invalid_format": "לשדה {{field}} יש תבנית לא תקינה.",
+    "validation_min_chars": "השדה {{field}} חייב להכיל לפחות {{min}} תווים.",
+    "validation_min_items": "השדה {{field}} חייב להכיל לפחות {{min}} פריטים.",
+    "validation_min_value": "השדה {{field}} חייב להיות לפחות {{min}}.",
+    "validation_max_chars": "השדה {{field}} יכול להכיל לכל היותר {{max}} תווים.",
+    "validation_max_items": "השדה {{field}} יכול להכיל לכל היותר {{max}} פריטים.",
+    "validation_max_value": "השדה {{field}} חייב להיות לכל היותר {{max}}.",
+    "validation_greater_than": "השדה {{field}} חייב להיות גדול מ-{{min}}.",
+    "validation_less_than": "השדה {{field}} חייב להיות קטן מ-{{max}}.",
+    "validation_unexpected_field": "שדה לא צפוי: {{field}}."
   }
 }

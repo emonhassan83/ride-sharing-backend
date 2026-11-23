@@ -286,7 +286,7 @@ export const joinSplitRideRequestHandler = eventHandler<any>(
       return callback?.({
         success: true,
         message:
-          'No matching split ride found yet. Complete payment; we will keep matching peers until the 1h Solo fallback.',
+          'No matching split ride found yet. Complete payment and we will keep looking for a ride partner until 1 hour before pickup. If no partner is found by then, your ride continues as a Solo ride.',
         data: {
           rideId: null,
           passengerId: passenger._id.toString(),

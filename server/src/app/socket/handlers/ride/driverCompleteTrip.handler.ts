@@ -18,7 +18,7 @@ import { saveLocationsToDatabase } from '../../../utils/location.db.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
-import { sendNotification } from '../../../utils/sentPushNotification';
+import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { modeType } from '../../../modules/notification/notification.interface';
 
 const resolveDriverPayout = async (
@@ -104,7 +104,16 @@ export const driverCompleteTripHandler = eventHandler<any>(
       const totalFare = passenger.estimatedFare || passenger.totalFare || 0;
       grandTotal += totalFare;
 
-      await Passenger.findByIdAndUpdate(passenger._id, { status: PASSENGER_STATUS.completed });
+      // Atomic: a double tap used to complete (capture, notify) the passenger twice (issue 9).
+      const transitioned = await Passenger.findOneAndUpdate(
+        { _id: passenger._id, status: { $ne: PASSENGER_STATUS.completed } },
+        { $set: { status: PASSENGER_STATUS.completed } },
+        { returnDocument: 'after' },
+      );
+      if (!transitioned) {
+        grandTotal -= totalFare;
+        continue;
+      }
 
       const booking = await Booking.findOneAndUpdate(
         {
@@ -159,14 +168,21 @@ export const driverCompleteTripHandler = eventHandler<any>(
         }
       }
 
-      const riderUser = await User.findById(passenger.userId).select('fcmToken').lean();
-      if (riderUser?.fcmToken) {
-        sendNotification([riderUser.fcmToken], {
-          receiver: passenger.userId, message: 'Trip Completed!',
-          description: `Total fare: €${totalFare}. Thank you for riding with us!`,
-          reference: rideId, modelType: modeType.Ride,
-        }).catch(() => { });
-      }
+      // Same dedupe key as the drop-off push: one "trip finished" push per rider.
+      notifyUserPush({
+        userId: passenger.userId.toString(),
+        message: 'Trip Completed!',
+        description: `Total fare: €${totalFare}. Thank you for riding with us!`,
+        reference: String(rideId),
+        modelType: modeType.Ride,
+        dedupeKey: `trip-finished:${passenger._id.toString()}`,
+        data: {
+          type: 'TRIP_COMPLETED',
+          rideId: String(rideId),
+          passengerId: passenger._id.toString(),
+          totalFare: String(totalFare),
+        },
+      }).catch(() => {});
 
       io.to(`user:${passenger.userId}`).emit('ride:trip-completed', {
         rideId, passengerId: passenger._id, totalFare,

@@ -4,8 +4,9 @@ import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant'
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { Ride } from '../../../modules/ride/ride.model';
+import { User } from '../../../modules/user/user.model';
 import { isDriverNearPickup, saveDriverLocation } from '../../../utils/geo.utils';
-import { calculateETAForRide } from '../../../utils/location.utils';
+import { buildRiderLiveUpdates, pickLeadUpdate } from '../../../utils/liveEta.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
@@ -13,6 +14,27 @@ import { triggerArrival } from '../../utils/triggerArrival';
 
 const ARRIVAL_THRESHOLD_METERS = 100;
 const ARRIVAL_COOLDOWN_SECONDS = 30;
+const OFFLINE_CHECK_CACHE_SECONDS = 30;
+
+/**
+ * Online = in `users:online` (go-online, reconnect restore). Only when the
+ * driver is missing from the set is the DB asked (e.g. after a Redis restart);
+ * an "offline" answer is cached briefly so an offline app that keeps pinging
+ * does not cost a DB read per ping. go-online re-adds the driver to the set,
+ * so the cache never delays going back online.
+ */
+export const isDriverMarkedOnline = async (redis: any, driverId: string): Promise<boolean> => {
+  if ((await redis.sismember('users:online', driverId)) === 1) return true;
+
+  const offlineKey = `driver:${driverId}:offline-check`;
+  if (await redis.get(offlineKey)) return false;
+
+  const user = await User.findById(driverId).select('isOnline').lean();
+  if (user?.isOnline) return true;
+
+  await redis.set(offlineKey, '1', 'EX', OFFLINE_CHECK_CACHE_SECONDS);
+  return false;
+};
 
 export const driverLocationUpdateHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -34,11 +56,17 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       timestamp: Date.now(),
     });
 
-    await Promise.all([
-      redis.set(`driver:${driverId}:current`, locationData, 'EX', 300),
-      saveDriverLocation(driverId, lat, lng),
-      redis.sadd('users:online', driverId).catch(() => {}),
-    ]);
+    // Issue 58: a driver who went offline but whose app keeps sending location
+    // used to be put straight back into `users:online` and the GEO index here,
+    // so they kept receiving ride requests while their app showed "offline".
+    const isAvailable = await isDriverMarkedOnline(redis, driverId);
+    if (isAvailable) {
+      await Promise.all([
+        redis.set(`driver:${driverId}:current`, locationData, 'EX', 300),
+        saveDriverLocation(driverId, lat, lng),
+        redis.sadd('users:online', driverId).catch(() => {}),
+      ]);
+    }
 
     socket.join(`driver:${driverId}`);
     socket.join(`user:${driverId}`);
@@ -66,6 +94,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       return callback?.({
         success: true,
         hasRide: false,
+        isOnline: isAvailable,
         lat,
         lng,
         speed: speed || 0,
@@ -83,10 +112,7 @@ export const driverLocationUpdateHandler = eventHandler<any>(
       redis.expire(`ride:${rideId}:live`, 7200),
     ]);
 
-    // ── 4. Calculate ETA ──────────────────────────────────────────────────────
-    const eta = await calculateETAForRide(rideId, lat, lng, ride.status);
-
-    // ── 5. Broadcast to ride room ─────────────────────────────────────────────
+    // ── 4 + 5. Per-rider ETA + broadcast (issue 13) ───────────────────────────
     const activePassengers = await Passenger.find({
       rideId,
       status: {
@@ -98,23 +124,46 @@ export const driverLocationUpdateHandler = eventHandler<any>(
         ],
       },
     })
-      .select('userId')
+      .select('userId status pickup destination')
       .lean();
-    const riderRooms = [
-      ...new Set(activePassengers.map(({ userId }) => `user:${userId.toString()}`)),
-    ];
 
-    io.to([`ride:${rideId}`, ...riderRooms]).emit('ride:live-update', {
+    const riderUpdates = await buildRiderLiveUpdates({ lat, lng }, activePassengers as any);
+    const liveBase = {
       driverId,
       lat,
       lng,
       speed: speed || 0,
       heading: heading || 0,
-      eta: eta.etaMinutes,
-      distance: eta.distanceKm,
       timestamp: Date.now(),
       encodedRoute: encodedRoute || null,
-    });
+    };
+
+    // Each rider: their own phase + ETA (0 once the driver has arrived for them).
+    for (const update of riderUpdates) {
+      io.to(`user:${update.userId}`).emit('ride:live-update', {
+        ...liveBase,
+        rideId,
+        passengerId: update.passengerId,
+        phase: update.phase,
+        eta: update.eta,
+        distance: update.distance,
+      });
+    }
+
+    // Everyone else in the ride room (driver app, admin): the next stop. Riders
+    // are excluded so they never receive a second, conflicting ETA.
+    const riderRooms = [...new Set(riderUpdates.map((u) => `user:${u.userId}`))];
+    const lead = pickLeadUpdate(riderUpdates);
+    io.to(`ride:${rideId}`)
+      .except(riderRooms)
+      .emit('ride:live-update', {
+        ...liveBase,
+        rideId,
+        passengerId: lead?.passengerId ?? null,
+        phase: lead?.phase ?? null,
+        eta: lead?.eta ?? 0,
+        distance: lead?.distance ?? 0,
+      });
 
     // ── 6. Arrival check — only when accepted ─────────────────────────────────
     if (ride.status !== RIDE_STATUS.accepted) {

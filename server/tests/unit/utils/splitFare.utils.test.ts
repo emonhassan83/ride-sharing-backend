@@ -391,7 +391,7 @@ describe('chargeUser (wallet first, then saved card, Case 11 / 33)', () => {
 
   it('pays fully from the wallet when the balance equals the amount (boundary wallet == amount)', async () => {
     vi.mocked(User.findById).mockReturnValue(mockQuery({ wallet: 50 }) as any);
-    const io = { to: vi.fn(() => ({ emit: vi.fn() })) };
+    const io = { to: vi.fn((_room: string) => ({ emit: vi.fn() })) };
 
     const result = await chargeUser('user-1', 50, RIDE_ID, 'fare_x', io);
 
@@ -406,7 +406,7 @@ describe('chargeUser (wallet first, then saved card, Case 11 / 33)', () => {
   it('emits ride:payment-charged with the wallet method when paid in full from the wallet', async () => {
     vi.mocked(User.findById).mockReturnValue(mockQuery({ wallet: 100 }) as any);
     const emit = vi.fn();
-    const io = { to: vi.fn(() => ({ emit })) };
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
 
     await chargeUser('user-1', 50, RIDE_ID, 'fare_x', io);
 
@@ -471,7 +471,7 @@ describe('chargeUser (wallet first, then saved card, Case 11 / 33)', () => {
     vi.mocked(User.findById).mockReturnValue(mockQuery({ wallet: 30, customerId: 'cus_1' }) as any);
     stripe.paymentIntents.create.mockRejectedValue(new Error('card_declined'));
     const emit = vi.fn();
-    const io = { to: vi.fn(() => ({ emit })) };
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
 
     const result = await chargeUser('user-1', 50, RIDE_ID, 'r', io);
 
@@ -500,7 +500,7 @@ describe('chargeUser (wallet first, then saved card, Case 11 / 33)', () => {
   it('a partial wallet with no saved card fails with no_payment_method and restores the wallet', async () => {
     vi.mocked(User.findById).mockReturnValue(mockQuery({ wallet: 30 }) as any);
     const emit = vi.fn();
-    const io = { to: vi.fn(() => ({ emit })) };
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
 
     const result = await chargeUser('user-1', 50, RIDE_ID, 'r', io);
 
@@ -847,7 +847,7 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
       payment,
     });
     const emit = vi.fn();
-    const io = { to: vi.fn(() => ({ emit })) };
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
 
     await recalculateSplitFares(RIDE_ID, 'passenger_joined', io);
 
@@ -878,7 +878,7 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
       booking: bookingDoc(),
       payment,
     });
-    const io = { to: vi.fn(() => ({ emit: vi.fn() })) };
+    const io = { to: vi.fn((_room: string) => ({ emit: vi.fn() })) };
 
     await recalculateSplitFares(RIDE_ID, 'passenger_joined', io);
 
@@ -929,7 +929,7 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
     const payment = paymentDoc(PAYMENT_STATUS.paid);
     wire({ passengers: [target, passenger()], target, booking, payment });
     const emit = vi.fn();
-    const io = { to: vi.fn(() => ({ emit })) };
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
 
     await recalculateSplitFares(RIDE_ID, 'passenger_joined', io);
 
@@ -960,7 +960,7 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
     wire({ passengers: [target], target, booking: bookingDoc(), payment });
     vi.mocked(User.findById).mockReturnValue(mockQuery({ wallet: 100 }) as any);
     const emit = vi.fn();
-    const io = { to: vi.fn(() => ({ emit })) };
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
 
     await recalculateSplitFares(RIDE_ID, 'passenger_cancelled', io);
 
@@ -1092,7 +1092,7 @@ describe('transferRideOwnership (creator cancelled, Case 6 follow-up)', () => {
     vi.mocked(Passenger.find).mockReturnValue(mockQuery([first]) as any);
     vi.mocked(Ride.findById).mockReturnValue(mockQuery({ driverId }) as any);
     const emit = vi.fn();
-    const io = { to: vi.fn(() => ({ emit })) };
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
 
     await transferRideOwnership(RIDE_ID, 'user-1', io);
 
@@ -1107,7 +1107,7 @@ describe('transferRideOwnership (creator cancelled, Case 6 follow-up)', () => {
 
   it('does not emit when no driver is assigned yet', async () => {
     vi.mocked(Passenger.find).mockReturnValue(mockQuery([remaining()]) as any);
-    const io = { to: vi.fn(() => ({ emit: vi.fn() })) };
+    const io = { to: vi.fn((_room: string) => ({ emit: vi.fn() })) };
 
     await transferRideOwnership(RIDE_ID, 'user-1', io);
 
@@ -1161,7 +1161,7 @@ describe('lockSplitRideFare', () => {
       mockQuery({ splitFareLockedAt: lockedAt }) as any,
     );
     const emit = vi.fn();
-    const io = { to: vi.fn(() => ({ emit })) };
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
 
     expect(await lockSplitRideFare(RIDE_ID, 'trip_start', io)).toBe(true);
 
@@ -1182,7 +1182,7 @@ describe('lockSplitRideFare', () => {
   it('returns false when another request won the lock race and the ride was not already locked on read', async () => {
     vi.mocked(Ride.findById).mockReturnValue(mockQuery(splitRide()) as any);
     vi.mocked(Ride.findOneAndUpdate).mockReturnValue(mockQuery(null) as any);
-    const io = { to: vi.fn(() => ({ emit: vi.fn() })) };
+    const io = { to: vi.fn((_room: string) => ({ emit: vi.fn() })) };
 
     expect(await lockSplitRideFare(RIDE_ID, 'departure_time', io)).toBe(false);
     expect(io.to).not.toHaveBeenCalled();

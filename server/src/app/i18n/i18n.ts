@@ -406,6 +406,73 @@ const PATTERN_RULES: PatternRule[] = [
     patternKey: 'split_min_distance',
     extract: (m) => ({ min: m[1] }),
   },
+  // ── Generic validation messages from config/zod.config.ts (issues 60 / 67) ──
+  {
+    regex: /^([^.,:]+?) is required\.$/,
+    patternKey: 'validation_required',
+    extract: (m) => ({ field: m[1] }),
+  },
+  {
+    regex: /^([^.,:]+?) has an invalid value\.$/,
+    patternKey: 'validation_invalid_value',
+    extract: (m) => ({ field: m[1] }),
+  },
+  {
+    // Values are joined with " / " (never ", "), so a combined error list never matches as one.
+    regex: /^([^.,:]+?) must be one of: ([^,]+)\.$/,
+    patternKey: 'validation_one_of',
+    extract: (m) => ({ field: m[1], values: m[2] }),
+  },
+  {
+    regex: /^([^.,:]+?) has an invalid format\.$/,
+    patternKey: 'validation_invalid_format',
+    extract: (m) => ({ field: m[1] }),
+  },
+  {
+    regex: /^([^.,:]+?) must be at least (-?[0-9.]+) characters\.$/,
+    patternKey: 'validation_min_chars',
+    extract: (m) => ({ field: m[1], min: m[2] }),
+  },
+  {
+    regex: /^([^.,:]+?) must contain at least (-?[0-9.]+) items\.$/,
+    patternKey: 'validation_min_items',
+    extract: (m) => ({ field: m[1], min: m[2] }),
+  },
+  {
+    regex: /^([^.,:]+?) must be at least (-?[0-9.]+)\.$/,
+    patternKey: 'validation_min_value',
+    extract: (m) => ({ field: m[1], min: m[2] }),
+  },
+  {
+    regex: /^([^.,:]+?) must be at most (-?[0-9.]+) characters\.$/,
+    patternKey: 'validation_max_chars',
+    extract: (m) => ({ field: m[1], max: m[2] }),
+  },
+  {
+    regex: /^([^.,:]+?) must contain at most (-?[0-9.]+) items\.$/,
+    patternKey: 'validation_max_items',
+    extract: (m) => ({ field: m[1], max: m[2] }),
+  },
+  {
+    regex: /^([^.,:]+?) must be at most (-?[0-9.]+)\.$/,
+    patternKey: 'validation_max_value',
+    extract: (m) => ({ field: m[1], max: m[2] }),
+  },
+  {
+    regex: /^([^.,:]+?) must be greater than (-?[0-9.]+)\.$/,
+    patternKey: 'validation_greater_than',
+    extract: (m) => ({ field: m[1], min: m[2] }),
+  },
+  {
+    regex: /^([^.,:]+?) must be less than (-?[0-9.]+)\.$/,
+    patternKey: 'validation_less_than',
+    extract: (m) => ({ field: m[1], max: m[2] }),
+  },
+  {
+    regex: /^Unexpected field: ([^,]+)\.$/,
+    patternKey: 'validation_unexpected_field',
+    extract: (m) => ({ field: m[1] }),
+  },
   {
     regex: /^([a-zA-Z0-9_]+)\s+already exists$/i,
     patternKey: 'already_exists',

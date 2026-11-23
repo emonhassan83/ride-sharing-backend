@@ -32,6 +32,11 @@ const userSchema = new Schema<TUser, UserModal>(
       type: String,
       default: null,
     },
+    // Set on logout; tokens issued before this are rejected everywhere.
+    tokensValidAfter: {
+      type: Date,
+      default: null,
+    },
 
     role: {
       type: String,

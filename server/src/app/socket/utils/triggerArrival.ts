@@ -14,7 +14,9 @@ export async function triggerArrival(
   lng: number,
   io: any,
   redis: any,
+  options: { autoDetected?: boolean } = {},
 ) {
+  const autoDetected = options.autoDetected ?? true;
   try {
     const passenger = await Passenger.findOneAndUpdate(
       { _id: passengerId, arrivedNotified: { $ne: true } },
@@ -52,7 +54,11 @@ export async function triggerArrival(
       message: 'Your driver has arrived at your pickup location',
       waitingTime: waitNotice.maxWaitMinutes,
       waitTimeNotice: waitNotice,
-      autoDetected: true,
+      autoDetected,
+      // Issue 13: explicit state so the app can drop "Driver arriving in N min".
+      passengerStatus: PASSENGER_STATUS.driver_arrived,
+      phase: 'arrived',
+      eta: 0,
     });
 
     await notifyUserPush({
@@ -61,6 +67,7 @@ export async function triggerArrival(
       description: 'Your driver has arrived at your pickup location',
       reference: String(rideId),
       modelType: modeType.Ride,
+      dedupeKey: `driver-arrived:${passenger._id.toString()}`,
       data: {
         type: 'DRIVER_ARRIVED',
         rideId: String(rideId),

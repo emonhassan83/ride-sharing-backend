@@ -1,3 +1,48 @@
+Date/Session: 2026-11-23 (client QA doc #2: issues 4, 8, 9, 13)
+
+Completed Tasks:
+- Fixed late / missing / duplicate notifications and the two issue-13 bugs. Report: `docs/CLIENT_BUG_FIXING_REPORT_2.md`.
+- Unit 1078 passing (45 new); integration 37 passing (16 new; old code fails 11 of them). `tsc` + `test:types` clean.
+
+Key Changes:
+- `sentPushNotification`: `buildPushDeliveryOptions` (ride-state TTL 10 min / default 24 h, collapse key = type:passenger|ride|chat, apns priority/expiry/collapse-id, optional `FCM_ANDROID_CHANNEL_ID`).
+- `notifyUserPush`: up to 3 FCM attempts; dead tokens cleared.
+- `driverAcceptRide`: capture failure with no money moved (`PaymentService.getBookingCaptureState`) releases the claim + "Payment Needs Attention" push; "already taken" only after capture; socket event before push.
+- `notifyNearbyDrivers*`: `runWithConcurrency` (5). `notifyRiderDriversNotified`: re-match push only when count grows (`drivers-notified:pushed-count:<rideId>`).
+- Start/drop-off/complete: atomic status transitions + dedupe keys; start push "Driver On The Way"; drop-off & complete share `trip-finished:<pid>`; start OTP re-used while >60 s valid, push/SMS/email once per 60 s.
+- `driverLocationUpdate`: per-rider `ride:live-update` with `phase`/`eta`/`passengerId` (`utils/liveEta.utils.ts`), ride room `.except(riderRooms)`; `ride:driver-arrived` has `phase/eta/passengerStatus`, correct `autoDetected`.
+- `ride.service`: `isPastUpcomingWindow` (date+time + 120 min grace) applied to accepted rides whenever accepted (not history) is requested.
+
+Pending/Next Steps:
+- Product: auto-cancel + refund accepted rides never started? Enable 100 m auto-arrival? (both left off).
+- Mobile: use `phase` in live updates; avoid local+push duplicates; foreground display; create Android channel and share its id.
+
+---
+
+Date/Session: 2026-11-23 (client QA issues 15, 42, 52, 58, 61, 63, 67, 68)
+
+Completed Tasks:
+- Fixed the server-side causes of QA issues 15, 42, 52, 58, 61, 63, 67/60; 68 is app-side (text not sent by the server). Full report: `docs/CLIENT_BUG_FIXING_REPORT_1.md`.
+- Unit: 1033 passing (106 new). Integration (real Mongo + Redis in Docker, `npm run test:integration`): 21 passing; the old code fails 14 of them. `tsc` and `test:types` clean.
+- Follow-ups also done: logout revokes tokens (`user.tokensValidAfter`, `iatMs` in `createToken`, checked in `auth` middleware, `socketAuth`, refresh); `driver:location-update` no longer re-adds offline drivers (`isDriverMarkedOnline`); `messages` module uses `getIO()` instead of importing `server.ts` (that import booted the whole server in tests); fixed 2 pre-existing test type errors.
+
+Key Changes:
+- `socket.init.ts`: `registerSocketEvents` runs before any await (early `driver:go-online` was dropped); drivers get `driver:status` + `ride:pending-requests` on connect and go-online (`socket/utils/driverSync.ts`).
+- `utils/driverAvailability.utils.ts`: one "available now" rule (fresh ping OR connected socket + `users:online`) used by dispatch (`notifyDrivers.utils`) and the rider map (`fetchDriversWithinRadius`, new optional `io` param).
+- `driverAcceptRide`: offline drivers are refused ("You are offline. Go online to accept rides.") instead of silently switched online.
+- `chatPush.queue`: presence TTL 24h -> 120s, value = socket id (dead socket ignored), `refreshUserActiveInChat` on send/typing/seen; atomic buffer read; separate job id when a batch job is active.
+- `logoutUser`: disconnects all user sockets (`io.in(uid).disconnectSockets(true)`) and clears chat presence.
+- `splitRidePendingMatch.job`: lone-split Solo fallback timed from the rider's createdAt (exported `isSoloFallbackDue`, `hoursSinceSearchStarted`); clearer split-search message.
+- `config/zod.config.ts` (imported first in `app.ts`): global readable Zod messages + 13 `validation_*` i18n patterns in all 5 locales.
+
+Pending/Next Steps:
+- Mobile app: change "Driver has picked you up. Safe journey." text (issue 68); handle `driver:status`, `ride:pending-requests`, offline-accept error, 401 "Your session has ended"; `leave-chat` on background / `join-chat` heartbeat; `deleteToken()` on logout.
+- Verify on a deployed build with real devices, Firebase and Stripe; check deployed `splitRideMinBookingHours`.
+- "Connected" check reads the local Socket.io adapter; needs a shared adapter if the server is ever scaled out.
+- Three docs (`docs/P0_*`, `P1_*`, `P2_*`) show as deleted in the working tree; not done in this session.
+
+---
+
 Date/Session: 2026-11-22 (bug-fix pass)
 
 Completed Tasks:

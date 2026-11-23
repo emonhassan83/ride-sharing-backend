@@ -23,7 +23,7 @@ import {
   sendRideStartOtp,
   verifyRideStartOtp,
 } from '../../utils/rideStartOtp.utils';
-import { formatRideLocalDate } from '../../utils/rideSchedule.utils';
+import { formatRideLocalDate, getDepartureDateTime } from '../../utils/rideSchedule.utils';
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -327,14 +327,42 @@ const toIsoDate = (raw: unknown): string | null => {
   return null;
 };
 
-/** True when the ride's calendar day is before today in the ride timezone. */
-const isPastDepartureDate = (
-  raw: unknown,
-  today = formatRideLocalDate(),
+/**
+ * Issue 13 ("previous day's ride shows in Upcoming").
+ *
+ * An accepted ride stops being "upcoming" once its departure (date AND time, in
+ * the ride timezone) plus a grace period has passed. Before, only the calendar
+ * day was compared, and only for some `status` query values, so a ride the driver
+ * never started could stay in Upcoming.
+ */
+export const UPCOMING_GRACE_MINUTES = 120;
+
+export const isPastUpcomingWindow = (
+  departureDate: unknown,
+  departureTime: unknown,
+  now: Date = new Date(),
 ): boolean => {
-  const iso = toIsoDate(raw);
-  return !!iso && iso < today;
+  const iso = toIsoDate(departureDate);
+  if (!iso) return false;
+  try {
+    const departure = getDepartureDateTime(iso, String(departureTime ?? ''));
+    return departure.getTime() + UPCOMING_GRACE_MINUTES * 60_000 < now.getTime();
+  } catch {
+    // Unparseable time: fall back to the calendar-day rule.
+    return iso < formatRideLocalDate(now);
+  }
 };
+
+/** The request is for not-yet-started rides (upcoming), not for history. */
+const wantsUpcomingRides = (
+  isUpcomingList: boolean,
+  statuses: string[] | null,
+): boolean =>
+  isUpcomingList ||
+  (!!statuses &&
+    statuses.includes(RIDE_STATUS.accepted) &&
+    !statuses.includes(RIDE_STATUS.completed) &&
+    !statuses.includes(RIDE_STATUS.cancelled));
 
 const resolveRideStatusesFromQuery = (rawStatus: unknown): {
   isPendingList: boolean;
@@ -474,11 +502,17 @@ const getDriverRides = async (
     baseRideCondition.departureTime = { $in: timeVariants };
   }
 
-  const today = formatRideLocalDate();
+  const hidePastAccepted = wantsUpcomingRides(isUpcomingList, statuses);
+  const now = new Date();
   const driverRides = (
-    await Ride.find(baseRideCondition).select('_id status departureDate').lean()
+    await Ride.find(baseRideCondition)
+      .select('_id status departureDate departureTime')
+      .lean()
   ).filter(
-    (ride) => !isUpcomingList || !isPastDepartureDate(ride.departureDate, today),
+    (ride) =>
+      !hidePastAccepted ||
+      ride.status !== RIDE_STATUS.accepted ||
+      !isPastUpcomingWindow(ride.departureDate, ride.departureTime, now),
   );
   const driverRideIds = driverRides.map(r => r._id);
   const cancelledOrRejectedRideIdSet = new Set(
@@ -742,10 +776,19 @@ const getRiderRides = async (
       })
     : passengerDocs;
 
-  const today = formatRideLocalDate();
-  const visiblePassengers = isUpcomingList
+  // Rides already under way (driver arrived / on board) are never hidden.
+  const activeTripStatuses = new Set<string>([
+    PASSENGER_STATUS.in_progress,
+    PASSENGER_STATUS.driver_arrived,
+    PASSENGER_STATUS.picked_up,
+  ]);
+  const hidePastUpcoming = wantsUpcomingRides(isUpcomingList, statuses);
+  const now = new Date();
+  const visiblePassengers = hidePastUpcoming
     ? eligiblePassengers.filter(
-        (p) => !isPastDepartureDate(p.departureDate, today),
+        (p) =>
+          activeTripStatuses.has(String(p.status)) ||
+          !isPastUpcomingWindow(p.departureDate, p.departureTime, now),
       )
     : eligiblePassengers;
 

@@ -6,6 +6,7 @@ import { saveDriverLocation } from '../../../utils/geo.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
+import { syncDriverState } from '../../utils/driverSync';
 
 export const driverGoOnlineHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -119,6 +120,10 @@ export const driverGoOnlineHandler = eventHandler<any>(
           isOnline: true,
         },
       });
+
+      // Replay requests this driver was notified about while offline or
+      // disconnected (issues 58 / 63).
+      await syncDriverState(socket, driverId, true);
     } catch (error: any) {
       console.error('Error in driverGoOnlineHandler:', error);
       callback?.({ success: false, message: 'Internal server error' });

@@ -15,6 +15,8 @@ import {
 import {
   createToken,
   generateTokens,
+  isTokenRevoked,
+  SESSION_ENDED_MESSAGE,
   TExpiresIn,
   verifyToken,
 } from './auth.utils';
@@ -31,6 +33,7 @@ import { deleteCache } from '../../redis/helpers';
 import { REDIS_KEYS } from '../../redis/keys';
 import { getRedisClient } from '../../config/redis.config';
 import { getIO, onlineUsers } from '../../socket/socket.init';
+import { clearAllActiveChatsForUser } from '../../queues/chatPush.queue';
 
 const OTP_EXPIRE = 60 * 5; // 5 minutes in seconds
 
@@ -644,6 +647,8 @@ const logoutUser = async (userId: string) => {
       isLoginOTPVerified: false,
       fcmToken: null,
       isOnline: false,
+      // Every access/refresh token issued before now stops working (issue 15).
+      tokensValidAfter: new Date(),
     },
     { returnDocument: 'after' }
   );
@@ -662,16 +667,15 @@ const logoutUser = async (userId: string) => {
     // ignore redis error
   }
 
+  await clearAllActiveChatsForUser(uid);
+
   try {
-    const activeSocket = onlineUsers[uid];
-    if (activeSocket) {
-      activeSocket.leave(`user:${uid}`);
-      activeSocket.leave(`driver:${uid}`);
-      delete onlineUsers[uid];
-    }
-    const io = getIO();
-    io.in(`user:${uid}`).socketsLeave(`user:${uid}`);
-    io.in(`driver:${uid}`).socketsLeave(`driver:${uid}`);
+    delete onlineUsers[uid];
+    // Issue 15: leaving only the `user:` / `driver:` rooms kept the socket
+    // connected and inside `<uid>`, `ride:<id>` and `chat:<id>`, so a
+    // logged-out app still received chat messages, notification counts and
+    // ride updates. Every socket of this user joins the bare `<uid>` room.
+    getIO().in(uid).disconnectSockets(true);
   } catch {
     // ignore socket error
   }
@@ -687,6 +691,11 @@ const refreshToken = async (token: string) => {
   const user = await User.isExistUserByEmail(decoded?.email);
   if (!user || user?.isDeleted) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'This user is not found !');
+  }
+
+  // A token from before the last logout cannot mint a new session (issue 15).
+  if (isTokenRevoked(decoded, user.tokensValidAfter)) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, SESSION_ENDED_MESSAGE);
   }
 
   const jwtPayload = {

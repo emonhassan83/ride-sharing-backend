@@ -7,6 +7,7 @@ import { User } from '../../modules/user/user.model';
 import { Vehicle } from '../../modules/vehicle/vehicle.model';
 import { USER_ROLE } from '../../modules/user/user.constant';
 import { normalizeLanguage } from '../../i18n/i18n';
+import { isTokenRevoked, SESSION_ENDED_MESSAGE } from '../../modules/auth/auth.utils';
 
 // NOTE: Socket.IO middleware `use` does NOT support async directly.
 // But we can use a wrapper that calls next() after async operations.
@@ -32,11 +33,16 @@ export const socketAuth = async (socket: Socket, next: (err?: Error) => void) =>
 
     // 2. Fetch user from DB (without password)
     const user = await User.findById(decoded.userId)
-      .select('_id email role name phone profileImage location avgRating language')
+      .select('_id email role name phone profileImage location avgRating language tokensValidAfter')
       .lean();
 
     if (!user) {
       return next(new ApiError(httpStatus.NOT_FOUND, 'User not found'));
+    }
+
+    // Issue 15: a token from before the last logout cannot reconnect.
+    if (isTokenRevoked(decoded, user.tokensValidAfter)) {
+      return next(new ApiError(httpStatus.UNAUTHORIZED, SESSION_ENDED_MESSAGE));
     }
 
     const handshakeLang =

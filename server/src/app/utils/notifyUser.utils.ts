@@ -19,6 +19,23 @@ type NotifyUserInput = {
 
 const DEFAULT_DEDUPE_TTL_SECONDS = 6 * 60 * 60;
 
+export const PUSH_MAX_ATTEMPTS = 3;
+export const PUSH_RETRY_DELAY_MS = 700;
+
+/** FCM error codes meaning the token will never work again. */
+const DEAD_TOKEN_CODES = new Set([
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+]);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const firstFcmErrorCode = (response: any): string | null => {
+  const error = response?.responses?.find((r: any) => r && !r.success)?.error
+    ?? response?.responses?.[0]?.error;
+  return error?.code || error?.errorInfo?.code || null;
+};
+
 async function claimNotificationSlot(
   userId: string,
   dedupeKey?: string,
@@ -87,15 +104,37 @@ export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
     }
 
     if (user?.fcmToken) {
-      const response = await sendNotification([user.fcmToken], {
+      const pushPayload = {
         ...inAppRow,
         language: userLang,
         skipPersist: true,
         ...(data ? { data } : {}),
-      });
-      pushed = !!response && response.successCount > 0;
-      if (!pushed) {
-        console.error(`FCM not delivered for user ${userId}:`, response);
+      };
+
+      // Issue 8: one transient FCM failure used to lose the push for good (the
+      // dedupe slot stays claimed because the in-app row was saved).
+      for (let attempt = 1; attempt <= PUSH_MAX_ATTEMPTS && !pushed; attempt++) {
+        let response: any = null;
+        try {
+          response = await sendNotification([user.fcmToken], pushPayload);
+        } catch (error) {
+          response = { successCount: 0, responses: [{ error }] };
+        }
+        pushed = !!response && response.successCount > 0;
+        if (pushed) break;
+
+        const errorCode = firstFcmErrorCode(response);
+        if (errorCode && DEAD_TOKEN_CODES.has(errorCode)) {
+          // Uninstalled app / rotated token: stop sending to it.
+          await User.updateOne(
+            { _id: userId, fcmToken: user.fcmToken },
+            { $set: { fcmToken: null } },
+          ).catch(() => {});
+          console.warn(`notifyUserPush: removed dead FCM token for user ${userId} (${errorCode})`);
+          break;
+        }
+        console.error(`FCM not delivered for user ${userId} (attempt ${attempt}):`, errorCode || response);
+        if (attempt < PUSH_MAX_ATTEMPTS) await sleep(PUSH_RETRY_DELAY_MS);
       }
     } else {
       console.warn(`notifyUserPush: no fcmToken for user ${userId}`);

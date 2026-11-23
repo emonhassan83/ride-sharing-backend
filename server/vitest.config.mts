@@ -28,6 +28,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // Real-service tests (Mongo + Redis containers) have their own config:
+    // vitest.integration.config.mts / `npm run test:integration`.
+    exclude: ['**/node_modules/**', 'tests/integration/**'],
     setupFiles: ['./tests/setup/global.setup.ts'],
     // The app code is very chatty (console.log); only show output of failing tests.
     silent: 'passed-only',

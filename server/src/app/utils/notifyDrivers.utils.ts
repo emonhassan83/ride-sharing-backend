@@ -11,9 +11,8 @@ import { modeType } from '../modules/notification/notification.interface';
 import { notifyUserPush } from './notifyUser.utils';
 import { calculateDistance } from './location.utils';
 import { resolveUserLanguage, translateText } from '../i18n/i18n';
-
-/** Location ping older than this is not "nearby right now". */
-const FRESH_LOCATION_MS = 45 * 60 * 1000;
+import { getDriverLiveState } from './driverAvailability.utils';
+import { getRedisClient } from '../config/redis.config';
 
 /** Socket (if online) + in-app notification + FCM push for a new ride request (both online & offline drivers). */
 export async function emitNewRideRequestToDriver(
@@ -166,6 +165,21 @@ export async function notifyRiderDriversNotified(input: {
     /* socket may not be initialized */
   }
 
+  // Issue 9: a few seconds after "Drivers Notified – 3 nearby drivers…" the
+  // no-driver cron used to push "Still Searching – 3 nearby drivers…" again
+  // (same count, new stage). A re-match push now goes out only when MORE
+  // drivers have been reached than the rider was last told about.
+  const pushedCountKey = `drivers-notified:pushed-count:${rideId}`;
+  let lastPushedCount = 0;
+  try {
+    lastPushedCount = Number((await getRedisClient().get(pushedCountKey)) || 0);
+  } catch {
+    /* ignore */
+  }
+  if (isRematch && total <= lastPushedCount) {
+    return total; // socket update above is enough
+  }
+
   // matching / solo: one push per ride + outcome ("searching" → later "found"
   // still gets through; retries with the same outcome do not).
   // rematch: one push per stage + driver count.
@@ -193,6 +207,14 @@ export async function notifyRiderDriversNotified(input: {
     },
   });
 
+  try {
+    if (total > lastPushedCount) {
+      await getRedisClient().set(pushedCountKey, String(total), 'EX', 48 * 60 * 60);
+    }
+  } catch {
+    /* ignore */
+  }
+
   return total;
 }
 
@@ -215,6 +237,33 @@ async function privateMatchingDriverIds(
 }
 
 const CORRIDOR_RADIUS_METERS = 10000;
+
+/**
+ * Issue 4: drivers were notified strictly one after another (≈5 DB calls + an
+ * FCM round trip each), so drivers late in the list, and the rider's "drivers
+ * notified" push, waited for everyone before them. Each driver's claim
+ * (markDriverNotifiedOnce) is an atomic Mongo update, so parallel runs are safe.
+ */
+export const DRIVER_NOTIFY_CONCURRENCY = 5;
+
+export async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let index = 0;
+  const lanes = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (index < items.length) {
+      const item = items[index++];
+      try {
+        await worker(item);
+      } catch (error) {
+        console.error('driver notify failed:', error);
+      }
+    }
+  });
+  await Promise.all(lanes);
+}
 
 function pointToSegmentMeters(
   pLat: number,
@@ -290,75 +339,30 @@ async function getDriverCurrentLocation(
   return null;
 }
 
-function isUsablePoint(lat: number, lng: number): boolean {
-  return (
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    Math.abs(lat) <= 90 &&
-    Math.abs(lng) <= 180 &&
-    !(lat === 0 && lng === 0)
-  );
-}
-
 /**
- * True only when the driver has a recent GPS point inside the pickup radius.
- * Saved profile locations and stale Redis GEO members are ignored, so a city
- * full of old test accounts is not reported as "28 drivers notified".
+ * True only when the driver is live right now (see driverAvailability.utils)
+ * and their last known point is inside the pickup radius. Saved profile
+ * locations and stale Redis GEO members are ignored, so a city full of old
+ * test accounts is not reported as "28 drivers notified" (issue 42), while a
+ * parked driver with the app open is still reached (issues 61 / 63).
  */
-async function isFreshAndWithinRadius(
+export async function isFreshAndWithinRadius(
   redis: any,
   driverId: string,
   pickup: ILatLng,
   radiusKm: number,
+  io?: any,
 ): Promise<boolean> {
-  let lat: number | null = null;
-  let lng: number | null = null;
-  let fresh = false;
-
-  try {
-    const currentRaw = await redis.get(`driver:${driverId}:current`);
-    if (currentRaw) {
-      const parsed = JSON.parse(currentRaw);
-      const currentLat = Number(parsed?.lat);
-      const currentLng = Number(parsed?.lng);
-      if (isUsablePoint(currentLat, currentLng)) {
-        lat = currentLat;
-        lng = currentLng;
-        fresh = true;
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-
-  if (!fresh) {
-    try {
-      const hash = await redis.hgetall(`driver:${driverId}:details`);
-      const updatedAt = Number(hash?.lastUpdate || 0);
-      const savedLat = Number(hash?.lastLat);
-      const savedLng = Number(hash?.lastLng);
-      if (
-        isUsablePoint(savedLat, savedLng) &&
-        updatedAt > 0 &&
-        Date.now() - updatedAt <= FRESH_LOCATION_MS
-      ) {
-        lat = savedLat;
-        lng = savedLng;
-        fresh = true;
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  if (!fresh || lat == null || lng == null) return false;
-  return calculateDistance({ lat, lng }, pickup) <= radiusKm;
+  const { location } = await getDriverLiveState(redis, driverId, io);
+  if (!location) return false;
+  return calculateDistance(location, pickup) <= radiusKm;
 }
 
 async function collectFreshDriversWithinRadius(
   redis: any,
   pickup: ILatLng,
   radiusKm: number,
+  io?: any,
 ): Promise<Set<string>> {
   const candidates = new Set<string>();
 
@@ -384,7 +388,7 @@ async function collectFreshDriversWithinRadius(
 
   const nearby = new Set<string>();
   for (const driverId of candidates) {
-    if (await isFreshAndWithinRadius(redis, driverId, pickup, radiusKm)) {
+    if (await isFreshAndWithinRadius(redis, driverId, pickup, radiusKm, io)) {
       nearby.add(driverId);
     }
   }
@@ -434,23 +438,24 @@ export async function notifyNearbyDrivers(
     redis,
     pickup,
     radiusKm,
+    io,
   );
 
   if (targetDriverIds?.length) {
     for (const tid of targetDriverIds) {
-      if (await isFreshAndWithinRadius(redis, String(tid), pickup, radiusKm)) {
+      if (await isFreshAndWithinRadius(redis, String(tid), pickup, radiusKm, io)) {
         candidateDriverIds.add(String(tid));
       }
     }
   }
 
   const attemptNotify = async (driverIds: Iterable<string>) => {
-    for (const driverId of driverIds) {
-      if (notifiedIds.includes(driverId)) continue;
-      if (privateDriverIds && !privateDriverIds.has(driverId)) continue;
+    await runWithConcurrency([...driverIds], DRIVER_NOTIFY_CONCURRENCY, async (driverId) => {
+      if (notifiedIds.includes(driverId)) return;
+      if (privateDriverIds && !privateDriverIds.has(driverId)) return;
 
       const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
-      if (rejected) continue;
+      if (rejected) return;
 
       const driverDoc = await User.findById(driverId)
         .select('isKycVerified isOnline isDeleted status _id')
@@ -463,7 +468,7 @@ export async function notifyNearbyDrivers(
         driverDoc.status !== USER_STATUS.active ||
         !driverDoc.isKycVerified
       ) {
-        continue;
+        return;
       }
 
       const availability = await hasDriverRideAtDateTime(
@@ -473,10 +478,10 @@ export async function notifyNearbyDrivers(
         rideType,
         requestedSeats
       );
-      if (!availability.available) continue;
+      if (!availability.available) return;
 
       const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
-      if (!shouldNotify) continue;
+      if (!shouldNotify) return;
 
       const sent = await emitNewRideRequestToDriver(
         io,
@@ -489,7 +494,7 @@ export async function notifyNearbyDrivers(
         notifiedIds.push(driverId);
         notifiedCount++;
       }
-    }
+    });
   };
 
   // Every fresh driver inside the pickup radius. A selected id must not
@@ -540,11 +545,12 @@ export async function notifyNearbyDriversForSplitRide(
     redis,
     pickup,
     10,
+    io,
   );
 
-  for (const driverId of candidateDriverIds) {
+  await runWithConcurrency([...candidateDriverIds], DRIVER_NOTIFY_CONCURRENCY, async (driverId) => {
     const rejected = await redis.sismember(`ride:rejected:${rideId}`, driverId);
-    if (rejected) continue;
+    if (rejected) return;
 
     const dbDriver = await User.findById(driverId)
       .select('_id location isKycVerified isOnline isDeleted status')
@@ -557,7 +563,7 @@ export async function notifyNearbyDriversForSplitRide(
       dbDriver.status !== USER_STATUS.active ||
       !dbDriver.isKycVerified
     ) {
-      continue;
+      return;
     }
 
     const availability = await hasDriverRideAtDateTime(
@@ -567,13 +573,13 @@ export async function notifyNearbyDriversForSplitRide(
       'split',
       requestedSeats
     );
-    if (!availability.available) continue;
+    if (!availability.available) return;
 
     const location = await getDriverCurrentLocation(redis, driverId, dbDriver);
-    if (location && !isNearRoute(location.lat, location.lng)) continue;
+    if (location && !isNearRoute(location.lat, location.lng)) return;
 
     const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
-    if (!shouldNotify) continue;
+    if (!shouldNotify) return;
 
     const sent = await emitNewRideRequestToDriver(
       io,
@@ -586,7 +592,7 @@ export async function notifyNearbyDriversForSplitRide(
       notifiedIds.push(driverId);
       notifiedCount++;
     }
-  }
+  });
 
   if (notifiedIds.length) {
     await Ride.findByIdAndUpdate(rideId, {

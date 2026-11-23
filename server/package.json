@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:types": "tsc --noEmit -p tests/tsconfig.json"
+    "test:types": "tsc --noEmit -p tests/tsconfig.json",
+    "test:integration": "vitest run -c vitest.integration.config.mts"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

@@ -20,7 +20,32 @@ export const createToken = (
   secret: string,
   expiresIn: TExpiresIn,
 ) => {
-  return jwt.sign(jwtPayload, secret, { expiresIn })
+  // `iatMs`: millisecond issue time. JWT `iat` is in whole seconds, which cannot
+  // tell a token issued just before logout from one issued just after re-login.
+  return jwt.sign({ ...jwtPayload, iatMs: Date.now() }, secret, { expiresIn })
+}
+
+export const SESSION_ENDED_MESSAGE = 'Your session has ended. Please log in again.'
+
+/**
+ * Issue 15: logout must end the session everywhere. Logout stamps
+ * `user.tokensValidAfter`; any token issued before that moment is rejected by
+ * the REST `auth` middleware, the socket handshake and the refresh endpoint.
+ */
+export const isTokenRevoked = (
+  decoded: { iatMs?: unknown; iat?: unknown } | null | undefined,
+  tokensValidAfter?: Date | string | null,
+): boolean => {
+  if (!tokensValidAfter) return false
+  const validAfterMs = new Date(tokensValidAfter).getTime()
+  if (!Number.isFinite(validAfterMs)) return false
+  const issuedAtMs =
+    typeof decoded?.iatMs === 'number'
+      ? decoded.iatMs
+      : typeof decoded?.iat === 'number'
+        ? decoded.iat * 1000
+        : 0
+  return issuedAtMs < validAfterMs
 }
 
 export const verifyToken = (token: string, secret: string) => {

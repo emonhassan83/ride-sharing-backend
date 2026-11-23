@@ -325,7 +325,7 @@
     "No default vehicle set. Please set a default vehicle before going online.": "No default vehicle set. Please set a default vehicle before going online.",
     "No driver assigned to this ride": "No driver assigned to this ride",
     "No drivers available within 10 km for the selected date and time.": "No drivers available within 10 km for the selected date and time.",
-    "No matching split ride found yet. Complete payment; we will keep matching peers until the 1h Solo fallback.": "No matching split ride found yet. Complete payment; we will keep matching peers until the 1h Solo fallback.",
+    "No matching split ride found yet. Complete payment and we will keep looking for a ride partner until 1 hour before pickup. If no partner is found by then, your ride continues as a Solo ride.": "No matching split ride found yet. Complete payment and we will keep looking for a ride partner until 1 hour before pickup. If no partner is found by then, your ride continues as a Solo ride.",
     "No matching split ride was found. Booking has been cancelled.": "No matching split ride was found. Booking has been cancelled.",
     "No matching split ride was found. Your booking has been cancelled.": "No matching split ride was found. Your booking has been cancelled.",
     "No messages found for this chat": "No messages found for this chat",
@@ -607,7 +607,15 @@
     "Drivers Notified": "Drivers Notified",
     "Searching for Drivers": "Searching for Drivers",
     "We are still looking for a nearby driver.": "We are still looking for a nearby driver.",
-    "Ride request created. Complete payment to notify nearby drivers.": "Ride request created. Complete payment to notify nearby drivers."
+    "Ride request created. Complete payment to notify nearby drivers.": "Ride request created. Complete payment to notify nearby drivers.",
+    "Please enter a valid email address.": "Please enter a valid email address.",
+    "You are offline. Go online to accept rides.": "You are offline. Go online to accept rides.",
+    "Your session has ended. Please log in again.": "Your session has ended. Please log in again.",
+    "Driver On The Way": "Driver On The Way",
+    "Driver has started the trip and is heading to the pickup location.": "Driver has started the trip and is heading to the pickup location.",
+    "Payment Needs Attention": "Payment Needs Attention",
+    "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.": "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.",
+    "Trip already started": "Trip already started"
   },
   "patterns": {
     "dropoff_fare": "Total fare: €{{totalFare}} (Base: €{{baseFare}} + Waiting: €{{waitingCharge}})",
@@ -647,6 +655,19 @@
     "ride_start_verification_code": "Your verification code to start the ride is {{otp}}. Share this OTP with your driver when boarding.",
     "account_registered_with": "This account is registered with {{method}}, please use that method.",
     "refund_status_updated": "The status of your refund request for order has been updated to \"{{status}}\".",
-    "refund_initiated_by": "A refund request has been initiated by {{name}} for order."
+    "refund_initiated_by": "A refund request has been initiated by {{name}} for order.",
+    "validation_required": "{{field}} is required.",
+    "validation_invalid_value": "{{field}} has an invalid value.",
+    "validation_one_of": "{{field}} must be one of: {{values}}.",
+    "validation_invalid_format": "{{field}} has an invalid format.",
+    "validation_min_chars": "{{field}} must be at least {{min}} characters.",
+    "validation_min_items": "{{field}} must contain at least {{min}} items.",
+    "validation_min_value": "{{field}} must be at least {{min}}.",
+    "validation_max_chars": "{{field}} must be at most {{max}} characters.",
+    "validation_max_items": "{{field}} must contain at most {{max}} items.",
+    "validation_max_value": "{{field}} must be at most {{max}}.",
+    "validation_greater_than": "{{field}} must be greater than {{min}}.",
+    "validation_less_than": "{{field}} must be less than {{max}}.",
+    "validation_unexpected_field": "Unexpected field: {{field}}."
   }
 }

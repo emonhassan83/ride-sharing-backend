@@ -4,6 +4,7 @@ import eventHandler from '../../utils/eventHandler';
 import { Chat } from '../../../modules/chat/chat.models';
 import { User } from '../../../modules/user/user.model';
 import { callbackFn } from '../../../utils/callbackFn';
+import { refreshUserActiveInChat } from '../../../queues/chatPush.queue';
 
 export const typingHandler = eventHandler<any>(
   async (socket: TSocket, payload: any, callback: any) => {
@@ -27,6 +28,9 @@ export const typingHandler = eventHandler<any>(
     }
 
     try {
+      // Typing means the user is looking at this chat: keep presence alive.
+      await refreshUserActiveInChat(String(chatId), userId);
+
       // Find user name
       const user = await User.findById(userId).select('name').lean();
       const userName = user?.name || 'Unknown';

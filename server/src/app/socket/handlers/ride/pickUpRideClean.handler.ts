@@ -9,9 +9,8 @@ import { Booking } from '../../../modules/booking/booking.model';
 import { Payment } from '../../../modules/payment/payment.model';
 import { PAYMENT_STATUS } from '../../../modules/payment/payment.constant';
 import { PaymentService } from '../../../modules/payment/payment.service';
-import { User } from '../../../modules/user/user.model';
 import { modeType } from '../../../modules/notification/notification.interface';
-import { sendNotification } from '../../../utils/sentPushNotification';
+import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
@@ -219,18 +218,21 @@ export const pickUpRideHandler = eventHandler<any>(
       });
 
       if (!wasAlreadyPickedUp) {
-        const riderUser = await User.findById(passenger.userId)
-          .select('fcmToken')
-          .lean();
-        if (riderUser?.fcmToken) {
-          sendNotification([riderUser.fcmToken], {
-            receiver: passenger.userId,
-            message: 'Trip Started!',
-            description: 'Your ride has started. Enjoy the trip!',
-            reference: String(rideId),
-            modelType: modeType.Ride,
-          }).catch(() => {});
-        }
+        // Dedupe key: two concurrent pickup taps both saw "not picked up yet"
+        // and each sent this push (issue 9).
+        notifyUserPush({
+          userId: passenger.userId.toString(),
+          message: 'Trip Started!',
+          description: 'Your ride has started. Enjoy the trip!',
+          reference: String(rideId),
+          modelType: modeType.Ride,
+          dedupeKey: `picked-up:${passenger._id.toString()}`,
+          data: {
+            type: 'PASSENGER_PICKED_UP',
+            rideId: String(rideId),
+            passengerId: passenger._id.toString(),
+          },
+        }).catch(() => {});
       }
     }
 

@@ -115,11 +115,20 @@ export const driverStartTripHandler = eventHandler<any>(
       }
     }
 
-    // Update ride -> started
-    await Ride.findByIdAndUpdate(rideId, {
-      status: RIDE_STATUS.started,
-      tripStartedAt: new Date(),
-    });
+    // Update ride -> started. Atomic: a double tap / concurrent retry used to run
+    // the whole start (and send every notification) twice (issue 9).
+    const startedRide = await Ride.findOneAndUpdate(
+      { _id: rideId, status: RIDE_STATUS.accepted },
+      { $set: { status: RIDE_STATUS.started, tripStartedAt: new Date() } },
+      { returnDocument: 'after' },
+    );
+    if (!startedRide) {
+      return callback?.({
+        success: true,
+        message: 'Trip already started',
+        data: { rideId, alreadyStarted: true },
+      });
+    }
 
     // ── Update passengers + bookings ──────────────────────────────────────────
     for (const passenger of passengers) {
@@ -136,8 +145,13 @@ export const driverStartTripHandler = eventHandler<any>(
       const tripMessage =
         'Driver has started the trip and is heading to the pickup location.';
 
-      // Socket
-      io.to(`ride:${rideId}`).emit('ride:trip-started', {
+      // Socket: ONE emit to both rooms. Two separate emits delivered the event
+      // twice to the rider, whose socket is in both `ride:` and `user:` rooms.
+      const riderId = passenger.userId?.toString();
+      const tripStartedRooms = riderId
+        ? [`ride:${rideId}`, `user:${riderId}`]
+        : [`ride:${rideId}`];
+      io.to(tripStartedRooms).emit('ride:trip-started', {
         rideId,
         passengerId: passenger._id,
         driverId,
@@ -145,22 +159,17 @@ export const driverStartTripHandler = eventHandler<any>(
         message: tripMessage,
       });
 
-      const riderId = passenger.userId?.toString();
       if (riderId) {
-        io.to(`user:${riderId}`).emit('ride:trip-started', {
-          rideId,
-          passengerId: passenger._id,
-          driverId,
-          startTime: new Date(),
-          message: tripMessage,
-        });
-
+        // "Driver On The Way": the driver has only STARTED towards the pickup.
+        // The pickup handler sends "Trip Started!" when the rider is on board,
+        // so the two pushes no longer look like the same notification twice.
         await notifyUserPush({
           userId: riderId,
-          message: 'Trip Started',
+          message: 'Driver On The Way',
           description: tripMessage,
           reference: rideId,
           modelType: modeType.Ride,
+          dedupeKey: `trip-started:${passenger._id.toString()}`,
           data: {
             type: 'TRIP_STARTED',
             rideId: String(rideId),

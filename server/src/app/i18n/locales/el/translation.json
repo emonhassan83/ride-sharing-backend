@@ -325,7 +325,7 @@
     "No default vehicle set. Please set a default vehicle before going online.": "Δεν έχει οριστεί προεπιλεγμένο όχημα. Ορίστε ένα πριν συνδεθείτε.",
     "No driver assigned to this ride": "Δεν έχει ανατεθεί οδηγός σε αυτήν τη διαδρομή",
     "No drivers available within 10 km for the selected date and time.": "Δεν υπάρχουν διαθέσιμοι οδηγοί εντός 10 χλμ. για την επιλεγμένη ημερομηνία και ώρα.",
-    "No matching split ride found yet. Complete payment; we will keep matching peers until the 1h Solo fallback.": "Δεν βρέθηκε ακόμη συμβατή κοινή διαδρομή. Ολοκληρώστε την πληρωμή και θα συνεχίσουμε την αναζήτηση.",
+    "No matching split ride found yet. Complete payment and we will keep looking for a ride partner until 1 hour before pickup. If no partner is found by then, your ride continues as a Solo ride.": "Δεν βρέθηκε ακόμη κοινή διαδρομή. Ολοκληρώστε την πληρωμή και θα συνεχίσουμε να αναζητούμε συνεπιβάτη έως 1 ώρα πριν από την παραλαβή. Αν δεν βρεθεί συνεπιβάτης έως τότε, η διαδρομή σας συνεχίζεται ως ιδιωτική διαδρομή (Solo).",
     "No matching split ride was found. Booking has been cancelled.": "Δεν βρέθηκε συμβατή κοινή διαδρομή. Η κράτηση ακυρώθηκε.",
     "No matching split ride was found. Your booking has been cancelled.": "Δεν βρέθηκε συμβατή κοινή διαδρομή. Η κράτησή σας ακυρώθηκε.",
     "No messages found for this chat": "Δεν βρέθηκαν μηνύματα για αυτήν τη συνομιλία",
@@ -607,7 +607,15 @@
     "Drivers Notified": "Οι οδηγοί ειδοποιήθηκαν",
     "Searching for Drivers": "Αναζήτηση οδηγών",
     "We are still looking for a nearby driver.": "Συνεχίζουμε να αναζητούμε κοντινό οδηγό.",
-    "Ride request created. Complete payment to notify nearby drivers.": "Το αίτημα διαδρομής δημιουργήθηκε. Ολοκληρώστε την πληρωμή για να ειδοποιηθούν οι κοντινοί οδηγοί."
+    "Ride request created. Complete payment to notify nearby drivers.": "Το αίτημα διαδρομής δημιουργήθηκε. Ολοκληρώστε την πληρωμή για να ειδοποιηθούν οι κοντινοί οδηγοί.",
+    "Please enter a valid email address.": "Εισαγάγετε μια έγκυρη διεύθυνση email.",
+    "You are offline. Go online to accept rides.": "Είστε εκτός σύνδεσης. Συνδεθείτε για να αποδεχτείτε διαδρομές.",
+    "Your session has ended. Please log in again.": "Η συνεδρία σας έληξε. Συνδεθείτε ξανά.",
+    "Driver On The Way": "Ο οδηγός έρχεται",
+    "Driver has started the trip and is heading to the pickup location.": "Ο οδηγός ξεκίνησε και κατευθύνεται στο σημείο παραλαβής.",
+    "Payment Needs Attention": "Απαιτείται ενέργεια για την πληρωμή",
+    "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.": "Ένας οδηγός προσπάθησε να αποδεχτεί τη διαδρομή σας, αλλά η πληρωμή δεν ολοκληρώθηκε. Ελέγξτε τον τρόπο πληρωμής σας.",
+    "Trip already started": "Η διαδρομή έχει ήδη ξεκινήσει"
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",
@@ -651,6 +659,19 @@
     "refund_status_updated": "Η κατάσταση του αιτήματος επιστροφής χρημάτων ενημερώθηκε σε \"{{status}}\".",
     "refund_initiated_by": "Υποβλήθηκε αίτημα επιστροφής χρημάτων από τον/την {{name}}.",
     "drivers_notified_count": "Αναζητούμε οδηγό. Κοντινοί οδηγοί που ειδοποιήθηκαν: {{count}}.",
-    "solo_drivers_notified_count": "Δεν βρέθηκε κοινή διαδρομή. Η διαδρομή σας στάλθηκε ως ιδιωτική διαδρομή. Κοντινοί οδηγοί που ειδοποιήθηκαν: {{count}}."
+    "solo_drivers_notified_count": "Δεν βρέθηκε κοινή διαδρομή. Η διαδρομή σας στάλθηκε ως ιδιωτική διαδρομή. Κοντινοί οδηγοί που ειδοποιήθηκαν: {{count}}.",
+    "validation_required": "Το πεδίο «{{field}}» είναι υποχρεωτικό.",
+    "validation_invalid_value": "Το πεδίο «{{field}}» έχει μη έγκυρη τιμή.",
+    "validation_one_of": "Το πεδίο «{{field}}» πρέπει να είναι ένα από: {{values}}.",
+    "validation_invalid_format": "Το πεδίο «{{field}}» έχει μη έγκυρη μορφή.",
+    "validation_min_chars": "Το πεδίο «{{field}}» πρέπει να έχει τουλάχιστον {{min}} χαρακτήρες.",
+    "validation_min_items": "Το πεδίο «{{field}}» πρέπει να περιέχει τουλάχιστον {{min}} στοιχεία.",
+    "validation_min_value": "Το πεδίο «{{field}}» πρέπει να είναι τουλάχιστον {{min}}.",
+    "validation_max_chars": "Το πεδίο «{{field}}» μπορεί να έχει το πολύ {{max}} χαρακτήρες.",
+    "validation_max_items": "Το πεδίο «{{field}}» μπορεί να περιέχει το πολύ {{max}} στοιχεία.",
+    "validation_max_value": "Το πεδίο «{{field}}» πρέπει να είναι το πολύ {{max}}.",
+    "validation_greater_than": "Το πεδίο «{{field}}» πρέπει να είναι μεγαλύτερο από {{min}}.",
+    "validation_less_than": "Το πεδίο «{{field}}» πρέπει να είναι μικρότερο από {{max}}.",
+    "validation_unexpected_field": "Μη αναμενόμενο πεδίο: {{field}}."
   }
 }

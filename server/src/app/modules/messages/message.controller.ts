@@ -6,7 +6,7 @@ import httpStatus from 'http-status'
 import { TChat } from '../chat/chat.interface'
 import { Chat } from '../chat/chat.models'
 import { chatService } from '../chat/chat.service'
-import { io } from '../../../server'
+import { getIO } from '../../socket/socket.init'
 import ApiError from '../../errors/ApiError'
 
 const createMessages = catchAsync(async (req: Request, res: Response) => {
@@ -76,6 +76,7 @@ const seenMessage = catchAsync(async (req: Request, res: Response) => {
 
   const user2Chat = 'chat-list::' + user2
 
+  const io = getIO()
   io.emit(user1Chat, ChatListUser1)
   io.emit(user2Chat, ChatListUser2)
 

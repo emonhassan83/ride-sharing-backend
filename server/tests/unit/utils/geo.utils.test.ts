@@ -444,11 +444,13 @@ describe('fetchDriversWithinRadius', () => {
     await fakeRedis.geoadd(GEO_KEY, lng, lat, id);
   };
 
+  // Drivers are seeded LIVE by default (recent location ping), because the map
+  // now applies the same "available right now" rule as dispatch (issues 61 / 63).
   const seedDetails = async (id: string, fields: Record<string, string>) => {
-    await fakeRedis.hset(`driver:${id}:details`, fields);
+    await fakeRedis.hset(`driver:${id}:details`, { lastUpdate: String(Date.now()), ...fields });
   };
 
-  const run = (rideType = 'private', seats = 1, dest = DEST) =>
+  const run = (rideType = 'private', seats = 1, dest = DEST, io?: any) =>
     fetchDriversWithinRadius(
       fakeRedis,
       PICKUP.lng,
@@ -459,7 +461,15 @@ describe('fetchDriversWithinRadius', () => {
       dest,
       '2026-06-01',
       '10:00',
+      io,
     );
+
+  /** io whose adapter reports a connected socket in `driver:<id>` for each id. */
+  const ioWithConnected = (...ids: string[]) => ({
+    sockets: {
+      adapter: { rooms: new Map(ids.map((id) => [`driver:${id}`, new Set([`sock-${id}`])])) },
+    },
+  });
 
   beforeEach(() => {
     vi.mocked(Ride.find).mockReturnValue(mockQuery([]) as any);
@@ -557,7 +567,8 @@ describe('fetchDriversWithinRadius', () => {
     expect(cards[0].distance).toBeCloseTo(2.22, 2);
   });
 
-  it('builds a card for a DB-only driver from the User and default Vehicle records', async () => {
+  it('builds a card for a DB-only driver (connected + online) from the User and default Vehicle records', async () => {
+    await fakeRedis.sadd('users:online', 'db-1');
     vi.mocked(User.find).mockReturnValue(
       mockQuery([
         {
@@ -575,7 +586,7 @@ describe('fetchDriversWithinRadius', () => {
       mockQuery({ name: 'Honda Civic', number: 'XYZ789', seats: 5 }) as any,
     );
 
-    const [card] = await run('private', 1);
+    const [card] = await run('private', 1, DEST, ioWithConnected('db-1'));
 
     expect(card).toMatchObject({
       driverId: 'db-1',
@@ -662,6 +673,50 @@ describe('fetchDriversWithinRadius', () => {
     await seedDetails('d1', { seats: '4', destination: JSON.stringify({ lat: 0, lng: 0.5 }) });
 
     expect((await run('private', 1)).map((c) => c.driverId)).toEqual(['d1']);
+  });
+
+  describe('ISSUES 61 / 63: map shows only drivers that dispatch would reach', () => {
+    const STALE = String(Date.now() - 46 * 60 * 1000); // older than the 45 min window
+
+    it('hides a driver whose last location ping is older than 45 minutes and who is not connected', async () => {
+      await seedGeo('stale', 0.02);
+      await seedDetails('stale', { seats: '4', lastLat: '0', lastLng: '0.02', lastUpdate: STALE });
+
+      expect(await run()).toEqual([]);
+    });
+
+    it('hides a DB-only driver flagged isOnline with no live signal (old/test accounts)', async () => {
+      vi.mocked(User.find).mockReturnValue(
+        mockQuery([{ _id: { toString: () => 'ghost' }, location: { coordinates: [0.02, 0] } }]) as any,
+      );
+
+      expect(await run()).toEqual([]);
+    });
+
+    it('shows a parked driver (stale ping) whose app is connected and online', async () => {
+      await seedGeo('parked', 0.02);
+      await seedDetails('parked', { seats: '4', lastLat: '0', lastLng: '0.02', lastUpdate: STALE });
+      await fakeRedis.sadd('users:online', 'parked');
+
+      const cards = await run('private', 1, DEST, ioWithConnected('parked'));
+
+      expect(cards.map((c) => c.driverId)).toEqual(['parked']);
+    });
+
+    it('a connected socket alone is not enough: the driver must also be in users:online (went offline)', async () => {
+      await seedGeo('off', 0.02);
+      await seedDetails('off', { seats: '4', lastLat: '0', lastLng: '0.02', lastUpdate: STALE });
+
+      expect(await run('private', 1, DEST, ioWithConnected('off'))).toEqual([]);
+    });
+
+    it('a fresh current-location key makes a driver live even without a details timestamp', async () => {
+      await seedGeo('moving', 0.02);
+      await fakeRedis.hset('driver:moving:details', { seats: '4' });
+      await fakeRedis.set('driver:moving:current', JSON.stringify({ lat: 0, lng: 0.02 }));
+
+      expect((await run()).map((c) => c.driverId)).toEqual(['moving']);
+    });
   });
 
   it('a driver found in both Redis and the DB appears only once', async () => {

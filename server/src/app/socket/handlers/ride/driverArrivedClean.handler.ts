@@ -77,6 +77,7 @@ export const driverArrivedHandler = eventHandler<any>(
         Number(lng) || 0,
         io,
         redis,
+        { autoDetected: false }, // driver tapped "arrived"
       );
     }
 

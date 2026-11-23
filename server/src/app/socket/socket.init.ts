@@ -12,6 +12,7 @@ import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { RIDE_STATUS } from '../modules/ride/ride.constant';
 import { getRedisClient } from '../config/redis.config';
 import { Vehicle } from '../modules/vehicle/vehicle.model';
+import { syncDriverState } from './utils/driverSync';
 
 let ioInstance: Server | null = null;
 
@@ -40,12 +41,22 @@ const initializeSocketIO = (server: HttpServer) => {
       tSocket.join(`user:${userId}`);
       onlineUsers[userId] = tSocket;
 
-      // ── Driver room & restore online state on reconnect ──────────────────
-      const redis = getRedisClient();
-      if (userRole === USER_ROLE.provider) {
+      const isDriver = userRole === USER_ROLE.provider;
+      if (isDriver) {
         tSocket.join(`driver:${userId}`);
         console.log(`✅ Driver joined room: driver:${userId}`);
+      }
 
+      // ── Register event listeners BEFORE any await (issues 58 / 63) ───────
+      // Socket.io does not buffer events. Listeners registered after the DB /
+      // Redis lookups below dropped whatever the app sent right after
+      // connecting (typically `driver:go-online`), and a socket that died in
+      // that window never ran the disconnect handler.
+      registerSocketEvents(tSocket);
+
+      // ── Restore online state on reconnect ─────────────────────────────────
+      const redis = getRedisClient();
+      if (isDriver) {
         const dbDriver = await User.findById(userId)
           .select('name profileImage phone avgRating isOnline location')
           .lean();
@@ -90,12 +101,14 @@ const initializeSocketIO = (server: HttpServer) => {
             });
           }
         }
+
+        // Tell the app its real online state and replay unanswered requests.
+        await syncDriverState(tSocket, userId, !!dbDriver?.isOnline);
       } else {
         await redis.sadd('users:online', userId);
       }
 
       // ── Rejoin active ride room ───────────────────────────────────────────
-      const isDriver    = userRole === USER_ROLE.provider;
       const isRider     = !isDriver;
 
       const [activePassenger, activeRide] = await Promise.all([
@@ -143,8 +156,6 @@ const initializeSocketIO = (server: HttpServer) => {
         tSocket.join(`ride:${activeRide._id}`);
         console.log(`✅ Driver rejoined room: ride:${activeRide._id}`);
       }
-
-      registerSocketEvents(tSocket);
     } catch (err: any) {
       console.error('Connection error:', err.message);
       socket.disconnect();

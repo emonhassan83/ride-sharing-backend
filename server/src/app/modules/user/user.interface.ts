@@ -14,6 +14,7 @@ export type TUser = {
   email: string;
   password: string;
   fcmToken: string
+  tokensValidAfter?: Date | null;
   role: TUserRole;
   type?: TProviderType;
   profileImage: string;

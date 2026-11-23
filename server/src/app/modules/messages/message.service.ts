@@ -3,7 +3,7 @@ import QueryBuilder from '../../builder/QueryBuilder'
 import { TMessages } from './messages.interface'
 import { Chat } from '../chat/chat.models'
 import { chatService } from '../chat/chat.service'
-import { io } from '../../../server'
+import { getIO } from '../../socket/socket.init'
 import mongoose from 'mongoose'
 import { Message } from './messages.model'
 import ApiError from '../../errors/ApiError'
@@ -39,6 +39,16 @@ const createMessages = async (payload: TMessages) => {
   const result = await Message.create(payload)
   if (!result) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Message creation failed')
+  }
+
+  // getIO() instead of importing `io` from server.ts: that import pulled the
+  // whole server entry point (DB connect, listen, cron) into anything that
+  // loaded the routes.
+  let io: ReturnType<typeof getIO> | null = null
+  try {
+    io = getIO()
+  } catch {
+    io = null
   }
 
   if (io) {

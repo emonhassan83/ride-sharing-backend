@@ -65,7 +65,7 @@ const SOLO_LAST_CALL_HOURS = 0.25;
  * few minutes ahead (e.g. booked 12:35 for 13:45) had a 10-minute window or
  * none at all, and stayed a lone split ride until the no-driver job killed it.
  */
-const isSoloFallbackDue = (
+export const isSoloFallbackDue = (
   hoursUntilDeparture: number,
   hoursSinceCreated: number,
   releaseHours: number,
@@ -74,6 +74,16 @@ const isSoloFallbackDue = (
   hoursUntilDeparture <= releaseHours &&
   (hoursSinceCreated >= releaseHours ||
     hoursUntilDeparture <= SOLO_LAST_CALL_HOURS);
+
+/** Hours this rider has been searching: from their own request, not the ride's creation. */
+export const hoursSinceSearchStarted = (
+  passenger: { createdAt?: Date | string | null },
+  ride: { createdAt?: Date | string | null },
+  now: Date,
+): number => {
+  const startedAt = passenger?.createdAt ?? ride?.createdAt ?? now;
+  return Math.max(0, (now.getTime() - new Date(startedAt).getTime()) / 3600000);
+};
 const stripe = new Stripe(config.pay?.secretKey as string, {
   apiVersion: '2026-06-24.dahlia',
   typescript: true,
@@ -656,13 +666,9 @@ const releaseLoneSplitRidesToSolo = async (releaseHours: number) => {
       );
       const hoursUntilDeparture =
         (departureDateTime.getTime() - now.getTime()) / 3600000;
-      const hoursSinceCreated =
-        (now.getTime() - new Date((ride as any).createdAt || now).getTime()) /
-        3600000;
 
-      // Same rule as the backlog Solo fallback (SPLIT-015 minimum search,
-      // with a last-call conversion for late bookings).
-      if (!isSoloFallbackDue(hoursUntilDeparture, hoursSinceCreated, releaseHours)) {
+      // Cheap pre-filter; the full rule needs the lone rider (below).
+      if (hoursUntilDeparture <= 0 || hoursUntilDeparture > releaseHours) {
         continue;
       }
 
@@ -694,6 +700,19 @@ const releaseLoneSplitRidesToSolo = async (releaseHours: number) => {
           ).includes(lone.paymentStatus)
         ) {
           continue; // unpaid requests are not being matched at all
+        }
+
+        // Issue 15: the search time is the RIDER's, not the ride's. A rider left
+        // alone on an older ride (partner cancelled) used to inherit the ride's
+        // createdAt and was converted minutes after booking.
+        if (
+          !isSoloFallbackDue(
+            hoursUntilDeparture,
+            hoursSinceSearchStarted(lone, ride, now),
+            releaseHours,
+          )
+        ) {
+          continue;
         }
 
         const booking = await Booking.findOne({

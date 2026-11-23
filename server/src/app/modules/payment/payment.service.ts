@@ -1407,10 +1407,36 @@ const refundPayment = async (payload: { intendId: string; amount: number }) => {
   }
 };
 
+/**
+ * After a failed capture: has the rider's money actually been taken?
+ *  - 'captured'      Stripe intent succeeded, or the payment is already paid.
+ *  - 'not_captured'  the card hold is still uncaptured / capture never happened.
+ *  - 'unknown'       could not tell (e.g. Stripe unreachable); callers must be safe.
+ * Used by driver accept (issue 8) to release a claim only when no money moved.
+ */
+const getBookingCaptureState = async (
+  bookingId: string,
+): Promise<'captured' | 'not_captured' | 'unknown'> => {
+  try {
+    const payment = await Payment.findOne({ booking: bookingId })
+      .sort({ createdAt: -1 })
+      .lean();
+    if (!payment) return 'not_captured';
+    if (payment.status === PAYMENT_STATUS.paid || payment.isPaid) return 'captured';
+    if (!payment.paymentIntentId) return 'not_captured';
+
+    const intent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
+    return intent.status === 'succeeded' ? 'captured' : 'not_captured';
+  } catch {
+    return 'unknown';
+  }
+};
+
 export const PaymentService = {
   createPaymentIntent,
   confirmPayment,
   captureAuthorizedBookingPayment,
+  getBookingCaptureState,
   cancelAuthorizedBookingPayment,
   payWithWallet,
   getAllPaymentsFromDB,

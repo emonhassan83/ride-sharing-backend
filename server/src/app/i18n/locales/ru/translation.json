@@ -325,7 +325,7 @@
     "No default vehicle set. Please set a default vehicle before going online.": "Автомобиль по умолчанию не выбран. Выберите его перед выходом на линию.",
     "No driver assigned to this ride": "На эту поездку не назначен водитель",
     "No drivers available within 10 km for the selected date and time.": "В радиусе 10 км нет доступных водителей на выбранные дату и время.",
-    "No matching split ride found yet. Complete payment; we will keep matching peers until the 1h Solo fallback.": "Подходящая совместная поездка пока не найдена. Завершите оплату, и мы продолжим поиск попутчиков.",
+    "No matching split ride found yet. Complete payment and we will keep looking for a ride partner until 1 hour before pickup. If no partner is found by then, your ride continues as a Solo ride.": "Подходящая совместная поездка пока не найдена. Завершите оплату, и мы продолжим искать попутчика до момента за 1 час до посадки. Если к тому времени попутчик не найдётся, поездка продолжится как индивидуальная (Solo).",
     "No matching split ride was found. Booking has been cancelled.": "Подходящая совместная поездка не найдена. Бронирование отменено.",
     "No matching split ride was found. Your booking has been cancelled.": "Подходящая совместная поездка не найдена. Ваше бронирование отменено.",
     "No messages found for this chat": "Сообщений в этом чате не найдено",
@@ -607,7 +607,15 @@
     "Drivers Notified": "Водители уведомлены",
     "Searching for Drivers": "Поиск водителей",
     "We are still looking for a nearby driver.": "Мы продолжаем искать водителя поблизости.",
-    "Ride request created. Complete payment to notify nearby drivers.": "Запрос на поездку создан. Завершите оплату, чтобы уведомить водителей поблизости."
+    "Ride request created. Complete payment to notify nearby drivers.": "Запрос на поездку создан. Завершите оплату, чтобы уведомить водителей поблизости.",
+    "Please enter a valid email address.": "Введите корректный адрес электронной почты.",
+    "You are offline. Go online to accept rides.": "Вы не в сети. Выйдите на линию, чтобы принимать поездки.",
+    "Your session has ended. Please log in again.": "Ваш сеанс завершён. Пожалуйста, войдите снова.",
+    "Driver On The Way": "Водитель в пути",
+    "Driver has started the trip and is heading to the pickup location.": "Водитель начал поездку и направляется к месту посадки.",
+    "Payment Needs Attention": "Требуется внимание к оплате",
+    "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.": "Водитель попытался принять вашу поездку, но оплату не удалось завершить. Проверьте способ оплаты.",
+    "Trip already started": "Поездка уже началась"
   },
   "patterns": {
     "dropoff_fare": "Итоговая стоимость: €{{totalFare}} (Базовая: €{{baseFare}} + Ожидание: €{{waitingCharge}})",
@@ -651,6 +659,19 @@
     "refund_status_updated": "Статус вашего запроса на возврат средств обновлён на «{{status}}».",
     "refund_initiated_by": "Пользователь {{name}} создал запрос на возврат средств.",
     "drivers_notified_count": "Мы ищем водителя. Уведомлено водителей поблизости: {{count}}.",
-    "solo_drivers_notified_count": "Попутчики не найдены. Ваша поездка передана как индивидуальная. Уведомлено водителей поблизости: {{count}}."
+    "solo_drivers_notified_count": "Попутчики не найдены. Ваша поездка передана как индивидуальная. Уведомлено водителей поблизости: {{count}}.",
+    "validation_required": "Поле «{{field}}» обязательно для заполнения.",
+    "validation_invalid_value": "Поле «{{field}}» содержит недопустимое значение.",
+    "validation_one_of": "Поле «{{field}}» должно быть одним из: {{values}}.",
+    "validation_invalid_format": "Поле «{{field}}» имеет неверный формат.",
+    "validation_min_chars": "Поле «{{field}}» должно содержать не менее {{min}} символов.",
+    "validation_min_items": "Поле «{{field}}» должно содержать не менее {{min}} элементов.",
+    "validation_min_value": "Значение поля «{{field}}» должно быть не меньше {{min}}.",
+    "validation_max_chars": "Поле «{{field}}» должно содержать не более {{max}} символов.",
+    "validation_max_items": "Поле «{{field}}» должно содержать не более {{max}} элементов.",
+    "validation_max_value": "Значение поля «{{field}}» должно быть не больше {{max}}.",
+    "validation_greater_than": "Значение поля «{{field}}» должно быть больше {{min}}.",
+    "validation_less_than": "Значение поля «{{field}}» должно быть меньше {{max}}.",
+    "validation_unexpected_field": "Неожиданное поле: {{field}}."
   }
 }

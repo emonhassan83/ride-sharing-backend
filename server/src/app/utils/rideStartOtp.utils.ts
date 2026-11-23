@@ -17,6 +17,8 @@ import { modeType } from '../modules/notification/notification.interface';
 import { getIO } from '../socket/socket.init';
 
 const RIDE_START_OTP_TTL_SECONDS = 10 * 60; // 10 minutes
+const OTP_REUSE_MIN_REMAINING_SECONDS = 60;
+const OTP_RESEND_COOLDOWN_SECONDS = 60;
 const RIDE_START_VERIFIED_TTL_SECONDS = 2 * 60 * 60; // 2 hours
 
 export const getRideStartOtpKey = (rideId: string, passengerId: string) =>
@@ -128,21 +130,40 @@ export const sendRideStartOtp = async (params: {
   for (const passenger of passengers) {
     const pid = passenger._id.toString();
     const uid = passenger.userId.toString();
-    // Guaranteed 6-digit OTP
-    const otp = String(generateOtp()).padStart(6, '0');
-
-    await Promise.all([
-      redis.setex(
-        getRideStartOtpKey(rideId, pid),
-        RIDE_START_OTP_TTL_SECONDS,
-        otp,
-      ),
-      redis.setex(
-        getRideStartOtpFallbackKey(rideId),
-        RIDE_START_OTP_TTL_SECONDS,
-        otp,
-      ),
+    // Issue 9: every pickup attempt / resend used to create a NEW code and send a
+    // new push + SMS. Re-use the current code while it still has more than
+    // OTP_REUSE_MIN_REMAINING_SECONDS left; only then issue a fresh one.
+    const otpKey = getRideStartOtpKey(rideId, pid);
+    const [existingOtp, existingTtl] = await Promise.all([
+      redis.get(otpKey),
+      redis.ttl(otpKey),
     ]);
+    const reuse =
+      !!existingOtp && Number(existingTtl) > OTP_REUSE_MIN_REMAINING_SECONDS;
+    // Guaranteed 6-digit OTP
+    const otp = reuse ? String(existingOtp) : String(generateOtp()).padStart(6, '0');
+    const expiresInSeconds = reuse ? Number(existingTtl) : RIDE_START_OTP_TTL_SECONDS;
+
+    if (!reuse) {
+      await Promise.all([
+        redis.setex(otpKey, RIDE_START_OTP_TTL_SECONDS, otp),
+        redis.setex(
+          getRideStartOtpFallbackKey(rideId),
+          RIDE_START_OTP_TTL_SECONDS,
+          otp,
+        ),
+      ]);
+    }
+
+    // Same code is pushed / texted at most once per OTP_RESEND_COOLDOWN_SECONDS.
+    const smsAllowed =
+      (await redis.set(
+        `ride-start-otp:sms:${pid}:${otp}`,
+        '1',
+        'EX',
+        OTP_RESEND_COOLDOWN_SECONDS,
+        'NX',
+      )) === 'OK';
 
     const riderUser = await User.findById(uid)
       .select('name email phone fcmToken')
@@ -154,7 +175,7 @@ export const sendRideStartOtp = async (params: {
         rideId: String(ride._id),
         passengerId: pid,
         otp,
-        expiresInSeconds: RIDE_START_OTP_TTL_SECONDS,
+        expiresInSeconds,
         message: `Your ride start OTP is ${otp}. Share this code with your driver when boarding.`,
       };
       io.to(`user:${uid}`).emit('ride:start-otp', otpSocketPayload);
@@ -164,7 +185,7 @@ export const sendRideStartOtp = async (params: {
     }
 
     // 2. Direct Phone SMS via Twilio (same pattern as sendOtpViaDirectPhone)
-    if (riderUser?.phone) {
+    if (riderUser?.phone && smsAllowed) {
       const isDevelopment = config.environment !== 'production';
       if (isDevelopment) {
         console.log(`🔑 [RIDE START OTP] Passenger Phone: ${riderUser.phone}`);
@@ -195,6 +216,8 @@ export const sendRideStartOtp = async (params: {
       description: `Your 6-digit verification code to start the ride is ${otp}. Share this OTP with your driver when boarding.`,
       reference: String(ride._id),
       modelType: modeType.Ride,
+      dedupeKey: `ride-start-otp:${pid}:${otp}`,
+      dedupeTtlSeconds: OTP_RESEND_COOLDOWN_SECONDS,
       data: {
         type: 'RIDE_START_OTP',
         rideId: String(ride._id),
@@ -206,7 +229,7 @@ export const sendRideStartOtp = async (params: {
     });
 
     // 4. Email notification to rider
-    if (riderUser?.email) {
+    if (riderUser?.email && smsAllowed) {
       try {
         const expiresAt = moment().add(10, 'minute');
         const emailQueue = await getEmailQueueInstance();
@@ -236,7 +259,7 @@ export const sendRideStartOtp = async (params: {
       passengerId: pid,
       userId: uid,
       phone: riderUser?.phone || '',
-      expiresInSeconds: RIDE_START_OTP_TTL_SECONDS,
+      expiresInSeconds,
       ...(config.environment !== 'production' ? { otp } : {}),
     });
   }

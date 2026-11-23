@@ -40,7 +40,8 @@ export const joinChatHandler = eventHandler(
 
       // Join Socket.IO chat room and mark active in Redis (chat:active:<chatId>:<userId>)
       socket.join(`chat:${chatId}`);
-      await setUserActiveInChat(chatId, userId);
+      // Bound to this socket: if it dies, the flag stops suppressing pushes.
+      await setUserActiveInChat(chatId, userId, socket.id);
 
       return callbackFn(callback, {
         success: true,

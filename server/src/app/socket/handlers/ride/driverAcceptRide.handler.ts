@@ -198,9 +198,14 @@ export const driverAcceptRideHandler = eventHandler<any>(
     }
 
     if (!driverUserCheck.isOnline) {
-      // Driver accepted ride invitation while offline: automatically activate them online
-      await User.findByIdAndUpdate(driverId, { $set: { isOnline: true } });
-      await redis.sadd('users:online', driverId);
+      // Issue 58: this used to switch the driver online silently, while the
+      // app still showed "offline". Offline drivers must go online first
+      // (driver:go-online also validates their vehicle and location).
+      socket.emit('driver:status', { isOnline: false });
+      return callback?.({
+        success: false,
+        message: 'You are offline. Go online to accept rides.',
+      });
     }
 
     let driverDetails = await redis.hgetall(`driver:${driverId}:details`);
@@ -361,10 +366,6 @@ export const driverAcceptRideHandler = eventHandler<any>(
         });
       }
 
-      if (!alreadyClaimedByMe) {
-        await notifyOtherNotifiedDriversRideTaken(ride, driverId, io, passenger._id.toString());
-      }
-
       // Do NOT save booking before capture — that + long Stripe txn caused Mongo write conflicts.
       // Capture links driver, marks paid/accepted, increments seats, creates chat.
       try {
@@ -379,17 +380,57 @@ export const driverAcceptRideHandler = eventHandler<any>(
           },
         );
       } catch (captureErr: any) {
-        // Keep claim for same-driver retry; surface real payment error (not "another driver").
         console.error(
           `Private accept capture failed | rideId=${rideId} driverId=${driverId}:`,
           captureErr?.message || captureErr,
         );
+
+        // Issue 8: the ride used to stay "accepted" by this driver while the rider
+        // got nothing, and the no-driver job no longer looked at it. If no money
+        // moved, give the ride back to the search and tell the rider. If money
+        // WAS captured (or we can't tell), keep the claim: a retry by the same
+        // driver completes safely because Stripe reports the intent as succeeded.
+        if (!alreadyClaimedByMe) {
+          const captureState = await PaymentService.getBookingCaptureState(
+            booking._id.toString(),
+          );
+          if (captureState === 'not_captured') {
+            await Ride.findOneAndUpdate(
+              { _id: rideId, driverId, status: RIDE_STATUS.accepted },
+              {
+                $set: { status: RIDE_STATUS.pending },
+                $unset: { driverId: '', vehicleId: '' },
+              },
+            );
+            await notifyUserPush({
+              userId: passenger.userId.toString(),
+              message: 'Payment Needs Attention',
+              description:
+                'A driver tried to accept your ride but the payment could not be completed. Please check your payment method.',
+              reference: passenger._id.toString(),
+              modelType: modeType.Passenger,
+              dedupeKey: `accept-capture-failed:${passenger._id.toString()}`,
+              dedupeTtlSeconds: 30 * 60,
+              data: {
+                type: 'PAYMENT_ACTION_REQUIRED',
+                rideId: String(rideId),
+                passengerId: passenger._id.toString(),
+              },
+            }).catch(() => {});
+          }
+        }
+
         return callback?.({
           success: false,
           message:
             captureErr?.message ||
             'Payment capture failed. Please try accepting again.',
         });
+      }
+
+      // Only now is the ride really taken: tell the other drivers.
+      if (!alreadyClaimedByMe) {
+        await notifyOtherNotifiedDriversRideTaken(ride, driverId, io, passenger._id.toString());
       }
 
       // Refresh booking after capture for response payload
@@ -425,24 +466,8 @@ export const driverAcceptRideHandler = eventHandler<any>(
       passenger.status = PASSENGER_STATUS.confirmed;
       await passenger.save();
 
-      if (firstAccept) {
-        await notifyUserPush({
-          userId: passenger.userId.toString(),
-          message: 'Driver Accepted Your Ride!',
-          description: `Your driver is on the way. ETA: ${estimatedArrival} minutes.`,
-          reference: passenger._id.toString(),
-          modelType: modeType.Passenger,
-          dedupeKey: `ride-accepted:${passenger._id.toString()}`,
-          data: {
-            type: 'RIDE_ACCEPTED',
-            rideId: String(rideId),
-            passengerId: passenger._id.toString(),
-          },
-        });
-      }
-
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
-await redis.hset(`ride:active:${rideId}`, {
+      await redis.hset(`ride:active:${rideId}`, {
         driverId,
         status: RIDE_STATUS.accepted,
         startedAt: Date.now().toString(),
@@ -478,6 +503,24 @@ await redis.hset(`ride:active:${rideId}`, {
       console.log(
         `Private accepted | rideId: ${rideId} | eta: ${estimatedArrival}min`
       );
+
+      // Issue 8: the push used to run BEFORE the socket event (and the event waited
+      // for the FCM round trip). The live screen is updated first now.
+      if (firstAccept) {
+        await notifyUserPush({
+          userId: passenger.userId.toString(),
+          message: 'Driver Accepted Your Ride!',
+          description: `Your driver is on the way. ETA: ${estimatedArrival} minutes.`,
+          reference: passenger._id.toString(),
+          modelType: modeType.Passenger,
+          dedupeKey: `ride-accepted:${passenger._id.toString()}`,
+          data: {
+            type: 'RIDE_ACCEPTED',
+            rideId: String(rideId),
+            passengerId: passenger._id.toString(),
+          },
+        });
+      }
 
       return callback?.({
         success: true,
@@ -629,22 +672,6 @@ await redis.hset(`ride:active:${rideId}`, {
       passenger.status = PASSENGER_STATUS.confirmed;
       await passenger.save();
 
-      if (firstAccept) {
-        await notifyUserPush({
-          userId: passenger.userId.toString(),
-          message: 'Driver Accepted Your Split Ride!',
-          description: `Your booking is confirmed. ETA: ${estimatedArrival} minutes.`,
-          reference: passenger._id.toString(),
-          modelType: modeType.Passenger,
-          dedupeKey: `ride-accepted:${passenger._id.toString()}`,
-          data: {
-            type: 'RIDE_ACCEPTED',
-            rideId: String(rideId),
-            passengerId: passenger._id.toString(),
-          },
-        });
-      }
-
       await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
       await recalculateSplitFares(rideId, 'passenger_joined', io);
 
@@ -696,6 +723,23 @@ await redis.hset(`ride:active:${rideId}`, {
       console.log(
         `Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
       );
+
+      // Socket event first, then the push (issue 8).
+      if (firstAccept) {
+        await notifyUserPush({
+          userId: passenger.userId.toString(),
+          message: 'Driver Accepted Your Split Ride!',
+          description: `Your booking is confirmed. ETA: ${estimatedArrival} minutes.`,
+          reference: passenger._id.toString(),
+          modelType: modeType.Passenger,
+          dedupeKey: `ride-accepted:${passenger._id.toString()}`,
+          data: {
+            type: 'RIDE_ACCEPTED',
+            rideId: String(rideId),
+            passengerId: passenger._id.toString(),
+          },
+        });
+      }
 
       return callback?.({
         success: true,
