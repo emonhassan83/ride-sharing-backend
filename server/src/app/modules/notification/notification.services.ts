@@ -23,8 +23,11 @@ const RIDE_META_MODEL_TYPES = new Set<string>([
   modeType.Booking,
 ]);
 
+// `data` is a Mongoose Map. Plain toObject() keeps it a JS Map, which
+// JSON.stringify turns into `{}`, so GET /notification returned `data: {}`
+// even though the row had type/screen/chatId. flattenMaps makes it an object.
 const toPlain = (doc: any) =>
-  doc?.toObject ? doc.toObject() : { ...doc };
+  doc?.toObject ? doc.toObject({ flattenMaps: true }) : { ...doc };
 
 const resolveRideIdForNotification = async (
   modelType?: string,

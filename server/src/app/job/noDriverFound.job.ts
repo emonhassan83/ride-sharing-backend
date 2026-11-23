@@ -215,7 +215,13 @@ export const checkNoDriverFound = async () => {
 
     const isFinalContinuousWindow = hoursUntilDeparture <= finalRematchHours;
     const alreadyInitialRenotified = !!(ride as any).reNotifiedAt;
-    if (!isFinalContinuousWindow && alreadyInitialRenotified) continue;
+    // Between the first re-notify and the final window the ride used to get
+    // nothing at all, so a driver who finished an overlapping trip (or came
+    // online) was never offered it until 1h before pickup. The sweep now runs
+    // every renotify interval and reaches only drivers who never had the ride
+    // (notifiedDriverIds dedupe); the rider hears about it only when a new
+    // driver was actually reached.
+    const silentSweep = !isFinalContinuousWindow && alreadyInitialRenotified;
 
     const throttleKey = `ride:matching:renotify:${ride._id}`;
     const recentlyChecked = await redis.get(throttleKey);
@@ -297,6 +303,8 @@ export const checkNoDriverFound = async () => {
     });
 
     await redis.set(throttleKey, now.getTime().toString(), 'EX', notifyThrottleSeconds);
+    if (silentSweep && notified === 0) continue;
+
     await redis.hset(`ride:request:${ride._id}`, {
       bookingId: booking._id.toString(),
       notifiedCount: notified.toString(),

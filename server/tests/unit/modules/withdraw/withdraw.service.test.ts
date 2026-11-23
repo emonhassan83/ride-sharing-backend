@@ -757,15 +757,18 @@ describe('WithdrawService.updateWithdrawFromDB (admin approve / cancel)', () => 
       expect(session.commitTransaction).toHaveBeenCalled();
     });
 
-    it('DESIGN NOTE: a failing push notification rolls back the whole approval (reported as 500)', async () => {
+    // Was a DESIGN NOTE: a failing push rolled back the whole approval (500). The push now runs
+    // after the commit and its failure is only logged.
+    it('a failing push notification does NOT roll back the approval', async () => {
       arrange(pending());
       vi.mocked(User.findById).mockReturnValue(mockQuery({ _id: userId, fcmToken: 't' }) as any);
       vi.mocked(sendWithdrawNotify).mockRejectedValue(new Error('FCM unavailable'));
 
-      await expect(
-        WithdrawService.updateWithdrawFromDB('w1', { status: 'completed' }),
-      ).rejects.toMatchObject({ code: 500, message: 'Failed to update withdraw status' });
-      expectRolledBack();
+      const result = await WithdrawService.updateWithdrawFromDB('w1', { status: 'completed' });
+      expect(result.status).toBe('completed');
+      expect(session.commitTransaction).toHaveBeenCalledTimes(1);
+      expect(session.abortTransaction).not.toHaveBeenCalled();
+      expect(sendWithdrawNotify).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -393,9 +393,15 @@ const updateWithdrawFromDB = async (
     await withdraw.save({ session })
 
     const user = await User.findById(withdraw.user).session(session)
-    if (user) await sendWithdrawNotify(status, withdraw, user)
 
     await session.commitTransaction()
+
+    // After the commit, so an FCM error cannot undo the payout decision.
+    if (user) {
+      await sendWithdrawNotify(status, withdraw, user).catch((error) =>
+        console.error(`withdraw ${id} notify failed:`, error?.message || error),
+      )
+    }
     return withdraw
   } catch (error) {
     await session.abortTransaction()

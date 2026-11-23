@@ -1,3 +1,20 @@
+Date/Session: 2026-11-23 (app team final list: busy rule, re-match, auto-cancel, timeouts, hold, KYC/earnings push, notification data)
+
+Completed Tasks:
+- Verified against the dev DB (local `.env` → Atlas `splitride`, Stripe test key), read-only: Melisa's hold `pi_3UetuwAiyUfiOQaF0yAvmO6p` was cancelled at 10:00:31Z. Today's busy case: SR-5767649458 (split 18:00) was booked while SR-1162540362 (private 17:30) was still accepted (60-min window in `hasDriverRideAtDateTime`). The 17:30 ride completed at 11:01Z, but the 18:00 ride had already used its single early re-notify, so nothing would run until 1h before pickup.
+- `noDriverFound.job`: between the first re-notify and the final window it now sweeps every `waitingReminderIntervals` (5 on dev) for drivers never notified. The rider is told only when `notified > 0`.
+- `GET /notification` returned `data: {}`: `toObject()` keeps the Mongoose Map as a JS Map. Now `toObject({ flattenMaps: true })`. The stored data was always correct.
+- KYC push: was `ACCOUNT_STATUS` (modelType User), only with an FCM token, sent inside the transaction (an FCM error rolled back the approval). Now `notifyUserPush` after the commit, `type: KYC_STATUS`, `screen: home`, `kycStatus`. Withdraw push (the only `screen: earnings`) gets the same treatment, plus `withdrawId`/`withdrawStatus`/`amount`.
+- Dev server facts: it runs ts-node-dev (dev mode, stack traces in responses). The B-14 build arrived about 09:00Z, but not `da5c980` (at 10:00Z it still cancelled SR-0552185702 "Only one passenger remaining").
+- Docs: `docs/APP_INTEGRATION_ROUND4.md` "Final list (fourth message)" plus section 4. Tests: `tests/integration/appTeamRound5.int.test.ts` (6 of 8 fail on the old code). Updated the unit tests for the job and withdraw.
+
+Next Steps:
+- `noDriverFound.job` falls back to `matchingLastNotifyHours ?? 24` when the setting is missing, while the settings default is 1. Dev has it set; align it when the job tests are reworked.
+- Timeouts: need server logs (endpoint + timestamp). Move dev off ts-node-dev and use `docker-compose.prod.yml` for prod.
+- Redeploy dev/prod from `main`.
+
+---
+
 Date/Session: 2026-11-23 (app team: split cancel cascade, one card per ride, totalSeats 0)
 
 Completed Tasks:

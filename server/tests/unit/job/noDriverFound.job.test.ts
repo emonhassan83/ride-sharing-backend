@@ -181,8 +181,46 @@ describe('checkNoDriverFound - re-notify drivers before pickup', () => {
     expect(await fakeRedis.hget(`ride:request:${rideId}`, 'matchingStatus')).toBe('continuous_renotified');
   });
 
-  it('initial window: a ride already re-notified once is skipped until the final window', async () => {
+  // App team: a driver whose 17:30 trip blocked an 18:00 request finished the trip, but the 18:00
+  // ride was already past its single early re-notify and nothing reached the driver until 1h
+  // before pickup. Between the windows the job now sweeps for NEW drivers every interval.
+  it('between windows: a ride already re-notified once still sweeps for drivers who never had it', async () => {
+    queueRideFinds([withDeparture('2026-03-21', '04:00', { reNotifiedAt: new Date('2026-03-19T00:00:00Z') })]); // +26h
+    vi.mocked(Passenger.findOne).mockReturnValue(mockQuery(makePassenger()) as any);
+    vi.mocked(Booking.findOne).mockReturnValue(mockQuery(paidBooking()) as any);
+    vi.mocked(notifyNearbyDrivers).mockResolvedValue(1);
+    vi.mocked(Passenger.find).mockReturnValue(mockQuery([{ _id: passengerId, userId: riderId }]) as any);
+    vi.mocked(notifyRiderDriversNotified).mockResolvedValue(3);
+
+    await checkNoDriverFound();
+
+    expect(notifyNearbyDrivers).toHaveBeenCalledTimes(1);
+    // reNotifiedAt keeps the FIRST re-notify time
+    expect(Ride.findByIdAndUpdate).toHaveBeenCalledWith(rideId, { reNotifiedAt: new Date('2026-03-19T00:00:00Z') });
+    expect(await fakeRedis.ttl(`ride:matching:renotify:${rideId}`)).toBe(600);
+    expect(notifyRiderDriversNotified).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: riderId, newlyNotified: 1, variant: 'rematch', rematchStage: 'initial' }),
+    );
+  });
+
+  it('between windows: a sweep that reaches no new driver says nothing to the rider', async () => {
+    queueRideFinds([withDeparture('2026-03-21', '04:00', { reNotifiedAt: new Date('2026-03-19T00:00:00Z') })]); // +26h
+    vi.mocked(Passenger.findOne).mockReturnValue(mockQuery(makePassenger()) as any);
+    vi.mocked(Booking.findOne).mockReturnValue(mockQuery(paidBooking()) as any);
+    vi.mocked(notifyNearbyDrivers).mockResolvedValue(0);
+
+    await checkNoDriverFound();
+
+    expect(notifyNearbyDrivers).toHaveBeenCalledTimes(1);
+    expect(await fakeRedis.ttl(`ride:matching:renotify:${rideId}`)).toBe(600); // next sweep after the interval
+    expect(notifyRiderDriversNotified).not.toHaveBeenCalled();
+    expect(io.payloadTo(`user:${riderId}`, 'ride:re-matching')).toBeUndefined();
+    expect(await fakeRedis.hget(`ride:request:${rideId}`, 'matchingStatus')).toBe('x'); // unchanged
+  });
+
+  it('between windows: the sweep respects the renotify throttle', async () => {
     queueRideFinds([withDeparture('2026-03-21', '04:00', { reNotifiedAt: new Date(NOW) })]); // +26h
+    await fakeRedis.set(`ride:matching:renotify:${rideId}`, '1', 'EX', 600);
     await checkNoDriverFound();
     expect(notifyNearbyDrivers).not.toHaveBeenCalled();
     expect(Passenger.findOne).not.toHaveBeenCalled();

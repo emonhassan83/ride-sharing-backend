@@ -106,7 +106,11 @@ Every push (`data`) and every row of `GET /notification` (`type` and `data`) now
 |---|---|
 | `type` | `RIDE_ACCEPTED`, `NEW_RIDE_REQUEST`, `CHAT_MESSAGE`, `REFUND_ISSUED`, `DRIVER_EN_ROUTE`, … |
 | `screen` | `ride_details`, `ride_request`, `chat`, `wallet`, `earnings`, `home` |
-| ids | `rideId`, `bookingId`, `passengerId`, `chatId` where relevant |
+| ids | `rideId`, `bookingId`, `passengerId`, `chatId`, `withdrawId` where relevant |
+
+KYC decision: `type: KYC_STATUS`, `screen: home`, `kycStatus: verified | rejected`. Payout request
+completed or cancelled by an admin: `type: WITHDRAW_STATUS`, `screen: earnings`, `withdrawId`,
+`withdrawStatus`, `amount`. These are the only two pushes with `home` / `earnings`.
 
 Routing rule: open `screen` with the ids; if `screen` is unknown to the app, fall back to `type`,
 then to the notification list. All values in `data` are strings (an FCM requirement).
@@ -331,11 +335,11 @@ Notified drivers get `ride:request-updated` with `reason: "passenger_left"` (new
 fare) and `ride:cancelled-by-rider` with `rideCancelled: false`. In that event, `remainingSeats` is
 `null` before a driver accepts (the vehicle is not known yet). It used to be a negative number.
 
-The €20 hold for Melisa (SR-2311425530): on the code in `main`, the old path did release the remaining
-rider's card hold when it cancelled her booking, and it sent her `ride:cancelled` plus a push. If she got
-nothing, the server was probably running an older build (see "Is this deployed?"). Please check that
-payment in Stripe: an uncaptured hold that was never released also expires on its own after about 7 days.
-With the fix, her booking is no longer cancelled at all.
+The €20 hold for Melisa (booking SR-2311425530, ride SR-0552185702): checked in Stripe and in the
+dev database. The hold `pi_3UetuwAiyUfiOQaF0yAvmO6p` was **cancelled (released) at 10:00:31 UTC**,
+3 seconds after the other rider left, with nothing captured. Her booking is `cancelled_authorization`
+and a "Ride Cancelled" notification was saved for her at 10:00:34 UTC. With the fix, her booking is
+no longer cancelled at all.
 
 **One card or one card per rider? Does Accept take the whole ride?** One card per ride (`rideId`),
 and one Accept takes the whole ride.
@@ -376,3 +380,78 @@ and one Accept takes the whole ride.
 the backend stored 0 and sent it as is. It now sends each notified driver their own vehicle's seats
 (4 if unknown), and the accepted vehicle's seats after acceptance. The same rule applies to
 `totalSeats` in the ride-requests list.
+
+### Final list (fourth message)
+
+Times below are Cyprus time (ride times are always Cyprus time), UTC+2 in winter.
+
+**When is a driver "busy"?** A driver is not offered a ride if, on the same date, they have a ride
+that is not cancelled, rejected or completed, and the two departure times are less than **60 minutes**
+apart (either direction). The 60 minutes is a fixed trip-length estimate. An exception: two **split**
+rides are allowed if the driver's split ride still has enough free seats. Today's case: SR-5767649458
+(split, 18:00) was booked at 12:50. The driver's private ride SR-1162540362 at 17:30 was still
+`accepted` then, so 18:00 was inside its 17:30–18:30 window and the driver was skipped (`notifiedDrivers: 0`).
+As soon as that ride is `completed` (or cancelled), the driver is free again.
+
+**How often does re-matching run?** The job checks every minute. For each pending ride:
+
+1. When the ride is booked: drivers are notified at once.
+2. About 1 minute later: one re-notify.
+3. **New:** from then until 1 hour before pickup, a sweep every `waitingReminderIntervals`
+   minutes (admin setting; **5 on dev** today, 10 by default) reaches drivers who have **never**
+   had this ride (a driver who became free or came online). The rider is told only if a new driver
+   was reached.
+4. In the last hour before pickup (`matchingLastNotifyHours`, 1): the same interval, with the
+   rider kept updated.
+
+Before step 3 existed, nothing ran between step 2 and the last hour. That is why the driver who
+finished the 17:30 trip at 13:01 never got the 18:00 ride: the next run would have been at 17:00.
+Now they get it within one interval (5 minutes on dev). A driver gets each ride only once; a declined ride never comes back.
+
+**Auto-cancel (B-12 / B-13): when?** At pickup time. The job runs every minute, so it happens
+within about 1 minute after the departure time: the ride (or an un-accepted rider on an accepted
+split ride) is cancelled, the card hold is released or the payment refunded to the wallet, and the
+rider gets `ride:no-driver-found` plus a push. **Testing it quickly on dev:** an admin lowers the
+minimum booking lead time, for example `POST /api/v1/setting/generals` (admin token) with
+`{ "privateRideMinBookingHours": 0.1 }` (6 minutes; `splitRideMinBookingHours` for split). Book a ride
+7–8 minutes ahead and don't accept it; it is cancelled about 1 minute after its time. Set the value
+back to 1 afterwards, because it applies to everyone. Lowering `waitingReminderIntervals` (5 on
+dev now, for example to 2) speeds up re-match testing the same way.
+
+**Occasional 30-second timeouts.** We can't see the server logs from here. Two facts:
+
+- The dev server (72.244.153.29:8080) runs in development mode: `ts-node-dev --respawn --poll`
+  from the TypeScript source, with stack traces in error responses. That mode is not meant for load
+  and can pause or restart. Production must use `docker-compose.prod.yml` (compiled build,
+  `NODE_ENV=production`).
+- A 10-minute probe from Bangladesh (`GET /setting/generals`, one request every 2 s, about
+  21:00 Dhaka time): 185 requests, all `200`, median 1.14 s, p95 1.17 s, slowest 2.77 s, none
+  over 5 s. About 0.5 s of that is network time. The timeout did not reproduce under light
+  load, so it is probably tied to a moment when the server was busy or restarting.
+
+Please send the exact endpoint and the time (with seconds) of each timeout, so the matching server
+log lines can be pulled.
+
+**Melisa's €20 hold (SR-2311425530):** released, see "Split rides (third message)" above.
+
+**When does production get `main`?** That's the backend team's decision, so no date is given here.
+Today the dev server picked up a newer build at about 11:00 Cyprus time (notifications have `type`
+from then on). It does **not** have the split fixes from the third message: at 12:00 it still
+cancelled SR-0552185702 with "Only one passenger remaining". Probe for the new build: a split ride
+where one of two riders cancels before acceptance stays `pending`.
+
+**KYC push:** `type: KYC_STATUS`, `screen: home`, `kycStatus: verified | rejected`, title
+"KYC Verification Approved" / "KYC Verification Rejected". Before this fix it was sent as
+`ACCOUNT_STATUS`, only when the driver had an FCM token, and an FCM error could undo the admin's
+approval. Now the in-app row is always saved and the approval always stands.
+
+**Notification list had `data: {}`.** A backend bug: the routing data was stored correctly
+(checked in the database: the chat row has `type`, `screen` and `chatId`), but `GET /notification`
+serialised it as `{}`. Fixed: `GET /notification` and `GET /notification/:id` now return the same
+`data` as the push, so a chat row opens that conversation. Rows created before about 11:00 today
+have no `type` or `data` at all (older build).
+
+**`screen: earnings`: when?** Only when an admin marks a driver's payout (withdraw) request as
+**completed** or **cancelled** in the admin panel. Completing a trip credits the earning but sends
+no `earnings` push, so normal ride testing doesn't produce one. To test: driver requests a payout,
+admin completes or cancels it.

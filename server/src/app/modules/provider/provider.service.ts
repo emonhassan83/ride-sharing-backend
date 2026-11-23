@@ -179,17 +179,17 @@ const updateStatusIntoDB = async (
       );
     }
 
-    // Common FCM Notification
     const user = await User.findById(provider.userId).session(session);
-    if (user?.fcmToken) {
-      await sendKycStatusNotification(
-        updatedVerification,
-        user,
-        rejectionReason
-      );
-    }
 
     await session.commitTransaction();
+
+    // After the commit: a push failure must never roll back the KYC decision,
+    // and the in-app row is saved even when the driver has no FCM token.
+    if (user) {
+      await sendKycStatusNotification(updatedVerification, user, rejectionReason).catch(
+        (error) => console.error(`KYC notify failed for ${provider.userId}:`, error?.message || error),
+      );
+    }
 
     const emailQueue = await getEmailQueueInstance();
 
