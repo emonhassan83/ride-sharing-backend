@@ -94,7 +94,12 @@ export const buildStoredFareBreakdown = async (
 
   if (isSplitRide && storedSurchargeAmount > 0) {
     const { fareBeforeFees } = fareTotals;
-    totalFare = roundMoney(fareBeforeFees + storedSurchargeAmount);
+    // The stored per-rider total is what the rider was actually charged after recalculation.
+    const storedTotalFare = Number(passenger?.totalFare);
+    totalFare =
+      Number.isFinite(storedTotalFare) && storedTotalFare > 0
+        ? roundMoney(storedTotalFare)
+        : roundMoney(fareBeforeFees + storedSurchargeAmount);
     platformCommissionAmount = 0;
     vatAmount = fareTotals.vatAmount;
   } else if (!isSplitRide && (passenger?.totalFare || booking?.totalFare)) {

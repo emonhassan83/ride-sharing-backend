@@ -168,13 +168,13 @@ describe('addNotificationJob', () => {
     await expect(addNotificationJob(baseData)).rejects.toThrow('redis down');
   });
 
-  describe('KNOWN BUGS', () => {
+  describe('FIXED BUGS (regression tests)', () => {
     // BUG-REPORT UTIL-1 | low | server/src/app/queues/notification.queues.ts:57
     // jobId = `notif_${userId}_${Date.now()}`: two notifications for the same user created within
     // the same millisecond get the SAME BullMQ jobId, and BullMQ silently ignores the second add
     // (duplicate id) => one notification is lost without any error. Dead code today (no caller),
     // but any burst (e.g. Promise.all of two pushes) would trigger it. Fix: append a counter/uuid.
-    it.fails('BUG UTIL-1: two jobs for the same user in the same millisecond get distinct jobIds', async () => {
+    it('BUG UTIL-1: two jobs for the same user in the same millisecond get distinct jobIds', async () => {
       const { addNotificationJob } = await load();
 
       await Promise.all([

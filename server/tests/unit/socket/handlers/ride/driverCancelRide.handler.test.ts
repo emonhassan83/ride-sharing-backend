@@ -594,13 +594,13 @@ describe('driver:cancel-ride - SPLIT ride', () => {
   });
 });
 
-describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and currently fails by design)', () => {
+describe('FIXED BUGS (regression tests)', () => {
   // BUG-REPORT CANCEL-1 | high | driverCancelRide.handler.ts:88-99
   // The Refund document is created and the booking/payment are finalised BEFORE the wallet credit.
   // If refundToWallet fails the passenger stays active, so a retry re-runs the refund: a second
   // Refund document is created. Fix: guard on booking.bookingStatus (or a unique Refund key) and
   // finalise the booking only after the wallet credit succeeds.
-  it.fails('BUG CANCEL-1: retrying a driver cancel after a failed wallet credit must not create a second Refund', async () => {
+  it('BUG CANCEL-1: retrying a driver cancel after a failed wallet credit must not create a second Refund', async () => {
     const passenger = makePassenger();
     const { booking, payment } = paidBooking(passenger, 25.5, 20.4);
     wire(makeWorld(makeRide(), [passenger], [{ booking, payment }]));

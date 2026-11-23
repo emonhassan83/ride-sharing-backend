@@ -246,7 +246,9 @@ describe('checkNoShowPassengers - seats and ride lifecycle', () => {
     noShowsFound([makeNoShow({ requestedSeats })]);
     vi.mocked(Passenger.countDocuments).mockReturnValue(mockQuery(2) as any);
     await checkNoShowPassengers();
-    expect(Ride.findByIdAndUpdate).toHaveBeenCalledWith(rideId, { $inc: { bookedSeats: delta } });
+    expect(Ride.findByIdAndUpdate).toHaveBeenCalledWith(rideId, {
+      $inc: expect.objectContaining({ bookedSeats: delta }),
+    });
   });
 
   it('split ride: fares are recalculated for the remaining riders', async () => {
@@ -325,13 +327,13 @@ describe('checkNoShowPassengers - seats and ride lifecycle', () => {
   });
 });
 
-describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and currently fails by design)', () => {
+describe('FIXED BUGS (regression tests)', () => {
   // BUG-REPORT JOB-4 | medium | noShowPassengers.job.ts:39-49
   // The passenger is marked cancelled/no-show BEFORE the card hold is released. If the Stripe
   // release throws, the outer try/catch (line 169) only logs. The passenger is no longer
   // "driver_arrived", so the next run never retries: the hold is never released and the seat is
   // never freed. Fix: release the hold first (or only mark no-show after it succeeds) and retry.
-  it.fails('BUG JOB-4: a failed hold release must not leave the passenger marked as a no-show', async () => {
+  it('BUG JOB-4: a failed hold release must not leave the passenger marked as a no-show', async () => {
     noShowsFound([makeNoShow()]);
     vi.mocked(Booking.findOne).mockReturnValue(mockQuery(mockDoc({ _id: oidStr() })) as any);
     vi.mocked(PaymentService.cancelAuthorizedBookingPayment).mockRejectedValueOnce(new Error('Stripe down'));
@@ -348,7 +350,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // One outer try/catch wraps the whole batch, so a throw for one no-show skips every later no-show
   // in that run (they stay driver_arrived and are only picked up one cron cycle later). The failing
   // passenger itself is already marked and is never retried (see JOB-4). Fix: per-passenger try/catch.
-  it.fails('BUG JOB-5: one failing no-show must not stop the other no-shows in the batch', async () => {
+  it('BUG JOB-5: one failing no-show must not stop the other no-shows in the batch', async () => {
     const first = makeNoShow();
     const second = makeNoShow({ userId: oidStr() });
     noShowsFound([first, second]);
@@ -368,7 +370,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // bookedSeats hash and the ride's malePassengers/femalePassengers are not decremented, unlike
   // driverCancelRide and rideCancelAfterAccept. Seat counts then drift and a driver can look full.
   // Fix: mirror the cancel handlers' $inc and the driver's hincrby bookedSeats.
-  it.fails('BUG JOB-6: a no-show must also release the driver Redis seat and the gender counters', async () => {
+  it('BUG JOB-6: a no-show must also release the driver Redis seat and the gender counters', async () => {
     noShowsFound([makeNoShow({ malePassengers: 1 })]);
     vi.mocked(Passenger.countDocuments).mockReturnValue(mockQuery(2) as any);
 

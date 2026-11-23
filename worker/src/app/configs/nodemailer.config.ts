@@ -26,6 +26,8 @@ export const sendEmail = async (values: ISendEmail) => {
     logger.info('Mail sent successfully', info.accepted);
   } catch (error) {
     errorLogger.error('Email', error);
+    // Rethrow so the BullMQ job fails and is retried instead of silently losing the mail.
+    throw error;
   }
 };
 

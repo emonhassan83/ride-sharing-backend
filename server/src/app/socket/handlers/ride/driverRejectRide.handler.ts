@@ -22,6 +22,10 @@ export const driverRejectRideHandler = eventHandler<any>(
     if (!driverId || !rideId)
       return callback?.({ success: false, message: 'Missing required fields' });
 
+    // Only a driver socket may reject a ride; a rider must not be able to unset the driver.
+    if (socket.auth?.role !== 'provider')
+      return callback?.({ success: false, message: 'You are not authorized' });
+
     const ride = await Ride.findById(rideId);
     if (!ride || ride.status !== RIDE_STATUS.pending)
       return callback?.({

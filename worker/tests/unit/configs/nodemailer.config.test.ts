@@ -55,12 +55,12 @@ describe('sendEmail', () => {
     expect(logger.info).toHaveBeenCalledWith('Mail sent successfully', ['rider@example.com']);
   });
 
-  it('does not log success when sending failed, it records the error instead', async () => {
+  it('does not log success when sending failed: it records the error and rethrows it', async () => {
     const err = new Error('550 mailbox unavailable');
     sendMail.mockRejectedValue(err);
     const { sendEmail } = await load();
 
-    await sendEmail({ to: 'x@y.z', subject: 's', html: 'h' });
+    await expect(sendEmail({ to: 'x@y.z', subject: 's', html: 'h' })).rejects.toBe(err);
 
     expect(logger.info).not.toHaveBeenCalled();
     expect(errorLogger.error).toHaveBeenCalledWith('Email', err);

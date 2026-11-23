@@ -492,7 +492,7 @@ describe('checkNoDriverFound - cancel rides whose pickup time has passed', () =>
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and currently fails by design)', () => {
+describe('FIXED BUGS (regression tests)', () => {
   const wireTwoBookingsOneRide = () => {
     const passedRide = withDeparture('2026-03-20', '01:00');
     queueRideFinds([passedRide], [{ _id: rideId }]);
@@ -507,7 +507,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // and the ride is already cancelled, so nothing retries. The rider loses the refund and the
   // Refund document still says "confirmed". Fix: credit the wallet first, or leave the booking
   // retryable until the credit succeeds.
-  it.fails('BUG JOB-1: a failed wallet credit must not leave the booking finalised as refunded', async () => {
+  it('BUG JOB-1: a failed wallet credit must not leave the booking finalised as refunded', async () => {
     wireTwoBookingsOneRide();
     const booking = paidBooking();
     const payment = mockDoc({ _id: oidStr(), booking: bookingId, status: 'paid', isPaid: true });
@@ -526,7 +526,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // while the system reports it released. Fix: only mark released when the intent is confirmed
   // cancelled (or retry), and surface the failure. Note: payment.service cancelAuthorizedBookingPayment
   // has the same swallow-then-mark pattern (payment.service.ts:993-1002).
-  it.fails('BUG JOB-2: a failed Stripe cancel must not mark the authorisation as released', async () => {
+  it('BUG JOB-2: a failed Stripe cancel must not mark the authorisation as released', async () => {
     const booking = paidBooking({ amountPaid: 0, paymentStatus: 'authorized' });
     const payment = mockDoc({ _id: oidStr(), booking: bookingId, status: 'authorized', paymentIntentId: 'pi_auth', isPaid: false });
     wireTwoBookingsOneRide();
@@ -545,7 +545,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // (line 255). One booking's failure (e.g. Refund.create throws) aborts the batch, and the other
   // riders are never refunded: their rides are no longer pending, so no later run picks them up.
   // Fix: wrap each booking in try/catch and continue, or retry failed bookings.
-  it.fails('BUG JOB-3: one failing booking must not stop the other riders of the cancelled ride from being refunded', async () => {
+  it('BUG JOB-3: one failing booking must not stop the other riders of the cancelled ride from being refunded', async () => {
     const rider2 = oidStr();
     const b1 = paidBooking();
     const b2 = paidBooking({ _id: oidStr(), userId: rider2, amountPaid: 10, transactionId: 'pi_b2' });

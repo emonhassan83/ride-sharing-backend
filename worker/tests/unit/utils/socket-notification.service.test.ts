@@ -16,11 +16,7 @@ describe('sendSocketNotification', () => {
   // `getIO` is called but never imported or declared (hidden by `// @ts-ignore`), so every call
   // throws `ReferenceError: getIO is not defined` instead of taking the `if (!io)` branch.
   // Fix: remove the call or import a real accessor, and return { success: false } when no io.
-  it.fails('BUG WRK-1: resolves { success: false } when no socket server is available, instead of throwing', async () => {
+  it('BUG WRK-1: resolves { success: false } when no socket server is available, instead of throwing', async () => {
     await expect(sendSocketNotification('user-1', payload)).resolves.toEqual({ success: false });
-  });
-
-  it('CHARACTERIZATION: currently rejects with a ReferenceError because getIO is undefined', async () => {
-    await expect(sendSocketNotification('user-1', payload)).rejects.toThrow(ReferenceError);
   });
 });

@@ -536,7 +536,7 @@ describe('chargeUser (wallet first, then saved card, Case 11 / 33)', () => {
     expect(User.findByIdAndUpdate).toHaveBeenLastCalledWith('user-1', { $inc: { wallet: 30 } });
   });
 
-  it.fails('BUG SPLIT-03: a card that was already charged is not rolled back when only the post-charge bookkeeping fails', async () => {
+  it('BUG SPLIT-03: a card that was already charged is not rolled back when only the post-charge bookkeeping fails', async () => {
     // BUG-REPORT SPLIT-03 | MEDIUM | src/app/utils/splitFare.utils.ts:285-305
     // The PaymentIntent with confirm:true succeeds, then redis.set(idemKey) throws inside the same
     // try block. The catch restores the wallet and reports "payment failed" although the card was
@@ -891,7 +891,7 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
     const payment = paymentDoc(PAYMENT_STATUS.authorized, { authorizedAmount: 40, amount: 40 });
     wire({ passengers: [target], target, booking: bookingDoc(), payment });
 
-    await expect(recalculateSplitFares(RIDE_ID, 'passenger_joined')).resolves.toBeUndefined();
+    await expect(recalculateSplitFares(RIDE_ID, 'passenger_joined')).resolves.toBe(true);
     expect(payment.status).toBe(PAYMENT_STATUS.requires_reauthorization);
   });
 
@@ -905,7 +905,7 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
     expect(payment.status).toBe(PAYMENT_STATUS.authorized);
   });
 
-  it.fails('BUG SPLIT-01: a split recalculation keeps the platform commission on the payment', async () => {
+  it('BUG SPLIT-01: a split recalculation keeps the platform commission on the payment', async () => {
     // BUG-REPORT SPLIT-01 | MEDIUM | src/app/utils/splitFare.utils.ts:420-425, 490-492, 503-505
     // calcSplitPassengerFare returns platformCommissionAmount 0 (fareMath), so the recalc writes
     // payment.platformCommission = 0 and providerEarning = the full fare on paid/unpaid payments
@@ -1009,7 +1009,7 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
 
     const run = recalculateSplitFares(RIDE_ID, 'passenger_joined');
     await vi.advanceTimersByTimeAsync(1800);
-    await expect(run).resolves.toBeUndefined();
+    await expect(run).resolves.toBe(false);
 
     expect(Passenger.find).not.toHaveBeenCalled();
     expect(fakeRedis.peek(LOCK_KEY)).toBe('1');
@@ -1188,7 +1188,7 @@ describe('lockSplitRideFare', () => {
     expect(io.to).not.toHaveBeenCalled();
   });
 
-  it.fails('BUG SPLIT-02: the fare is not locked when the recalculation could not run', async () => {
+  it('BUG SPLIT-02: the fare is not locked when the recalculation could not run', async () => {
     // BUG-REPORT SPLIT-02 | MEDIUM | src/app/utils/splitFare.utils.ts:684-694
     // recalculateSplitFares silently returns when it cannot get the recalc lock (3 tries), but
     // lockSplitRideFare then locks the ride anyway, so passengers are charged on stale estimates.

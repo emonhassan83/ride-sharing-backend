@@ -60,10 +60,22 @@ const cancelBookingWithRefund = async (
       await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
     }
 
-    paidAmount = hasAuthorizedHold ? 0 : booking.amountPaid ?? 0;
+    // A booking already refunded by an earlier attempt must never be paid out twice.
+    const alreadyRefunded = booking.paymentStatus === PAYMENT_STATUS.refunded;
+    paidAmount = hasAuthorizedHold || alreadyRefunded ? 0 : booking.amountPaid ?? 0;
+
+    // Credit the rider first. If this fails nothing is finalised, so a retry runs the refund once.
+    if (paidAmount > 0 && passenger?.userId) {
+      await refundToWallet(
+        passenger.userId.toString(),
+        paidAmount,
+        'driver_cancelled',
+        io,
+      );
+    }
 
     booking.bookingStatus = BOOKING_STATUS.cancelled;
-    booking.refundAmount = paidAmount;
+    if (!alreadyRefunded) booking.refundAmount = paidAmount;
     if (paidAmount > 0) {
       booking.paymentStatus = PAYMENT_STATUS.refunded;
     } else if (hasAuthorizedHold) {
@@ -95,13 +107,6 @@ const cancelBookingWithRefund = async (
         note: `Ride ${rideId} cancelled by driver`,
         status: REFUND_STATUS.confirmed,
       });
-
-      await refundToWallet(
-        passenger.userId.toString(),
-        paidAmount,
-        'driver_cancelled',
-        io,
-      );
     }
   }
 

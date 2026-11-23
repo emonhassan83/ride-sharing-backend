@@ -218,13 +218,13 @@ describe('buildStoredFareBreakdown - split passenger', () => {
   });
 });
 
-describe('KNOWN BUGS - fareBreakdownResponse.utils', () => {
+describe('FIXED BUGS (regression tests) - fareBreakdownResponse.utils', () => {
   // BUG-REPORT FARE-05 | high | server/src/app/utils/fareBreakdownResponse.utils.ts:97
   // For a stored matched split the total is recomputed as fareBeforeFees (average initial, 60) plus the
   // per-passenger surcharge share (9) = 69, and the stored passenger.totalFare (40, the documented
   // per-rider fare after recalculation) is ignored (only non-split bookings use it). Riders see a price
   // different from the one charged. Fix: for stored matched splits use passenger.totalFare when present.
-  it.fails('BUG FARE-05: a matched 2-rider passenger shows the stored per-rider total of 40', async () => {
+  it('BUG FARE-05: a matched 2-rider passenger shows the stored per-rider total of 40', async () => {
     const b = await buildStoredFareBreakdown(matchedSplitPassenger({ totalFare: 40 }));
     expect(b.totalFare).toBe(40);
     expect(b.estimatedFare).toBe(40);

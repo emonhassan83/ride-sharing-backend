@@ -51,6 +51,114 @@ const notifyDriver = async (
   });
 };
 
+// When a split ride is cancelled because too few riders remain, the riders still on it did not
+// choose to cancel: cancel them, release or fully refund their payment, and tell them.
+const cancelRemainingPassengers = async (
+  io: any,
+  redis: any,
+  ride: { driverId?: any },
+  rideId: string,
+  excludePassengerId: any,
+) => {
+  const remaining = await Passenger.find({
+    rideId,
+    _id: { $ne: excludePassengerId },
+    status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
+  });
+
+  const message = 'Ride was cancelled because not enough passengers remained.';
+
+  for (const p of remaining) {
+    const riderId = p.userId?.toString();
+    let refunded = 0;
+
+    const booking = await Booking.findOne({ passengerId: p._id });
+    if (booking) {
+      const payment = await Payment.findOne({ booking: booking._id });
+      const hasAuthorizedHold =
+        !!payment &&
+        [PAYMENT_STATUS.authorized, PAYMENT_STATUS.requires_reauthorization].includes(payment.status as any);
+
+      if (hasAuthorizedHold) {
+        await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
+      }
+
+      const alreadyRefunded = booking.paymentStatus === PAYMENT_STATUS.refunded;
+      const paid = hasAuthorizedHold || alreadyRefunded ? 0 : booking.amountPaid ?? 0;
+
+      // Credit the rider first; the booking is only finalised once the money is back.
+      if (paid > 0 && riderId) {
+        await refundToWallet(riderId, paid, 'cancel_not_enough_passengers', io);
+        refunded = paid;
+      }
+
+      booking.bookingStatus = BOOKING_STATUS.cancelled;
+      if (refunded > 0) {
+        booking.refundAmount = refunded;
+        booking.paymentStatus = PAYMENT_STATUS.refunded as any;
+      }
+      await booking.save();
+
+      if (refunded > 0) {
+        if (payment && payment.status === PAYMENT_STATUS.paid) {
+          payment.status = PAYMENT_STATUS.refunded as any;
+          payment.isPaid = false;
+          await payment.save();
+
+          if (payment.providerEarning && payment.providerEarning > 0 && ride.driverId) {
+            await User.findByIdAndUpdate(ride.driverId, {
+              $inc: { wallet: -payment.providerEarning },
+            });
+          }
+        }
+
+        await Refund.create({
+          user: p.userId,
+          ride: rideId,
+          type: REFUND_TYPE.cancel_ride,
+          paymentIntentId: booking.transactionId || payment?.transactionId || '',
+          amount: refunded,
+          reason: 'Ride cancelled: not enough passengers remained',
+          note: `Ride ${rideId} cancelled after another rider left`,
+          status: REFUND_STATUS.confirmed,
+        });
+      }
+    }
+
+    await Passenger.findByIdAndUpdate(p._id, {
+      status:             PASSENGER_STATUS.cancelled,
+      cancellationReason: 'Only one passenger remaining. Ride cancelled.',
+      cancelledBy:        CANCELLED_BY.system,
+      refundAmount:       refunded,
+    });
+
+    if (ride.driverId) {
+      await redis.hincrby(
+        `driver:${ride.driverId}:details`,
+        'bookedSeats',
+        -(p.requestedSeats || 1),
+      );
+    }
+
+    if (!riderId) continue;
+
+    io.to(`user:${riderId}`).emit('ride:cancelled', {
+      rideId,
+      message,
+      refundAmount: refunded,
+    });
+
+    await notifyUserPush({
+      userId: riderId,
+      message: 'Ride Cancelled',
+      description: message,
+      reference: rideId,
+      modelType: modeType.Ride,
+      data: { type: 'RIDE_CANCELLED', rideId: String(rideId) },
+    });
+  }
+};
+
 export const rideCancelAfterAcceptHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const { rideId, passengerId, reason = '' } = data;
@@ -120,9 +228,8 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       ) {
         await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
         paidAmount = 0;
-      } else if (!paidAmount) {
-        paidAmount = passenger.estimatedFare ?? 0;
       }
+      // No fallback to the estimated fare: only money that was actually captured is refundable.
     }
 
     // ── Cancellation refund ──
@@ -132,6 +239,11 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       departureDateTime,
       ride.type as any,
     );
+
+    // Credit the rider first. If this fails the passenger stays active, so the rider can retry.
+    if (refundAmount > 0 && booking) {
+      await refundToWallet(userId, refundAmount, `cancel_${refundReason}`, io);
+    }
 
     // ── Update passenger & booking ──
     await Passenger.findByIdAndUpdate(passenger._id, {
@@ -179,9 +291,6 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         note: `Ride ${rideId} cancelled by rider. Reason: ${refundReason}`,
         status: REFUND_STATUS.confirmed,
       });
-
-      // 4. Refund to passenger's wallet
-      await refundToWallet(userId, refundAmount, `cancel_${refundReason}`, io);
     }
 
     if (platformAmount > 0) {
@@ -258,6 +367,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
           redis.del(`ride:active:${rideId}`),
           redis.zrem('ride:matching:queue', rideId),
         ]);
+        await cancelRemainingPassengers(io, redis, ride, rideId, passenger._id);
 
         // ✅ Notify driver ──- only ride:cancelled-by-rider
         if (ride.driverId) {
@@ -324,6 +434,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         redis.del(`ride:active:${rideId}`),
         redis.zrem('ride:matching:queue', rideId),
       ]);
+      await cancelRemainingPassengers(io, redis, ride, rideId, passenger._id);
 
       // ✅ Notify driver ──- only ride:cancelled-by-rider
       if (ride.driverId) {

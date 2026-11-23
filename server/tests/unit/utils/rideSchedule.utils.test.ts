@@ -228,18 +228,18 @@ describe('getDepartureDateTime', () => {
   });
 });
 
-describe('KNOWN BUGS - rideSchedule.utils', () => {
+describe('FIXED BUGS (regression tests) - rideSchedule.utils', () => {
   // BUG-REPORT FARE-03 | medium | server/src/app/utils/rideSchedule.utils.ts:83
   // Only the presence of year/month/day is checked. Date.UTC rolls '2026-02-30' into 2 March (07:00Z
   // for 09:00) and '2026-13-01' into 1 January 2027, so an impossible booking date is accepted.
   // Fix: round-trip the calendar components and throw the same 400 when they differ.
-  it.fails('BUG FARE-03: rejects an impossible calendar date (2026-02-30) with 400', async () => {
+  it('BUG FARE-03: rejects an impossible calendar date (2026-02-30) with 400', async () => {
     await expect(errorOf(() => getDepartureDateTime('2026-02-30', '09:00'))).resolves.toMatchObject({
       code: 400,
     });
   });
 
-  it.fails('BUG FARE-03: rejects a month of 13 with 400 instead of rolling into 2027', async () => {
+  it('BUG FARE-03: rejects a month of 13 with 400 instead of rolling into 2027', async () => {
     await expect(errorOf(() => getDepartureDateTime('2026-13-01', '09:00'))).resolves.toMatchObject({
       code: 400,
     });
@@ -250,13 +250,13 @@ describe('KNOWN BUGS - rideSchedule.utils', () => {
   // with comparisons that are false for undefined, so it reaches Intl formatting with an invalid Date
   // and throws a plain RangeError ("Invalid time value") instead of the 400 ApiError. The lead-time
   // check then 500s instead of answering with a validation message. Fix: require both HH and mm.
-  it.fails('BUG FARE-04: rejects a departureTime with no minutes ("09") with a 400 ApiError', async () => {
+  it('BUG FARE-04: rejects a departureTime with no minutes ("09") with a 400 ApiError', async () => {
     const err = await errorOf(() => getDepartureDateTime('2026-01-15', '09'));
     expect(err.code).toBe(400);
     expect(err.message).toBe('Invalid departureDate or departureTime');
   });
 
-  it.fails('BUG FARE-04: rejects an empty departureTime with a 400 ApiError', async () => {
+  it('BUG FARE-04: rejects an empty departureTime with a 400 ApiError', async () => {
     const err = await errorOf(() => getDepartureDateTime('2026-01-15', ''));
     expect(err.code).toBe(400);
   });

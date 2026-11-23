@@ -52,18 +52,18 @@ describe('email worker with the real sendEmail', () => {
   // therefore completes the job "successfully": the OTP / KYC / support mail is silently lost
   // and BullMQ never retries (the retry policy only triggers on a thrown error).
   // Fix: rethrow after logging (or drop the try/catch) so the job fails and is retried.
-  describe('KNOWN BUGS', () => {
-    it.fails('BUG WORKER-1: an SMTP failure must fail the job so BullMQ retries it', async () => {
+  describe('FIXED BUGS (regression tests)', () => {
+    it('BUG WORKER-1: an SMTP failure must fail the job so BullMQ retries it', async () => {
       sendMail.mockRejectedValue(new Error('connect ETIMEDOUT smtp.test.local:587'));
 
       await expect(processor(otpJob)).rejects.toThrow('ETIMEDOUT');
     });
   });
 
-  it('CHARACTERIZATION: today the SMTP error is only logged to the error logger', async () => {
+  it('the SMTP error is also recorded in the error logger', async () => {
     sendMail.mockRejectedValue(new Error('connect ETIMEDOUT'));
 
-    await expect(processor(otpJob)).resolves.toBeUndefined();
+    await expect(processor(otpJob)).rejects.toThrow('ETIMEDOUT');
     expect(errorLogger.error).toHaveBeenCalledWith('Email', expect.any(Error));
   });
 });

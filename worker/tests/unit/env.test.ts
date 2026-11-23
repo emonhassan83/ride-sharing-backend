@@ -130,8 +130,8 @@ describe('configuration contract', () => {
   // src/env.ts demands TIME_ZONE and SERVER_URL (getEnv throws without them) but the shipped
   // `.env.example` does not list them, so a worker configured from the example crashes at boot
   // with "Missing Environment Variable". Fix: add both to .env.example.
-  describe('KNOWN BUGS', () => {
-    it.fails('BUG WORKER-6: .env.example documents every variable src/env.ts requires', () => {
+  describe('FIXED BUGS (regression tests)', () => {
+    it('BUG WORKER-6: .env.example documents every variable src/env.ts requires', () => {
       const required = [...read('../../src/env.ts').matchAll(/getEnv\('([A-Z0-9_]+)'\)/g)].map((m) => m[1]);
       const documented = new Set(
         read('../../.env.example')

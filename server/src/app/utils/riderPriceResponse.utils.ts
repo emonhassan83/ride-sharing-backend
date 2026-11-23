@@ -12,8 +12,11 @@ export const toRiderPriceView = (input: {
   const estimatedFare = roundMoney(
     Number(input.estimatedFare ?? input.totalFare ?? 0),
   );
-  const vatPercentage =
-    Number(input.vatPercentage ?? input.platformVatPercent ?? 9) || 9;
+  const rawVatPercentage = Number(
+    input.vatPercentage ?? input.platformVatPercent ?? 9,
+  );
+  // A configured 0% VAT is valid; only fall back when the value is not a number.
+  const vatPercentage = Number.isFinite(rawVatPercentage) ? rawVatPercentage : 9;
 
   return {
     estimatedFare,

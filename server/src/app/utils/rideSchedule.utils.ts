@@ -81,14 +81,26 @@ export const getDepartureDateTime = (
   departureTime: string
 ): Date => {
   const [year, month, day] = departureDate.split('-').map(Number);
-  const [rawHour, minute] = departureTime.split(':').map(Number);
+  const timeParts = departureTime.split(':');
+  const [rawHour, minute] = timeParts.map(Number);
+
+  // Reject impossible calendar dates (2026-02-30, month 13) instead of letting Date.UTC roll them over.
+  const calendarCheck = new Date(Date.UTC(year, month - 1, day));
+  const isRealCalendarDate =
+    calendarCheck.getUTCFullYear() === year &&
+    calendarCheck.getUTCMonth() === month - 1 &&
+    calendarCheck.getUTCDate() === day;
 
   if (
     !year ||
     !month ||
     !day ||
-    Number.isNaN(rawHour) ||
-    Number.isNaN(minute)
+    !isRealCalendarDate ||
+    timeParts.length < 2 ||
+    timeParts[0].trim() === '' ||
+    timeParts[1].trim() === '' ||
+    !Number.isFinite(rawHour) ||
+    !Number.isFinite(minute)
   ) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,

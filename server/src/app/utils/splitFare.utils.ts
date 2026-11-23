@@ -10,6 +10,7 @@ import StripeService from '../config/stripe.config';
 import { calculateFareBreakdown, loadFareSettings } from './fareCalculator';
 import {
   buildPassengerFareTotals,
+  computeDriverPayoutFromPassengerTotal,
   resolveSplitMatchedSurchargePercent,
   roundMoney,
 } from './fareMath.utils';
@@ -235,6 +236,18 @@ export const chargeUser = async (
   const already = await redis.get(idemKey);
   if (already) return { success: true, method: 'already_charged' };
 
+  // The money has already moved when this runs, so a Redis failure must not undo or fail the charge.
+  const markCharged = async (method: string) => {
+    try {
+      await redis.set(idemKey, method, 'EX', 86400);
+    } catch (err: any) {
+      console.error(
+        `Charge of ${userId} succeeded but the idempotency key was not stored:`,
+        err?.message || err,
+      );
+    }
+  };
+
   const user = await User.findById(userId).select('wallet customerId').lean();
   if (!user)
     return { success: false, method: 'none', failReason: 'user_not_found' };
@@ -244,7 +257,7 @@ export const chargeUser = async (
   // ── Full wallet ──
   if (wallet >= rounded) {
     await User.findByIdAndUpdate(userId, { $inc: { wallet: -rounded } });
-    await redis.set(idemKey, 'wallet', 'EX', 86400);
+    await markCharged('wallet');
     io?.to(`user:${userId}`).emit('ride:payment-charged', {
       amount: rounded,
       method: 'wallet',
@@ -280,15 +293,6 @@ export const chargeUser = async (
         automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
         metadata: { rideId, userId, reason },
       });
-
-      const method = walletPortion > 0 ? 'wallet+card' : 'card';
-      await redis.set(idemKey, method, 'EX', 86400);
-      io?.to(`user:${userId}`).emit('ride:payment-charged', {
-        amount: rounded,
-        method,
-        reason,
-      });
-      return { success: true, method };
     } catch (err: any) {
       // ── Rollback wallet (Case 11) ──
       if (walletPortion > 0) {
@@ -304,6 +308,16 @@ export const chargeUser = async (
       });
       return { success: false, method: 'failed', failReason: err.message };
     }
+
+    // The card is charged: everything after this point is bookkeeping and never rolls back.
+    const method = walletPortion > 0 ? 'wallet+card' : 'card';
+    await markCharged(method);
+    io?.to(`user:${userId}`).emit('ride:payment-charged', {
+      amount: rounded,
+      method,
+      reason,
+    });
+    return { success: true, method };
   }
 
   // No card available
@@ -327,7 +341,7 @@ export const recalculateSplitFares = async (
     | 'passenger_cancelled'
     | 'passenger_rejected',
   io?: any
-): Promise<void> => {
+): Promise<boolean> => {
   // ── Acquire lock (Case 31) ──
   let locked = false;
   for (let i = 0; i < 3; i++) {
@@ -337,7 +351,7 @@ export const recalculateSplitFares = async (
   }
   if (!locked) {
     console.warn(`⚠️  Could not acquire recalculate lock for ride ${rideId}`);
-    return;
+    return false;
   }
 
   try {
@@ -353,7 +367,7 @@ export const recalculateSplitFares = async (
       },
     }).lean();
 
-    if (!activePassengers.length) return;
+    if (!activePassengers.length) return true;
 
     const activeRiderCount = activePassengers.length;
     const fareSettings = await loadFareSettings();
@@ -370,10 +384,10 @@ export const recalculateSplitFares = async (
     );
 
     const ride = await Ride.findById(rideId).lean();
-    if (!ride) return;
+    if (!ride) return true;
     if ((ride as any).splitFareLocked) {
       console.log(`Split fare already locked | ride: ${rideId}`);
-      return;
+      return true;
     }
 
     const depDate = getDepartureDateTime(
@@ -417,12 +431,17 @@ export const recalculateSplitFares = async (
       const payment = booking
         ? await Payment.findOne({ booking: booking._id })
         : null;
-      const nextPlatformCommission =
-        Math.round((Number(newFare.platformCommissionAmount || 0)) * 100) / 100;
-      const nextVatAmount = Math.round((Number(newFare.vatAmount || 0)) * 100) / 100;
-      const nextProviderEarning =
-        Math.round((Number(newFare.estimatedFare || 0) - nextPlatformCommission) * 100) /
-        100;
+      // Same commission split as payment.service getCommissionBreakdown (the quote itself carries 0).
+      const payout = computeDriverPayoutFromPassengerTotal(
+        Number(newFare.estimatedFare || 0),
+        'split',
+        fareSettings as any,
+        activeRiderCount >= 2,
+      );
+      const nextPlatformCommission = roundMoney(
+        payout.driverPlatformFeeAmount + payout.driverVatAmount,
+      );
+      const nextProviderEarning = payout.driverEarningAmount;
 
       if (
         payment &&
@@ -585,6 +604,7 @@ export const recalculateSplitFares = async (
     console.log(
       `✅ Recalculated | ride: ${rideId} | reason: ${reason} | riders: ${activeRiderCount} | surcharge: ${newSurchargePercent}%`
     );
+    return true;
   } finally {
     await releaseRecalculateLock(rideId);
   }
@@ -681,7 +701,10 @@ export const lockSplitRideFare = async (
   if (!ride || ride.type !== 'split') return false;
   if ((ride as any).splitFareLocked) return true;
 
-  await recalculateSplitFares(rideId, 'passenger_joined', io);
+  // Never lock on stale estimates: if the recalculation could not run, leave the ride unlocked
+  // so the next attempt (cron or trip start) recalculates first.
+  const recalculated = await recalculateSplitFares(rideId, 'passenger_joined', io);
+  if (!recalculated) return false;
 
   const lockedRide = await Ride.findOneAndUpdate(
     { _id: rideId, splitFareLocked: { $ne: true } },

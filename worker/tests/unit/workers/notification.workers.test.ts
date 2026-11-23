@@ -81,7 +81,7 @@ describe('processing a job', () => {
       data: { modelType: 'Ride', reference: 'ride-77' },
     });
     expect(axios.post).toHaveBeenCalledWith(
-      `${SERVER_URL}/notifications`,
+      `${SERVER_URL}/notification`,
       {
         receiver: 'user-1',
         message: 'Ride accepted',
@@ -129,9 +129,9 @@ describe('processing a job', () => {
   });
 
   describe('failure isolation', () => {
-    it('does not persist a notification the user never received (push failed)', async () => {
+    it('does not persist a notification the user never received (push failed) and fails the job', async () => {
       vi.mocked(sendPushNotification).mockResolvedValue({ success: false });
-      await processor(baseJob());
+      await expect(processor(baseJob())).rejects.toThrow('Push notification failed');
       expect(axios.post).not.toHaveBeenCalled();
     });
 
@@ -155,7 +155,7 @@ describe('processing a job', () => {
   });
 });
 
-describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and currently fails by design)', () => {
+describe('FIXED BUGS (regression tests)', () => {
   // BUG-REPORT WORKER-2 | high | worker/src/app/workers/notification.workers.ts:42
   // The worker persists notifications by POSTing to `${SERVER_URL}/notifications`, but the server
   // mounts the notification router at `/notification` (singular) under /api/v1 (see
@@ -163,7 +163,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // so notifications that go through the worker queue are NEVER stored in the DB / history.
   // The test derives the expected path from the server's real route table, so it turns red-for-
   // the-right-reason when either side is fixed.
-  it.fails('BUG WORKER-2: the persistence URL must match the server notification route', async () => {
+  it('BUG WORKER-2: the persistence URL must match the server notification route', async () => {
     const routes = readFileSync(
       fileURLToPath(new URL('../../../../server/src/app/routes/index.ts', import.meta.url)),
       'utf8',
@@ -180,7 +180,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // sendPushNotification() swallows every FCM error and returns {success:false}; the processor
   // then still returns {success:true} and never throws => a transient FCM outage loses the push
   // (no BullMQ retry) while the job is reported as successful.
-  it.fails('BUG WORKER-3: a failed push must not be reported as success (so it can be retried)', async () => {
+  it('BUG WORKER-3: a failed push must not be reported as success (so it can be retried)', async () => {
     vi.mocked(sendPushNotification).mockResolvedValue({ success: false });
 
     const outcome = await processor(baseJob()).catch((e) => ({ threw: e }));
@@ -192,7 +192,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // BUG-REPORT WORKER-4 | low | notification.workers.ts:23 vs server/src/app/queues/notification.queues.ts:55-62
   // The server producer puts the trace id in `data.metadata.traceId`; the worker reads
   // `data.traceId`, so correlation ids sent by the server are always lost (NO_TRACE_ID).
-  it.fails('BUG WORKER-4: the traceId the server sends in data.metadata.traceId is propagated', async () => {
+  it('BUG WORKER-4: the traceId the server sends in data.metadata.traceId is propagated', async () => {
     await processor(baseJob({ metadata: { traceId: 'trace-from-server', source: 'x' } }));
 
     const config = vi.mocked(axios.post).mock.calls[0][2] as any;

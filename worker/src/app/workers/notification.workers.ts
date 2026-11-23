@@ -14,7 +14,11 @@ export const createNotificationWorker = (): Worker => {
     'notification-queue',
     async (job: Job) => {
       const { id, data } = job;
-      const traceId = (job.data as any)?.traceId ?? 'NO_TRACE_ID';
+      // The server producer sends the trace id in `data.metadata.traceId`.
+      const traceId =
+        (job.data as any)?.traceId ??
+        (job.data as any)?.metadata?.traceId ??
+        'NO_TRACE_ID';
 
       return requestContext.run({ traceId }, async () => {
         try {
@@ -33,11 +37,17 @@ export const createNotificationWorker = (): Worker => {
             data: extraData || {},
           });
 
+          // A failed push must fail the job so BullMQ retries it, not report success.
+          if (!pushResult.success) {
+            throw new Error(`Push notification failed for user ${userId}`);
+          }
+
           // 2. Save Notification to Database via Server API
           if (pushResult.success) {
             try {
               // TODO: Import the model(USER, NOTIFICATION, CHAT)
-              await axios.post(`${SERVER_API_BASE}/notifications`, {
+              // The server mounts this router at /notification (singular) under /api/v1.
+              await axios.post(`${SERVER_API_BASE}/notification`, {
                 receiver: userId,
                 message: title,
                 description: message,

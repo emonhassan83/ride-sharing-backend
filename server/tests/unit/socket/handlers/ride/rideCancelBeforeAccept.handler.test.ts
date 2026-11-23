@@ -161,7 +161,10 @@ describe('ride:cancel-before-accept - guards', () => {
       const p = makePassenger({ userId: creatorId });
       wire({ ride: makeRide({ status }), passengers: [p] });
       await run({ rideId });
-      expect(ack).toHaveBeenCalledWith({ success: false, message: 'Cannot cancel: driver already accepted' });
+      const message = ['accepted', 'started'].includes(status)
+        ? 'Cannot cancel: driver already accepted'
+        : 'Ride already accepted or cancelled';
+      expect(ack).toHaveBeenCalledWith({ success: false, message });
       expect(Passenger.findOne).not.toHaveBeenCalled();
       expect(Passenger.findByIdAndUpdate).not.toHaveBeenCalled();
       expect(io.emitted).toHaveLength(0);
@@ -273,7 +276,7 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
     await run({ rideId }, asUser(rider));
     await run({ rideId }, asUser(rider));
     expect(notifyUserPush).toHaveBeenCalledTimes(1);
-    expect(ack).toHaveBeenLastCalledWith({ success: false, message: 'Cannot cancel: driver already accepted' });
+    expect(ack).toHaveBeenLastCalledWith({ success: false, message: 'Ride already accepted or cancelled' });
   });
 });
 
@@ -417,14 +420,14 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
   });
 });
 
-describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and currently fails by design)', () => {
+describe('FIXED BUGS (regression tests)', () => {
   // BUG-REPORT CANCEL-5 | high | rideCancelBeforeAccept.handler.ts:97-101
   // A pending ride's card is pre-authorised at booking time (payment.service createPaymentIntent,
   // capture_method 'manual'). This handler cancels the passenger and the ride but never releases
   // that hold (no PaymentService.cancelAuthorizedBookingPayment, no booking/payment update). The
   // rider's card stays held until the authorisation expires. Fix: release the hold, as
   // driverCancelRide / rideCancelAfterAccept do, before recording the cancellation.
-  it.fails('BUG CANCEL-5: a rider who cancels a pending ride must have the card authorisation released', async () => {
+  it('BUG CANCEL-5: a rider who cancels a pending ride must have the card authorisation released', async () => {
     const rider = oidStr();
     const p = makePassenger({ userId: rider });
     const booking = mockDoc({ _id: oidStr(), passengerId: String(p._id), rideId, userId: rider, paymentStatus: 'authorized' });
@@ -439,7 +442,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // "remaining" uses status $ne cancelled, so passengers the driver REJECTED are counted as riders
   // still on the ride. With one real rider left plus a rejected one the ride is not cancelled and the
   // lone rider keeps waiting. The other handlers use $nin [cancelled, rejected]. Fix: match them.
-  it.fails('BUG CANCEL-6: a rejected passenger must not count as a remaining rider (ride cancels when only one real rider is left)', async () => {
+  it('BUG CANCEL-6: a rejected passenger must not count as a remaining rider (ride cancels when only one real rider is left)', async () => {
     const leaver = makePassenger({ userId: oidStr() });
     const real = makePassenger({ userId: oidStr() });
     const rejected = makePassenger({ userId: oidStr(), status: 'rejected' });
@@ -455,7 +458,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // Cancelling a ride that is already cancelled answers "Cannot cancel: driver already accepted",
   // which is false and misleads the rider. Fix: return a status-specific message (e.g. "Ride is no
   // longer pending") for any non-pending status.
-  it.fails('BUG CANCEL-7: a repeat cancel of an already cancelled ride must not claim the driver accepted it', async () => {
+  it('BUG CANCEL-7: a repeat cancel of an already cancelled ride must not claim the driver accepted it', async () => {
     const rider = oidStr();
     wire({ ride: makeRide({ status: 'cancelled' }), passengers: [makePassenger({ userId: rider })] });
     await run({ rideId }, asUser(rider));

@@ -216,19 +216,19 @@ describe('deductWaitingCharge', () => {
     expect(vi.mocked(stripe.paymentIntents.create).mock.calls[0][0].amount).toBe(1234);
   });
 
-  it('skips the card charge when the customer has no default payment method', async () => {
+  it('reports nothing collected when the customer has no default payment method', async () => {
     vi.mocked(User.findById).mockReturnValue(mockQuery({ wallet: 0, customerId: 'cus_1' }) as any);
     stripe.customers.retrieve.mockResolvedValue({ invoice_settings: {} });
 
-    expect(await deductWaitingCharge(userId, 5, rideId)).toEqual({ method: 'card', amount: 5 });
+    expect(await deductWaitingCharge(userId, 5, rideId)).toEqual({ method: 'none', amount: 0 });
     expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
   });
 
-  it('logs and swallows a Stripe failure instead of throwing', async () => {
+  it('logs and swallows a Stripe failure, reporting nothing collected', async () => {
     vi.mocked(User.findById).mockReturnValue(mockQuery({ wallet: 0, customerId: 'cus_1' }) as any);
     stripe.customers.retrieve.mockRejectedValue(new Error('stripe down'));
 
-    await expect(deductWaitingCharge(userId, 5, rideId)).resolves.toEqual({ method: 'card', amount: 5 });
+    await expect(deductWaitingCharge(userId, 5, rideId)).resolves.toEqual({ method: 'none', amount: 0 });
     expect(console.error).toHaveBeenCalledWith(
       'Card charge failed for waiting charge:',
       expect.any(Error),
@@ -251,7 +251,7 @@ describe('deductWaitingCharge', () => {
 
 });
 
-describe('KNOWN BUGS - waitingCharge.utils', () => {
+describe('FIXED BUGS (regression tests) - waitingCharge.utils', () => {
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -260,7 +260,7 @@ describe('KNOWN BUGS - waitingCharge.utils', () => {
   // Partial wallet and no customerId (or no default card): the wallet is debited for its portion, the
   // card portion is silently skipped, yet the function returns method 'wallet+card' and the full amount,
   // so the caller believes the whole waiting charge was collected. Fix: return only the amount collected.
-  it.fails('BUG FARE-01: reports only the collected amount when the card portion cannot be charged', async () => {
+  it('BUG FARE-01: reports only the collected amount when the card portion cannot be charged', async () => {
     vi.mocked(User.findById).mockReturnValue(mockQuery({ wallet: 4 }) as any);
 
     const result = await deductWaitingCharge('665f00000000000000000001', 10, 'ride-1');

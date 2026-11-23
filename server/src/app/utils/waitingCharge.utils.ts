@@ -57,6 +57,8 @@ export const deductWaitingCharge = async (
     await User.findByIdAndUpdate(userId, { $inc: { wallet: -walletPortion } });
   }
 
+  let cardCharged = 0;
+
   if (user.customerId && cardPortion > 0) {
     try {
       const stripe = StripeService.getStripe();
@@ -73,15 +75,22 @@ export const deductWaitingCharge = async (
           automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
           metadata: { rideId, type: 'waiting_charge' },
         });
+        cardCharged = cardPortion;
       }
     } catch (err) {
       console.error('Card charge failed for waiting charge:', err);
     }
   }
 
-  return {
-    method: walletPortion > 0 ? 'wallet+card' : 'card',
-    amount,
-  };
+  // Report only what was actually collected, so callers never assume an uncharged card portion was paid.
+  const walletCollected = walletPortion > 0 ? walletPortion : 0;
+  const collected = Math.round((walletCollected + cardCharged) * 100) / 100;
+
+  let method = 'none';
+  if (walletCollected > 0 && cardCharged > 0) method = 'wallet+card';
+  else if (walletCollected > 0) method = 'wallet';
+  else if (cardCharged > 0) method = 'card';
+
+  return { method, amount: collected };
 };
 

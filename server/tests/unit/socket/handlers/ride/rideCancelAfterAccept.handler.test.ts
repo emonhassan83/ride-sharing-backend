@@ -635,12 +635,12 @@ describe('ride:cancel-after-accept - SPLIT ride', () => {
   });
 });
 
-describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and currently fails by design)', () => {
+describe('FIXED BUGS (regression tests)', () => {
   // BUG-REPORT CANCEL-2 | high | rideCancelAfterAccept.handler.ts:124
   // When no money was captured and no hold exists, the handler falls back to passenger.estimatedFare
   // as the "paid" amount, so a rider whose payment never succeeded is refunded (wallet credit +
   // Refund document) for a fare they never paid. Fix: use booking.amountPaid only; treat 0 as 0.
-  it.fails('BUG CANCEL-2: a rider whose payment never captured money must not be refunded the estimated fare', async () => {
+  it('BUG CANCEL-2: a rider whose payment never captured money must not be refunded the estimated fare', async () => {
     const p = makePassenger({ estimatedFare: 30 });
     const booking = mockDoc({ _id: oidStr(), passengerId: String(p._id), rideId, userId: riderId, paymentStatus: 'failed', amountPaid: 0 });
     const payment = mockDoc({ _id: oidStr(), booking: String(booking._id), status: 'failed', isPaid: false });
@@ -657,7 +657,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // refundToWallet fails, the rider is no longer "active", so a retry returns "No active booking
   // found" and the rider can never receive the refund. Fix: credit the wallet first (idempotently)
   // or keep the passenger retryable until the credit succeeds.
-  it.fails('BUG CANCEL-3: a rider whose wallet credit failed must be able to retry and receive the refund', async () => {
+  it('BUG CANCEL-3: a rider whose wallet credit failed must be able to retry and receive the refund', async () => {
     const p = makePassenger();
     const { booking, payment } = paidBooking(p);
     wire(makeWorld(makeRide(), [p], [{ booking, payment }]));
@@ -675,7 +675,7 @@ describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and current
   // rider stays "confirmed" on a cancelled ride with their money captured. Same gap at lines 250-270
   // for the creator branch. Fix: cancel/refund/notify the lone remaining passenger, as the
   // driver-cancel and before-accept handlers already do.
-  it.fails('BUG CANCEL-4: the lone remaining rider of a cancelled split ride must be told the ride is gone', async () => {
+  it('BUG CANCEL-4: the lone remaining rider of a cancelled split ride must be told the ride is gone', async () => {
     const leaver = makePassenger({ userId: oidStr() });
     const lone = makePassenger({ userId: oidStr() });
     const ride = makeRide({ type: 'split', ...SPLIT_DEPARTURE, rideCreatedBy: oidStr() });

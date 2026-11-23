@@ -81,11 +81,11 @@ describe('toRiderPriceView', () => {
   });
 });
 
-describe('KNOWN BUGS - riderPriceResponse.utils', () => {
+describe('FIXED BUGS (regression tests) - riderPriceResponse.utils', () => {
   // BUG-REPORT FARE-02 | low | server/src/app/utils/riderPriceResponse.utils.ts:16
   // `Number(x) || 9` treats a real 0 as missing, so a configured 0% VAT is shown to riders as 9%.
   // Fix: only fall back when the value is not a finite number (e.g. Number.isFinite check).
-  it.fails('BUG FARE-02: reports a configured 0% VAT as 0, not the 9% default', () => {
+  it('BUG FARE-02: reports a configured 0% VAT as 0, not the 9% default', () => {
     expect(toRiderPriceView({ estimatedFare: 10, vatPercentage: 0 }).vatPercentage).toBe(0);
   });
 });

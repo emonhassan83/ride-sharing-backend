@@ -339,14 +339,14 @@ describe('driver:reject-ride - SPLIT ride', () => {
   });
 });
 
-describe('KNOWN BUGS (documented; each asserts the CORRECT behaviour and currently fails by design)', () => {
+describe('FIXED BUGS (regression tests)', () => {
   // BUG-REPORT SOCK-1 | medium | driverRejectRide.handler.ts:17-30
   // The handler never checks the caller's role (nor that the ride was offered to / assigned to
   // the caller). Any authenticated socket - including a rider - can emit `driver:reject-ride`,
   // which unsets the ride's driver, blacklists "the driver" and (split) rejects a passenger.
   // `it.fails` keeps CI green while the bug is open and turns red once it is fixed, so the
   // marker must then be removed.
-  it.fails('BUG SOCK-1: a rider (non-driver) socket must not be able to reject a ride', async () => {
+  it('BUG SOCK-1: a rider (non-driver) socket must not be able to reject a ride', async () => {
     const rider = createMockSocket({ userId: oidStr(), role: 'user' });
     arrange(makeRide(), makePassenger());
 

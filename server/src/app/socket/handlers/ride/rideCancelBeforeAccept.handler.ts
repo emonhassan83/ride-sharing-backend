@@ -4,6 +4,8 @@ import { RIDE_STATUS, CANCELLED_BY, RIDE_TYPE } from '../../../modules/ride/ride
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
+import { Booking } from '../../../modules/booking/booking.model';
+import { PaymentService } from '../../../modules/payment/payment.service';
 import { modeType } from '../../../modules/notification/notification.interface';
 import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
@@ -41,6 +43,14 @@ const notifyDriverCancelled = async (
   );
 };
 
+// A pending ride's card is only pre-authorised; release that hold when the rider leaves the ride.
+const releaseAuthorizedHold = async (passengerId: any) => {
+  const booking = await Booking.findOne({ passengerId });
+  if (booking) {
+    await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
+  }
+};
+
 const cancelAndNotifyRemaining = async (
   io: any,
   rideId: string,
@@ -48,6 +58,8 @@ const cancelAndNotifyRemaining = async (
   reason: string,
 ) => {
   for (const p of remaining) {
+    await releaseAuthorizedHold(p._id);
+
     await Passenger.findByIdAndUpdate(p._id, {
       status: PASSENGER_STATUS.cancelled,
       cancellationReason: reason,
@@ -84,8 +96,15 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     const ride = await Ride.findById(rideId);
     if (!ride)
       return callback?.({ success: false, message: 'Ride not found' });
-    if (ride.status !== RIDE_STATUS.pending)
-      return callback?.({ success: false, message: 'Cannot cancel: driver already accepted' });
+    if (ride.status !== RIDE_STATUS.pending) {
+      const driverAccepted = [RIDE_STATUS.accepted, RIDE_STATUS.started].includes(ride.status as any);
+      return callback?.({
+        success: false,
+        message: driverAccepted
+          ? 'Cannot cancel: driver already accepted'
+          : 'Ride already accepted or cancelled',
+      });
+    }
 
     const passenger = await Passenger.findOne({ rideId, userId, status: PASSENGER_STATUS.pending });
     if (!passenger)
@@ -93,6 +112,9 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
 
     const redis = getRedisClient();
     const io    = getIO();
+
+    // Release the card hold before recording the cancellation, so a failure stays retryable.
+    await releaseAuthorizedHold(passenger._id);
 
     await Passenger.findByIdAndUpdate(passenger._id, {
       status:             PASSENGER_STATUS.cancelled,
@@ -185,7 +207,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     const remaining = await Passenger.find({
       rideId,
       _id: { $ne: passenger._id },
-      status: { $ne: PASSENGER_STATUS.cancelled },
+      status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
     }).select('_id userId');
 
     if (remaining.length <= 1) {

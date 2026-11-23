@@ -1,3 +1,24 @@
+Date/Session: 2026-11-22 (bug-fix pass)
+
+Completed Tasks:
+- Fixed all 32 bugs that were recorded as `it.fails` unit tests (25 server, 7 worker). Each test is now a normal regression test in a `FIXED BUGS (regression tests)` group. Full list with fixes: `docs/TEST_RESULTS.md`.
+
+Key Changes:
+- Refund paths (`driverCancelRide`, `rideCancelAfterAccept`, `noDriverFound.job`): the rider's wallet is credited BEFORE the booking/passenger is finalised, so a failed credit stays retryable and is never paid twice.
+- `rideCancelAfterAccept`: no refund of the estimated fare when nothing was captured; the remaining rider(s) of a split ride cancelled for too few riders are now cancelled, refunded in full and notified (`cancelRemainingPassengers`).
+- `rideCancelBeforeAccept`: releases the card hold; rejected passengers no longer count as remaining.
+- `driverRejectRide`: only the `provider` role may reject.
+- `noShowPassengers.job` / `noDriverFound.job`: per-item try/catch; hold released before marking no-show; a failed Stripe cancel no longer marks the hold released.
+- `splitFare.utils`: `recalculateSplitFares` now returns `boolean` (false = lock not acquired) and `lockSplitRideFare` does not lock in that case; recalculation keeps the platform commission; a Redis failure after a card charge no longer rolls the charge back.
+- Worker: SMTP and push failures now fail the job (BullMQ retries); notifications POST to `/notification`; FCM data values are stringified; `.env.example` lists `TIME_ZONE` and `SERVER_URL`.
+
+Pending/Next Steps:
+- `POST /api/v1/notification` has no auth middleware (the worker relies on it).
+- `payment.service` `cancelAuthorizedBookingPayment` still marks a hold released when the Stripe cancel fails; untested, so left unchanged.
+- Fixes are verified with mocked models/Stripe/Redis only; not yet run against real services.
+
+---
+
 Date/Session: 2026-11-22
 
 Completed Tasks:

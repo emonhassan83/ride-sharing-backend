@@ -51,13 +51,13 @@ describe('sendPushNotification', () => {
     await expect(sendPushNotification(payload)).resolves.toEqual({ success: false });
   });
 
-  describe('KNOWN BUGS', () => {
+  describe('FIXED BUGS (regression tests)', () => {
     // BUG-REPORT WORKER-5 | medium | worker/src/app/utils/push-notification.service.ts:21
     // FCM `data` payloads may only contain STRING values; the Admin SDK throws on numbers /
     // booleans / objects. `data` is forwarded untouched, while the server producer types it as
     // `any` (references, ids, flags, nested objects), so such pushes are rejected and (see
     // WORKER-3) silently lost. Fix: coerce values with String()/JSON.stringify before sending.
-    it.fails('BUG WORKER-5: non-string data values are coerced to strings before sending', async () => {
+    it('BUG WORKER-5: non-string data values are coerced to strings before sending', async () => {
       await sendPushNotification({
         fcmToken: 't',
         title: 'a',

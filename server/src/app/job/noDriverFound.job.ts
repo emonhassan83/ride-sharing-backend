@@ -277,68 +277,79 @@ export const checkNoDriverFound = async () => {
   });
 
   for (const booking of bookingsToRefund) {
-    const payment = await Payment.findOne({ booking: booking._id });
+    // Each booking is handled on its own: one failure must not stop the other riders' refunds.
+    try {
+      const payment = await Payment.findOne({ booking: booking._id });
 
-    if (payment?.status === PAYMENT_STATUS.authorized && payment.paymentIntentId) {
-      try {
-        const intent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
-        if (intent.status === 'requires_capture') {
-          await stripe.paymentIntents.cancel(payment.paymentIntentId);
+      if (payment?.status === PAYMENT_STATUS.authorized && payment.paymentIntentId) {
+        try {
+          const intent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
+          if (intent.status === 'requires_capture') {
+            await stripe.paymentIntents.cancel(payment.paymentIntentId);
+          }
+        } catch (error: any) {
+          // The hold may still be on the rider's card, so do not record it as released.
+          console.error('Failed to cancel authorized payment:', error.message);
+          continue;
         }
-      } catch (error: any) {
-        console.error('Failed to cancel authorized payment:', error.message);
-      }
 
-      payment.status = PAYMENT_STATUS.cancelled_authorization as any;
-      payment.isPaid = false;
-      await payment.save();
-
-      booking.bookingStatus = BOOKING_STATUS.cancelled;
-      booking.paymentStatus = PAYMENT_STATUS.cancelled_authorization as any;
-      booking.amountPaid = 0;
-      await booking.save();
-      continue;
-    }
-
-    const paidAmount = booking.amountPaid ?? 0;
-    if (paidAmount > 0) {
-      if (payment && payment.status === PAYMENT_STATUS.paid) {
-        payment.status = PAYMENT_STATUS.refunded as any;
+        payment.status = PAYMENT_STATUS.cancelled_authorization as any;
         payment.isPaid = false;
         await payment.save();
 
-        if (payment.providerEarning && payment.providerEarning > 0 && booking.driverId) {
-          await User.findByIdAndUpdate(booking.driverId, {
-            $inc: { wallet: -payment.providerEarning }
-          });
-        }
+        booking.bookingStatus = BOOKING_STATUS.cancelled;
+        booking.paymentStatus = PAYMENT_STATUS.cancelled_authorization as any;
+        booking.amountPaid = 0;
+        await booking.save();
+        continue;
       }
 
-      await Refund.create({
-        user: booking.userId,
-        ...(booking.rideId ? { ride: booking.rideId } : {}),
-        type: REFUND_TYPE.cancel_ride,
-        paymentIntentId: booking.transactionId || payment?.transactionId || '',
-        amount: paidAmount,
-        reason: 'No driver found',
-        note: `Ride ${booking.rideId} cancelled due to no driver found`,
-        status: REFUND_STATUS.confirmed,
-      });
+      const paidAmount = booking.amountPaid ?? 0;
+      if (paidAmount > 0) {
+        // Credit the rider first: the booking is only finalised as refunded once the money is back.
+        await refundToWallet(
+          booking.userId.toString(),
+          paidAmount,
+          'no_driver_found',
+          io
+        );
 
-      booking.bookingStatus = BOOKING_STATUS.cancelled;
-      booking.paymentStatus = PAYMENT_STATUS.refunded as any;
-      booking.refundAmount = paidAmount;
-      await booking.save();
+        if (payment && payment.status === PAYMENT_STATUS.paid) {
+          payment.status = PAYMENT_STATUS.refunded as any;
+          payment.isPaid = false;
+          await payment.save();
 
-      await refundToWallet(
-        booking.userId.toString(),
-        paidAmount,
-        'no_driver_found',
-        io
+          if (payment.providerEarning && payment.providerEarning > 0 && booking.driverId) {
+            await User.findByIdAndUpdate(booking.driverId, {
+              $inc: { wallet: -payment.providerEarning }
+            });
+          }
+        }
+
+        await Refund.create({
+          user: booking.userId,
+          ...(booking.rideId ? { ride: booking.rideId } : {}),
+          type: REFUND_TYPE.cancel_ride,
+          paymentIntentId: booking.transactionId || payment?.transactionId || '',
+          amount: paidAmount,
+          reason: 'No driver found',
+          note: `Ride ${booking.rideId} cancelled due to no driver found`,
+          status: REFUND_STATUS.confirmed,
+        });
+
+        booking.bookingStatus = BOOKING_STATUS.cancelled;
+        booking.paymentStatus = PAYMENT_STATUS.refunded as any;
+        booking.refundAmount = paidAmount;
+        await booking.save();
+      } else {
+        booking.bookingStatus = BOOKING_STATUS.cancelled;
+        await booking.save();
+      }
+    } catch (error: any) {
+      console.error(
+        `No-driver refund failed for booking ${String(booking._id)}:`,
+        error?.message || error,
       );
-    } else {
-      booking.bookingStatus = BOOKING_STATUS.cancelled;
-      await booking.save();
     }
   }
 

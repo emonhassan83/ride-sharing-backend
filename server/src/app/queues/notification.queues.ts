@@ -19,6 +19,21 @@ export interface NotificationJobData {
 
 let notificationQueueInstance: Queue | null = null;
 
+// Keeps jobIds unique when several jobs for one user are created in the same millisecond.
+let lastJobIdBase = '';
+let sameMsCounter = 0;
+
+const buildNotificationJobId = (userId: string): string => {
+  const base = `notif_${userId}_${Date.now()}`;
+  if (base === lastJobIdBase) {
+    sameMsCounter += 1;
+    return `${base}_${sameMsCounter}`;
+  }
+  lastJobIdBase = base;
+  sameMsCounter = 0;
+  return base;
+};
+
 export const getNotificationQueue = async (): Promise<Queue> => {
   if (!notificationQueueInstance) {
     notificationQueueInstance = new Queue('notification-queue', {
@@ -57,7 +72,7 @@ export const addNotificationJob = async (
     },
     {
       priority: data.priority || 3,
-      jobId: `notif_${data.userId}_${Date.now()}`, // Fixed jobId
+      jobId: buildNotificationJobId(data.userId),
     }
   );
   
