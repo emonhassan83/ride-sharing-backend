@@ -50,7 +50,9 @@ export const buildAcceptedPushDescription = (
   return etaText;
 };
 
-const ensureRiderInRoom = (userId: string, rideId: string) => {
+type TAck = { success: boolean; message: string; data?: Record<string, any> };
+
+const ensureRiderInRoom =(userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
   if (riderSocket) riderSocket.join(`ride:${rideId}`);
 };
@@ -571,233 +573,314 @@ export const driverAcceptRideHandler = eventHandler<any>(
 
     // ──────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.split) {
-      // Accept-time: no seats/cap gates, but a cancelled/refunded passenger is rejected below.
-      const passenger = passengerId
-        ? await Passenger.findOne({ _id: passengerId, rideId }) ||
-          await Passenger.findById(passengerId)
-        : await Passenger.findOne({ rideId });
+      // Accepts one rider. Returns the ack it would send instead of sending it,
+      // so the whole-ride accept below can run it once per pending rider.
+      const acceptSplitPassenger = async (passenger: any, wholeRide: boolean): Promise<TAck> => {
+        const booking =
+          (await Booking.findOne({ passengerId: passenger._id, rideId: ride._id })) ||
+          (await Booking.findOne({ passengerId: passenger._id }));
+        if (!booking) {
+          return {
+            success: false,
+            message: 'Booking not found for this passenger.',
+          };
+        }
 
-      if (!passenger)
-        return callback?.({
-          success: false,
-          message: 'Passenger not found for this split ride',
-        });
+        const splitBlock = getAcceptBlockReason(passenger, booking);
+        if (splitBlock) return { success: false, message: splitBlock };
 
-      const booking =
-        (await Booking.findOne({ passengerId: passenger._id, rideId: ride._id })) ||
-        (await Booking.findOne({ passengerId: passenger._id }));
-      if (!booking) {
-        return callback?.({
-          success: false,
-          message: 'Booking not found for this passenger.',
-        });
-      }
-
-      const splitBlock = getAcceptBlockReason(passenger, booking);
-      if (splitBlock) return callback?.({ success: false, message: splitBlock });
-
-      const pickupLat = passenger.pickup.coordinates[1];
-      const pickupLng = passenger.pickup.coordinates[0];
-      const estimatedArrival = await calcEstimatedArrival(
-        redis,
-        driverId,
-        pickupLat,
-        pickupLng
-      );
-
-      // Only riders inside the max cap block "fully accepted"; overflow pending ignored.
-      const maxMatchedRiders = await getSplitMaxMatchedRiders();
-      const activeSorted = await getActiveSplitPassengersOnRide(rideId);
-      const remainingCount = activeSorted
-        .slice(0, maxMatchedRiders)
-        .filter(
-          (p: any) =>
-            p._id.toString() !== passenger._id.toString() &&
-            p.status === PASSENGER_STATUS.pending,
-        ).length;
-      const isLastPassenger = remainingCount === 0;
-
-      if (ride.driverId && ride.driverId.toString() !== driverId)
-        return callback?.({
-          success: false,
-          message: 'This ride has already been assigned to another driver.',
-        });
-
-      const rideUpdate: Record<string, any> = {};
-      let assignedThisRide = false;
-      if (!ride.driverId) {
-        rideUpdate.driverId = driverId;
-        rideUpdate.vehicleId = vehicleId;
-        rideUpdate.notifiedDriverIds = [driverId];
-        if (ride.totalSeats === 0) rideUpdate.totalSeats = vehicleTotalSeats;
-        assignedThisRide = true;
-      }
-      // Mark ride as accepted as soon as a driver accepts the first passenger
-      // so noDriverFound job does not cancel/refund an accepted split ride.
-      rideUpdate.status = RIDE_STATUS.accepted;
-
-      if (Object.keys(rideUpdate).length) {
-        const assignedRide = await Ride.findOneAndUpdate(
-          {
-            _id: rideId,
-            $or: [
-              { driverId: driverId },
-              { driverId: { $exists: false } },
-              { driverId: null },
-            ],
-          },
-          rideUpdate,
-          { returnDocument: 'after' }
+        const pickupLat = passenger.pickup.coordinates[1];
+        const pickupLng = passenger.pickup.coordinates[0];
+        const estimatedArrival = await calcEstimatedArrival(
+          redis,
+          driverId,
+          pickupLat,
+          pickupLng
         );
 
-        if (!assignedRide)
-          return callback?.({
+        // Only riders inside the max cap block "fully accepted"; overflow pending ignored.
+        const maxMatchedRiders = await getSplitMaxMatchedRiders();
+        const activeSorted = await getActiveSplitPassengersOnRide(rideId);
+        const remainingCount = activeSorted
+          .slice(0, maxMatchedRiders)
+          .filter(
+            (p: any) =>
+              p._id.toString() !== passenger._id.toString() &&
+              p.status === PASSENGER_STATUS.pending,
+          ).length;
+        const isLastPassenger = remainingCount === 0;
+
+        if (ride.driverId && ride.driverId.toString() !== driverId)
+          return {
             success: false,
             message: 'This ride has already been assigned to another driver.',
-          });
+          };
 
-        if (assignedThisRide) {
-          await notifyOtherNotifiedDriversRideTaken(ride, driverId, io, passenger._id.toString());
+        const rideUpdate: Record<string, any> = {};
+        let assignedThisRide = false;
+        if (!ride.driverId) {
+          rideUpdate.driverId = driverId;
+          rideUpdate.vehicleId = vehicleId;
+          rideUpdate.notifiedDriverIds = [driverId];
+          if (ride.totalSeats === 0) rideUpdate.totalSeats = vehicleTotalSeats;
+          assignedThisRide = true;
         }
-      }
+        // Mark ride as accepted as soon as a driver accepts the first passenger
+        // so noDriverFound job does not cancel/refund an accepted split ride.
+        rideUpdate.status = RIDE_STATUS.accepted;
 
-      await redis.zrem('ride:matching:queue', ride._id.toString());
+        if (Object.keys(rideUpdate).length) {
+          const assignedRide = await Ride.findOneAndUpdate(
+            {
+              _id: rideId,
+              $or: [
+                { driverId: driverId },
+                { driverId: { $exists: false } },
+                { driverId: null },
+              ],
+            },
+            rideUpdate,
+            { returnDocument: 'after' }
+          );
 
-      booking.userId = passenger.userId as any;
-      booking.driverId = driverId as any;
-      booking.totalFare = passenger.estimatedFare;
-      booking.bookingStatus = BOOKING_STATUS.accepted;
-      await booking.save();
+          if (!assignedRide)
+            return {
+              success: false,
+              message: 'This ride has already been assigned to another driver.',
+            };
 
-      const activePassengersAfterAccept = await getActiveSplitPassengersOnRide(ride._id);
-      const exactBookedSeats = activePassengersAfterAccept.reduce(
-        (sum: number, p: any) => sum + (Number(p.requestedSeats) || 1),
-        0,
-      );
-
-      await Ride.findByIdAndUpdate(ride._id, {
-        $set: { bookedSeats: exactBookedSeats },
-        $inc: {
-          malePassengers: passenger.malePassengers || 0,
-          femalePassengers: passenger.femalePassengers || 0,
-        },
-      });
-
-      await redis.hincrby(
-        `driver:${driverId}:details`,
-        'bookedSeats',
-        passenger.requestedSeats || 1
-      );
-
-      const existingChat = await Chat.findOne({ booking: booking._id });
-      if (!existingChat) {
-        await Chat.create({
-          booking: booking._id,
-          participants: [booking.userId, booking.driverId as any],
-          status: CHAT_STATUS.accepted,
-        });
-      }
-
-      const alreadyAccepted = [
-        PASSENGER_STATUS.confirmed,
-        PASSENGER_STATUS.driver_arrived,
-        PASSENGER_STATUS.in_progress,
-        PASSENGER_STATUS.picked_up,
-        PASSENGER_STATUS.dropped_off,
-        PASSENGER_STATUS.completed,
-      ].includes(passenger.status as any);
-      const firstAccept = !alreadyAccepted;
-
-      if (firstAccept) {
-        notifyAdminForNewPendingBooking(booking).catch(() => { });
-      }
-
-      passenger.status = PASSENGER_STATUS.confirmed;
-      await passenger.save();
-
-      await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
-      await recalculateSplitFares(rideId, 'passenger_joined', io);
-
-      if (isLastPassenger) {
-        await redis.hset(`ride:active:${rideId}`, {
-          driverId,
-          status: RIDE_STATUS.accepted,
-          startedAt: Date.now().toString(),
-          passengerCount: '1',
-        });
-        await redis.expire(`ride:active:${rideId}`, 7200);
-        await redis.set(`driver:${driverId}:activeRide`, rideId, 'EX', 7200);
-      }
-
-      ensureRiderInRoom(passenger.userId.toString(), rideId);
-
-      const refreshedPassenger = await Passenger.findById(passenger._id).lean() || passenger;
-      const fareBreakdown = await buildStoredFareBreakdown(refreshedPassenger, booking, ride);
-      const price = toRiderPriceView({
-        estimatedFare: Number(
-          (refreshedPassenger as any).estimatedFare ||
-            booking.totalFare ||
-            fareBreakdown.totalFare,
-        ),
-        vatAmount: fareBreakdown.vatAmount,
-        vatPercentage: fareBreakdown.vatPercentage,
-        vatIncluded: fareBreakdown.vatIncluded,
-      });
-
-      const payload = buildAcceptedPayload(
-        rideId,
-        refreshedPassenger,
-        booking,
-        driverId,
-        driverDetails,
-        socket,
-        estimatedArrival,
-        {
-          rideFullyAccepted: isLastPassenger,
-          remainingPassengers: remainingCount,
-          ...price,
-          waitTimeNotice: buildWaitTimeNotice(),
+          if (assignedThisRide) {
+            // Whole-ride accept: the other drivers drop the whole card, so no passengerId.
+            await notifyOtherNotifiedDriversRideTaken(
+              ride,
+              driverId,
+              io,
+              wholeRide ? undefined : passenger._id.toString(),
+            );
+            // Keep the in-memory ride in step, so the next rider of a whole-ride
+            // accept does not re-assign it or tell the other drivers again.
+            ride.driverId = assignedRide.driverId;
+            ride.totalSeats = assignedRide.totalSeats;
+          }
         }
-      );
 
-      io.to(`user:${passenger.userId.toString()}`)
-        .to(`ride:${rideId}`)
-        .emit('ride:driver-accepted', payload);
-      console.log(
-        `Split accepted | passengerId: ${passengerId} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
-      );
+        await redis.zrem('ride:matching:queue', ride._id.toString());
 
-      // Socket event first, then the push (issue 8).
-      if (firstAccept) {
-        await notifyUserPush({
-          userId: passenger.userId.toString(),
-          message: 'Driver Accepted Your Split Ride!',
-          description: buildAcceptedPushDescription(
-            ride as any,
-            `Your booking is confirmed. ETA: ${estimatedArrival} minutes.`,
-          ),
-          reference: passenger._id.toString(),
-          modelType: modeType.Passenger,
-          dedupeKey: `ride-accepted:${passenger._id.toString()}`,
-          data: {
-            type: 'RIDE_ACCEPTED',
-            rideId: String(rideId),
-            passengerId: passenger._id.toString(),
+        booking.userId = passenger.userId as any;
+        booking.driverId = driverId as any;
+        booking.totalFare = passenger.estimatedFare;
+        booking.bookingStatus = BOOKING_STATUS.accepted;
+        await booking.save();
+
+        const activePassengersAfterAccept = await getActiveSplitPassengersOnRide(ride._id);
+        const exactBookedSeats = activePassengersAfterAccept.reduce(
+          (sum: number, p: any) => sum + (Number(p.requestedSeats) || 1),
+          0,
+        );
+
+        await Ride.findByIdAndUpdate(ride._id, {
+          $set: { bookedSeats: exactBookedSeats },
+          $inc: {
+            malePassengers: passenger.malePassengers || 0,
+            femalePassengers: passenger.femalePassengers || 0,
           },
         });
+
+        await redis.hincrby(
+          `driver:${driverId}:details`,
+          'bookedSeats',
+          passenger.requestedSeats || 1
+        );
+
+        const existingChat = await Chat.findOne({ booking: booking._id });
+        if (!existingChat) {
+          await Chat.create({
+            booking: booking._id,
+            participants: [booking.userId, booking.driverId as any],
+            status: CHAT_STATUS.accepted,
+          });
+        }
+
+        const alreadyAccepted = [
+          PASSENGER_STATUS.confirmed,
+          PASSENGER_STATUS.driver_arrived,
+          PASSENGER_STATUS.in_progress,
+          PASSENGER_STATUS.picked_up,
+          PASSENGER_STATUS.dropped_off,
+          PASSENGER_STATUS.completed,
+        ].includes(passenger.status as any);
+        const firstAccept = !alreadyAccepted;
+
+        if (firstAccept) {
+          notifyAdminForNewPendingBooking(booking).catch(() => { });
+        }
+
+        passenger.status = PASSENGER_STATUS.confirmed;
+        await passenger.save();
+
+        await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
+        await recalculateSplitFares(rideId, 'passenger_joined', io);
+
+        if (isLastPassenger) {
+          await redis.hset(`ride:active:${rideId}`, {
+            driverId,
+            status: RIDE_STATUS.accepted,
+            startedAt: Date.now().toString(),
+            passengerCount: '1',
+          });
+          await redis.expire(`ride:active:${rideId}`, 7200);
+          await redis.set(`driver:${driverId}:activeRide`, rideId, 'EX', 7200);
+        }
+
+        ensureRiderInRoom(passenger.userId.toString(), rideId);
+
+        const refreshedPassenger = await Passenger.findById(passenger._id).lean() || passenger;
+        const fareBreakdown = await buildStoredFareBreakdown(refreshedPassenger, booking, ride);
+        const price = toRiderPriceView({
+          estimatedFare: Number(
+            (refreshedPassenger as any).estimatedFare ||
+              booking.totalFare ||
+              fareBreakdown.totalFare,
+          ),
+          vatAmount: fareBreakdown.vatAmount,
+          vatPercentage: fareBreakdown.vatPercentage,
+          vatIncluded: fareBreakdown.vatIncluded,
+        });
+
+        const payload = buildAcceptedPayload(
+          rideId,
+          refreshedPassenger,
+          booking,
+          driverId,
+          driverDetails,
+          socket,
+          estimatedArrival,
+          {
+            rideFullyAccepted: isLastPassenger,
+            remainingPassengers: remainingCount,
+            ...price,
+            waitTimeNotice: buildWaitTimeNotice(),
+          }
+        );
+
+        io.to(`user:${passenger.userId.toString()}`)
+          .to(`ride:${rideId}`)
+          .emit('ride:driver-accepted', payload);
+        console.log(
+          `Split accepted | passengerId: ${passenger._id} | remaining: ${remainingCount} | eta: ${estimatedArrival}min`
+        );
+
+        // Socket event first, then the push (issue 8).
+        if (firstAccept) {
+          await notifyUserPush({
+            userId: passenger.userId.toString(),
+            message: 'Driver Accepted Your Split Ride!',
+            description: buildAcceptedPushDescription(
+              ride as any,
+              `Your booking is confirmed. ETA: ${estimatedArrival} minutes.`,
+            ),
+            reference: passenger._id.toString(),
+            modelType: modeType.Passenger,
+            dedupeKey: `ride-accepted:${passenger._id.toString()}`,
+            data: {
+              type: 'RIDE_ACCEPTED',
+              rideId: String(rideId),
+              passengerId: passenger._id.toString(),
+            },
+          });
+        }
+
+        return {
+          success: true,
+          message: isLastPassenger
+            ? 'Passenger accepted. All passengers confirmed.'
+            : `Passenger accepted. ${remainingCount} still pending.`,
+          data: {
+            passengerId: passenger._id,
+            bookingId: booking._id,
+            estimatedArrival,
+            rideFullyAccepted: isLastPassenger,
+            remainingPassengers: remainingCount,
+            ...price,
+          },
+        };
+      };
+
+      // Legacy: accept one rider (passengerId given).
+      if (passengerId) {
+        const passenger =
+          (await Passenger.findOne({ _id: passengerId, rideId })) ||
+          (await Passenger.findById(passengerId));
+        if (!passenger)
+          return callback?.({
+            success: false,
+            message: 'Passenger not found for this split ride',
+          });
+        return callback?.(await acceptSplitPassenger(passenger, false));
       }
 
+      // One Accept takes the whole ride: every pending rider inside the rider cap,
+      // oldest first. The driver card is one per ride (keyed by rideId), so this is
+      // what its Accept button means. A rider who cannot be accepted yet (e.g. must
+      // re-authorize an increased fare) is skipped, stays pending, and is listed in
+      // `skippedPassengers`; the driver can accept them later by passengerId.
+      const maxMatchedRiders = await getSplitMaxMatchedRiders();
+      const pendingIds = (await getActiveSplitPassengersOnRide(rideId))
+        .slice(0, maxMatchedRiders)
+        .filter((p: any) => p.status === PASSENGER_STATUS.pending)
+        .map((p: any) => String(p._id));
+
+      if (!pendingIds.length)
+        return callback?.({
+          success: false,
+          message: 'No pending passengers to accept on this ride.',
+        });
+
+      const accepted: any[] = [];
+      const skipped: Array<{ passengerId: string; message: string }> = [];
+      for (const id of pendingIds) {
+        const passenger = await Passenger.findOne({ _id: id, rideId, status: PASSENGER_STATUS.pending });
+        if (!passenger) continue; // cancelled meanwhile
+        const result = await acceptSplitPassenger(passenger, true);
+        if (result.success) {
+          accepted.push(result.data);
+        } else {
+          skipped.push({ passengerId: id, message: result.message });
+          // Another driver took the ride: nothing else on it can be accepted.
+          if (result.message === 'This ride has already been assigned to another driver.') break;
+        }
+      }
+
+      if (!accepted.length) {
+        // Same shape as a single-rider failure, with the per-rider reasons attached.
+        return callback?.({
+          success: false,
+          message: skipped[0]?.message || 'No pending passengers to accept on this ride.',
+          data: { skippedPassengers: skipped },
+        });
+      }
+
+      const last = accepted[accepted.length - 1];
+      const rideFullyAccepted = Boolean(last.rideFullyAccepted);
       return callback?.({
         success: true,
-        message: isLastPassenger
-          ? 'Passenger accepted. All passengers confirmed.'
-          : `Passenger accepted. ${remainingCount} still pending.`,
+        message: rideFullyAccepted
+          ? 'Ride accepted. All passengers confirmed.'
+          : 'Ride accepted. Some passengers could not be accepted yet.',
         data: {
-          bookingId: booking._id,
-          estimatedArrival,
-          rideFullyAccepted: isLastPassenger,
-          remainingPassengers: remainingCount,
-          ...price,
+          rideId: String(rideId),
+          rideFullyAccepted,
+          remainingPassengers: last.remainingPassengers,
+          acceptedPassengers: accepted.map((a) => ({
+            passengerId: String(a.passengerId),
+            bookingId: String(a.bookingId),
+            estimatedArrival: a.estimatedArrival,
+            estimatedFare: a.estimatedFare,
+          })),
+          skippedPassengers: skipped,
+          // First rider's values at the top level, as in a single-rider accept, for older builds.
+          bookingId: accepted[0].bookingId,
+          estimatedArrival: accepted[0].estimatedArrival,
         },
       });
     }

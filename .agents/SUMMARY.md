@@ -1,3 +1,18 @@
+Date/Session: 2026-11-23 (app team: split cancel cascade, one card per ride, totalSeats 0)
+
+Completed Tasks:
+- `rideCancelBeforeAccept`: a split ride was cancelled whenever one rider or fewer remained, so a 2-rider ride lost the other rider's booking too (SR-0552185702). Now it's cancelled only when nobody is left. The creator leaving transfers ownership even to a single rider. The remaining riders are recalculated (`passenger_cancelled`). `remainingSeats` is `null` while `totalSeats` is 0 (it was negative). Removed `cancelAndNotifyRemaining`.
+- `recalculateSplitFares` → `ride:request-updated`: `reason` maps cancelled/rejected to `passenger_left`. `totalSeats` falls back per driver to `driver:<id>:details.seats` (default 4) while the ride's is 0.
+- Product decision (user): one card per ride, one Accept takes the whole ride. `driver:accept-ride` without `passengerId` on a split ride accepts every pending rider within the cap. Blocked riders go to `skippedPassengers`. The per-rider body moved into `acceptSplitPassenger`, and the in-memory `ride.driverId` is synced so "already taken" is sent once. `driver:reject-ride` without `passengerId` on a split ride = decline for this driver only (like private). `GET /passenger/ride-requests` is grouped per ride (old fields from the first rider plus `riders`/`bookedSeats`/`totalSeats`/`totalFare`/`passengers`).
+- 4 new messages in all 5 locales. Docs: `docs/APP_INTEGRATION_ROUND4.md` section 3 and "Split rides (third message)". Tests: `tests/integration/splitOneCard.int.test.ts`, plus updated unit tests (cancel-before-accept, splitFare, reject).
+
+Next Steps:
+- `rideCancelAfterAccept` has the same "one rider or fewer remaining → cancel everyone" rule after a driver accepted. Not changed, but probably the same bug: needs a product call.
+- Split `driver:reject-ride` WITH `passengerId` still marks that rider `rejected` on the ride for all drivers (and cancels the ride without releasing holds when none are pending). The app should stop using it from the card.
+- Redeploy dev/prod from `main`.
+
+---
+
 Date/Session: 2026-11-23 (app team follow-up: cancel ack, boarding state, refresh, chat push)
 
 Completed Tasks:

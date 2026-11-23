@@ -68,7 +68,9 @@ time, which is why they must not be hard-coded.
 
 ### `ride:request-updated` (driver app, B-07)
 Sent when a rider joins or leaves a split ride the driver was notified about or accepted.
-Update the existing request card **in place**:
+`reason` is `passenger_joined`, `passenger_left` (a rider cancelled or was rejected) or
+`passenger_paid`. `totalSeats` is the seat count of **this driver's** vehicle until a driver
+accepts, then the accepted vehicle's seats. Update the existing request card **in place**:
 
 ```json
 {
@@ -310,3 +312,67 @@ and a non-empty `data.chatId` (no push is sent without one). It also has `bookin
 
 **Production.** Deployment is not done from this repository. Both servers still need a redeploy from
 `main` (see the table at the top of this section).
+
+### Split rides (third message)
+
+These are backend fixes on `main`. They need the same redeploy as everything above.
+
+**One rider cancels before acceptance: the whole ride was cancelled (ride SR-0552185702).** That
+was a backend bug. When a 2-rider split ride lost one rider, the backend treated the remaining rider
+as "not enough" and cancelled both the ride and that rider's booking. Fixed: a rider who leaves only
+cancels their own booking. The ride is cancelled only when **no** rider is left. The rider who stays:
+
+- keeps the booking (still `pending`). Their fare is recalculated for one rider. They get
+  `ride:co-passenger-cancelled` (and a push), not `ride:cancelled`;
+- stays matchable for new riders, and is converted to Solo before pickup if nobody joins, as
+  for any single-rider split ride.
+
+Notified drivers get `ride:request-updated` with `reason: "passenger_left"` (new seats, riders and
+fare) and `ride:cancelled-by-rider` with `rideCancelled: false`. In that event, `remainingSeats` is
+`null` before a driver accepts (the vehicle is not known yet). It used to be a negative number.
+
+The €20 hold for Melisa (SR-2311425530): on the code in `main`, the old path did release the remaining
+rider's card hold when it cancelled her booking, and it sent her `ride:cancelled` plus a push. If she got
+nothing, the server was probably running an older build (see "Is this deployed?"). Please check that
+payment in Stripe: an uncaptured hold that was never released also expires on its own after about 7 days.
+With the fix, her booking is no longer cancelled at all.
+
+**One card or one card per rider? Does Accept take the whole ride?** One card per ride (`rideId`),
+and one Accept takes the whole ride.
+
+- `GET /api/v1/passenger/ride-requests` (and the `ride:pending-requests` replay on reconnect) now
+  returns **one row per ride**. The old per-rider fields are kept, from the first rider who booked,
+  so the row still renders on older builds. New fields:
+
+  | Field | Meaning |
+  |---|---|
+  | `riders` | Pending riders on the ride |
+  | `bookedSeats` | Their seats |
+  | `totalSeats` | Seats of your vehicle (of the accepted vehicle once accepted) |
+  | `totalFare` | Sum of their fares (EUR) |
+  | `passengers` | `[{ passengerId, user, pickup, destination, requestedSeats, estimatedDistanceKm, estimatedFare, createdAt, luggage… }]` |
+  | `rideShortId`, `rideType` | Ride reference and `private` / `split` |
+
+- **Accept:** `socket.emit('driver:accept-ride', { rideId }, ack)`, **without** `passengerId`. Every
+  pending rider on the ride is accepted. Each rider gets their own `ride:driver-accepted` and push.
+  `ack.data`:
+
+  ```json
+  { "rideId": "…", "rideFullyAccepted": true, "remainingPassengers": 0,
+    "acceptedPassengers": [{ "passengerId": "…", "bookingId": "…", "estimatedArrival": 3, "estimatedFare": 20 }],
+    "skippedPassengers": [] }
+  ```
+
+  A rider who cannot be accepted (for example, their booking was cancelled meanwhile) is listed in
+  `skippedPassengers` with a `message` and stays pending. In that case `rideFullyAccepted` is `false`.
+  If nobody could be accepted, the ack is `success: false`.
+- **Decline:** `socket.emit('driver:reject-ride', { rideId }, ack)`, without `passengerId`. The ride
+  disappears for this driver only. The riders keep their bookings, and the ride stays open for other
+  drivers. (With a `passengerId`, the old behaviour still applies: that rider is rejected from the ride.
+  Don't use it from the card.)
+- Sending `passengerId` to `driver:accept-ride` still accepts just that rider, so older builds keep working.
+
+**`ride:request-updated` had `totalSeats: 0`.** Before a driver accepts, the ride has no vehicle, so
+the backend stored 0 and sent it as is. It now sends each notified driver their own vehicle's seats
+(4 if unknown), and the accepted vehicle's seats after acceptance. The same rule applies to
+`totalSeats` in the ride-requests list.

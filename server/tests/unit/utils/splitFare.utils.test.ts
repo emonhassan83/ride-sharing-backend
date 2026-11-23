@@ -924,6 +924,42 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
     expect(driverRooms).toEqual([`driver:${driver}`]);
   });
 
+  it.each([
+    ['passenger_cancelled', 'passenger_left'],
+    ['passenger_rejected', 'passenger_left'],
+    ['passenger_joined', 'passenger_joined'],
+  ] as const)('ride:request-updated reason for %s is "%s"', async (reason, expected) => {
+    const driver = oid();
+    wire({ passengers: [passenger()], rideDoc: ride({ notifiedDriverIds: [driver], totalSeats: 4 }) });
+    const emit = vi.fn();
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
+
+    await recalculateSplitFares(RIDE_ID, reason, io);
+
+    const update = emit.mock.calls.find((c) => c[0] === 'ride:request-updated')?.[1];
+    expect(update).toMatchObject({ reason: expected, totalSeats: 4 });
+  });
+
+  it('ride:request-updated before acceptance (ride.totalSeats 0): each driver gets their own vehicle seats, default 4', async () => {
+    const withCar = oid();
+    const unknown = oid();
+    await fakeRedis.hset(`driver:${withCar}:details`, { seats: '6' });
+    wire({ passengers: [passenger()], rideDoc: ride({ notifiedDriverIds: [withCar, unknown], totalSeats: 0 }) });
+    const byRoom: Record<string, any> = {};
+    const io = {
+      to: vi.fn((room: string) => ({
+        emit: (event: string, payload: any) => {
+          if (event === 'ride:request-updated') byRoom[room] = payload;
+        },
+      })),
+    };
+
+    await recalculateSplitFares(RIDE_ID, 'passenger_joined', io);
+
+    expect(byRoom[`driver:${withCar}`].totalSeats).toBe(6);
+    expect(byRoom[`driver:${unknown}`].totalSeats).toBe(4);
+  });
+
   it('re-authorization without a socket server still updates the payment and does not throw', async () => {
     const target = passenger({ estimatedFare: 40 });
     const payment = paymentDoc(PAYMENT_STATUS.authorized, { authorizedAmount: 40, amount: 40 });

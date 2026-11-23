@@ -249,13 +249,21 @@ describe('driver:reject-ride - PRIVATE ride', () => {
 describe('driver:reject-ride - SPLIT ride', () => {
   const splitRide = () => makeRide({ type: 'split' });
 
-  it('requires a passengerId (a driver rejects one rider at a time)', async () => {
+  it('without a passengerId the driver declines the whole ride card, for themselves only', async () => {
     arrange(splitRide());
+    vi.mocked(Ride.findByIdAndUpdate).mockReturnValue(mockQuery(null) as any);
     await run({ rideId });
     expect(ack).toHaveBeenCalledWith({
-      success: false,
-      message: 'passengerId is required for split ride',
+      success: true,
+      message: 'Ride declined. It stays available to other drivers.',
+      data: { rideCancelled: false },
     });
+    expect(await fakeRedis.sismember(`ride:rejected:${rideId}`, driverId)).toBe(1);
+    expect(Ride.findByIdAndUpdate).toHaveBeenCalledWith(rideId, { $pull: { notifiedDriverIds: driverId } });
+    // No rider is touched: no status change, no fare recalculation, no rider event.
+    expect(Passenger.findOne).not.toHaveBeenCalled();
+    expect(recalculateSplitFares).not.toHaveBeenCalled();
+    expect(io.emittedEvents('ride:driver-rejected')).toHaveLength(0);
   });
 
   it('reports an unknown passenger', async () => {

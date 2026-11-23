@@ -11,7 +11,11 @@ import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
-import { transferRideOwnership, refundToWallet } from '../../../utils/splitFare.utils';
+import {
+  transferRideOwnership,
+  refundToWallet,
+  recalculateSplitFares,
+} from '../../../utils/splitFare.utils';
 import { Payment } from '../../../modules/payment/payment.model';
 import { Refund } from '../../../modules/refund/refund.model';
 import { revertDriverEarningIfCredited } from '../../../utils/driverEarning.utils';
@@ -166,40 +170,6 @@ const notifyRiderOwnCancellation = async (
   }
 };
 
-const cancelAndNotifyRemaining = async (
-  io: any,
-  rideId: string,
-  remaining: Array<{ _id: any; userId: any }>,
-  reason: string,
-) => {
-  for (const p of remaining) {
-    await releaseAuthorizedHold(p._id);
-
-    await Passenger.findByIdAndUpdate(p._id, {
-      status: PASSENGER_STATUS.cancelled,
-      cancellationReason: reason,
-      cancelledBy: CANCELLED_BY.user,
-    });
-
-    const userId = p.userId?.toString();
-    if (!userId) continue;
-
-    io.to(`user:${userId}`).emit('ride:cancelled', {
-      rideId,
-      message: 'Ride was cancelled because not enough passengers remained.',
-    });
-
-    await notifyUserPush({
-      userId,
-      message: 'Ride Cancelled',
-      description: 'Ride was cancelled because not enough passengers remained.',
-      reference: rideId,
-      modelType: modeType.Ride,
-      data: { type: 'RIDE_CANCELLED', rideId: String(rideId) },
-    });
-  }
-};
-
 export const rideCancelBeforeAcceptHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const { rideId, reason = '' } = data;
@@ -291,6 +261,11 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     }
 
     // ── SPLIT RIDE ────────────────────────────────────────────────────────────
+    // One rider leaving never cancels the others. A split ride with a single
+    // rider is a normal state (it stays matchable and the pending-match job
+    // converts it to Solo before pickup), so the ride is only cancelled when
+    // nobody is left. Before, a 2-rider ride was cancelled when either rider
+    // left and the remaining rider's booking was cancelled with it.
     if (ride.rideCreatedBy?.toString() === userId) {
       const remainingAfterCreator = await Passenger.find({
         rideId,
@@ -298,30 +273,16 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
         status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
       }).select('_id userId');
 
-      if (remainingAfterCreator.length <= 1) {
+      if (remainingAfterCreator.length === 0) {
         await Ride.findByIdAndUpdate(rideId, {
           status: RIDE_STATUS.cancelled,
-          cancellationReason: remainingAfterCreator.length === 0
-            ? 'Creator cancelled before acceptance'
-            : 'Creator cancelled, only one passenger remaining. Ride cancelled.',
+          cancellationReason: 'Creator cancelled before acceptance',
           cancelledBy: CANCELLED_BY.user, cancelledAt: new Date(),
         });
         await redisCleanup();
-        await cancelAndNotifyRemaining(
-          io,
-          rideId,
-          remainingAfterCreator,
-          'Only one passenger remaining. Ride cancelled.',
-        );
-        await notifyDriverCancelled(
-          io,
-          ride,
-          rideId,
-          remainingAfterCreator.length === 0
-            ? 'All passengers cancelled.'
-            : 'Only one passenger remaining. Ride cancelled.',
-          { rideCancelled: true },
-        );
+        await notifyDriverCancelled(io, ride, rideId, 'All passengers cancelled.', {
+          rideCancelled: true,
+        });
         return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true, ...cancelInfo } });
       }
 
@@ -353,28 +314,33 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
       status: { $nin: [PASSENGER_STATUS.cancelled, PASSENGER_STATUS.rejected] },
     }).select('_id userId');
 
-    if (remaining.length <= 1) {
+    if (remaining.length === 0) {
       await Ride.findByIdAndUpdate(rideId, {
         status: RIDE_STATUS.cancelled,
-        cancellationReason: remaining.length === 0
-          ? 'Last passenger cancelled'
-          : 'Only one passenger remaining. Ride cancelled.',
+        cancellationReason: 'Last passenger cancelled',
         cancelledBy: CANCELLED_BY.user, cancelledAt: new Date(),
       });
       await redisCleanup();
-      await cancelAndNotifyRemaining(
-        io,
-        rideId,
-        remaining,
-        'Only one passenger remaining. Ride cancelled.',
-      );
       await notifyDriverCancelled(io, ride, rideId, 'All passengers cancelled.', {
         rideCancelled: true,
       });
       return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true, ...cancelInfo } });
     }
 
-    const remainingSeats = (updatedRide?.totalSeats ?? 0) - (updatedRide?.bookedSeats ?? 0);
+    // The remaining riders' fares drop (fewer riders, lower surcharge) and the
+    // notified drivers get `ride:request-updated` (reason `passenger_left`) so
+    // their request card updates in place. The cancellation itself is already
+    // recorded, so a failed recalculation must not fail it.
+    try {
+      await recalculateSplitFares(rideId, 'passenger_cancelled', io);
+    } catch (err: any) {
+      console.warn(`Split recalculation after cancel failed | ride: ${rideId}:`, err?.message || err);
+    }
+
+    // totalSeats is 0 until a driver accepts (no vehicle yet): don't report a negative count.
+    const remainingSeats = (updatedRide?.totalSeats ?? 0) > 0
+      ? Math.max(0, (updatedRide?.totalSeats ?? 0) - (updatedRide?.bookedSeats ?? 0))
+      : null;
 
     await notifyDriverCancelled(
       io,

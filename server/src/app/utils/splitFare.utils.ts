@@ -337,6 +337,20 @@ export const chargeUser = async (
   return { success: false, method: 'failed', failReason: 'no_payment_method' };
 };
 
+const DEFAULT_VEHICLE_SEATS = 4;
+
+// Seats of the driver's vehicle as cached when they went online; 4 (the default
+// used by matching and socket init) when the cache is missing or unreadable.
+const getDriverVehicleSeats = async (driverId: string): Promise<number> => {
+  try {
+    const seats = await getRedisClient().hget(`driver:${driverId}:details`, 'seats');
+    const n = Number(seats);
+    return Number.isFinite(n) && n > 0 ? n : DEFAULT_VEHICLE_SEATS;
+  } catch {
+    return DEFAULT_VEHICLE_SEATS;
+  }
+};
+
 // ── Main recalculate (Cases 6, 29, 30, 31) ──
 export const recalculateSplitFares = async (
   rideId: string,
@@ -644,11 +658,18 @@ export const recalculateSplitFares = async (
           const fresh = await Passenger.find({ _id: { $in: activePassengers.map((p: any) => p._id) } })
             .select('_id requestedSeats estimatedFare')
             .lean();
+          // The app keys on `passenger_joined` / `passenger_left`; the internal
+          // cancel/reject reasons were leaking through and matched neither.
+          const cardReason =
+            reason === 'passenger_cancelled' || reason === 'passenger_rejected'
+              ? 'passenger_left'
+              : reason;
+          const rideTotalSeats = Number((updatedRide as any).totalSeats || 0);
           const payload = {
             rideId: String(rideId),
-            reason,
+            reason: cardReason,
             bookedSeats: exactBookedSeats,
-            totalSeats: Number((updatedRide as any).totalSeats || 0),
+            totalSeats: rideTotalSeats,
             riders: activeRiderCount,
             surchargePercent: newSurchargePercent,
             totalFare:
@@ -660,7 +681,11 @@ export const recalculateSplitFares = async (
             })),
           };
           for (const id of driverIds) {
-            emitter.to(`driver:${id}`).emit('ride:request-updated', payload);
+            // totalSeats stays 0 on the ride until a driver accepts (the vehicle
+            // is unknown before that), so each notified driver gets their own
+            // vehicle's seats, the same capacity their request card was built on.
+            const totalSeats = rideTotalSeats > 0 ? rideTotalSeats : await getDriverVehicleSeats(id);
+            emitter.to(`driver:${id}`).emit('ride:request-updated', { ...payload, totalSeats });
           }
         }
       }

@@ -32,7 +32,7 @@ const getDriverRideRequest = async (driverUserId: string) => {
       { status: RIDE_STATUS.accepted, driverId: driverUserId },
     ],
   })
-    .select('_id')
+    .select('_id totalSeats')
     .lean();
 
   if (!pendingRides.length) return [];
@@ -70,10 +70,65 @@ const getDriverRideRequest = async (driverUserId: string) => {
     .sort({ createdAt: -1 })
     .lean();
 
-  return passengerRides.map((p) => ({
-    ...p,
-    ...toLuggageFyiView(p),
-  }));
+  // One row per ride (the driver's card is keyed by rideId and one Accept takes
+  // the whole ride). It used to be one row per rider, so a 2-rider split ride
+  // showed as two cards. The row keeps the old per-rider fields, taken from the
+  // first rider who booked (`_id` is that rider's passenger id), and adds the
+  // ride totals and every pending rider in `passengers`.
+  const totalSeatsByRide = new Map(
+    visibleRides.map((r: any) => [String(r._id), Number(r.totalSeats || 0)]),
+  );
+  // Before acceptance the ride has no vehicle (totalSeats 0): use this driver's own seats.
+  let driverSeats = 4;
+  try {
+    const n = Number(await redis.hget(`driver:${driverUserId}:details`, 'seats'));
+    if (Number.isFinite(n) && n > 0) driverSeats = n;
+  } catch {
+    /* keep the default */
+  }
+
+  const groups = new Map<string, any[]>();
+  for (const p of passengerRides) {
+    const key = String((p as any).rideId?._id ?? (p as any).rideId);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(p);
+  }
+
+  const rows = [...groups.entries()].map(([rideId, riders]) => {
+    const oldestFirst = [...riders].sort(
+      (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+    const first: any = oldestFirst[0];
+    const newest = riders[0] as any; // input is sorted newest first
+    const rideTotalSeats = totalSeatsByRide.get(rideId) || 0;
+    return {
+      ...first,
+      ...toLuggageFyiView(first),
+      rideShortId: first.rideId?.id ?? null,
+      rideType: first.rideId?.type ?? null,
+      riders: oldestFirst.length,
+      bookedSeats: oldestFirst.reduce((s: number, p: any) => s + (Number(p.requestedSeats) || 1), 0),
+      totalSeats: rideTotalSeats > 0 ? rideTotalSeats : driverSeats,
+      totalFare: roundMoney(oldestFirst.reduce((s: number, p: any) => s + Number(p.estimatedFare || 0), 0)),
+      passengers: oldestFirst.map((p: any) => ({
+        passengerId: String(p._id),
+        user: p.userId,
+        pickup: p.pickup,
+        destination: p.destination,
+        requestedSeats: Number(p.requestedSeats) || 1,
+        estimatedDistanceKm: p.estimatedDistanceKm,
+        estimatedFare: Number(p.estimatedFare || 0),
+        createdAt: p.createdAt,
+        ...toLuggageFyiView(p),
+      })),
+      lastUpdatedAt: newest.createdAt,
+    };
+  });
+
+  // Newest activity first, as before.
+  return rows.sort(
+    (a: any, b: any) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime(),
+  );
 };
 
 // Get all passengers for a ride

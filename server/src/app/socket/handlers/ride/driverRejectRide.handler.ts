@@ -107,13 +107,20 @@ export const driverRejectRideHandler = eventHandler<any>(
       });
     }
 
-    // ── SPLIT RIDE — passengerId required ─────────────────────────────────────
+    // ── SPLIT RIDE ────────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.split) {
-      if (!passengerId)
+      // No passengerId: the driver declines the whole ride card (one card per
+      // ride). Only this driver stops seeing it; the riders keep their bookings
+      // and the ride stays pending for the other drivers, as for a private ride.
+      if (!passengerId) {
+        await markRejected();
+        await Ride.findByIdAndUpdate(rideId, { $pull: { notifiedDriverIds: driverId } });
         return callback?.({
-          success: false,
-          message: 'passengerId is required for split ride',
+          success: true,
+          message: 'Ride declined. It stays available to other drivers.',
+          data: { rideCancelled: false },
         });
+      }
 
       const passenger = await Passenger.findOne({
         _id: passengerId,

@@ -27,7 +27,11 @@ vi.mock('@src/app/modules/payment/payment.service', () => ({
 }));
 vi.mock('@src/app/utils/notifyUser.utils', () => ({ notifyUserPush: vi.fn() }));
 vi.mock('@src/app/socket/socket.init', () => ({ getIO: vi.fn() }));
-vi.mock('@src/app/utils/splitFare.utils', () => ({ transferRideOwnership: vi.fn() }));
+vi.mock('@src/app/utils/splitFare.utils', () => ({
+  transferRideOwnership: vi.fn(),
+  refundToWallet: vi.fn(),
+  recalculateSplitFares: vi.fn(),
+}));
 
 import { Booking } from '@src/app/modules/booking/booking.model';
 import { Passenger } from '@src/app/modules/passenger/passenger.model';
@@ -37,7 +41,7 @@ import { Ride } from '@src/app/modules/ride/ride.model';
 import { rideCancelBeforeAcceptHandler } from '@src/app/socket/handlers/ride/rideCancelBeforeAccept.handler';
 import { getIO } from '@src/app/socket/socket.init';
 import { notifyUserPush } from '@src/app/utils/notifyUser.utils';
-import { transferRideOwnership } from '@src/app/utils/splitFare.utils';
+import { recalculateSplitFares, transferRideOwnership } from '@src/app/utils/splitFare.utils';
 import { fakeRedis } from '@tests/helpers/fakeRedis';
 import { mockDoc, mockQuery, oidStr } from '@tests/helpers/mongoose';
 import { createMockIo, createMockSocket, type MockIo } from '@tests/helpers/socket';
@@ -344,7 +348,7 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
 describe('ride:cancel-before-accept - SPLIT ride', () => {
   const split = (o: Doc = {}) => makeRide({ type: 'split', ...o });
 
-  it('creator leaves and ONE other rider remains: ride cancelled, that rider is cancelled and told', async () => {
+  it('creator leaves and ONE other rider remains: ownership moves to that rider, the ride stays pending', async () => {
     const creator = makePassenger({ userId: creatorId });
     const other = makePassenger({ userId: oidStr() });
     const ride = split({ notifiedDriverIds: [driverA] });
@@ -352,19 +356,20 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
 
     await run({ rideId });
 
-    expect(ride.status).toBe('cancelled');
-    expect(ride.cancellationReason).toBe('Creator cancelled, only one passenger remaining. Ride cancelled.');
-    expect(transferRideOwnership).not.toHaveBeenCalled();
-    expect(other.status).toBe('cancelled');
-    expect(other.cancellationReason).toBe('Only one passenger remaining. Ride cancelled.');
-    expect(io.payloadTo(`user:${other.userId}`, 'ride:cancelled')).toEqual({
-      rideId,
-      message: 'Ride was cancelled because not enough passengers remained.',
-    });
-    expect(io.payloadTo(`driver:${driverA}`, 'ride:cancelled-by-rider').message).toBe(
-      'Only one passenger remaining. Ride cancelled.',
+    expect(transferRideOwnership).toHaveBeenCalledWith(rideId, creatorId, io);
+    expect(ride.status).toBe('pending');
+    expect(other.status).toBe('pending');
+    expect(io.payloadTo(`user:${other.userId}`, 'ride:cancelled')).toBeUndefined();
+    expect(recalculateSplitFares).toHaveBeenCalledWith(rideId, 'passenger_cancelled', io);
+    expect(io.payloadTo(`driver:${driverA}`, 'ride:cancelled-by-rider')).toEqual(
+      expect.objectContaining({ rideCancelled: false, passengerId: creator._id }),
     );
-    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: expect.objectContaining({ rideCancelled: true, feeAmount: 0, feePercent: 0 }) });
+    expect(io.payloadTo(`user:${other.userId}`, 'ride:co-passenger-cancelled')).toBeDefined();
+    expect(ack).toHaveBeenCalledWith({
+      success: true,
+      message: 'Cancelled successfully.',
+      data: expect.objectContaining({ rideCancelled: false, remainingPassengers: 1, feeAmount: 0 }),
+    });
   });
 
   it('creator leaves and NOBODY else remains: ride cancelled with the creator-specific reason', async () => {
@@ -453,20 +458,61 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
     });
   });
 
-  it('a non-creator leaves a 2-rider ride: the last rider is cancelled and the ride is cancelled', async () => {
+  it('a non-creator leaves a 2-rider ride: the other rider keeps the booking and the ride stays pending', async () => {
+    // QA: ride SR-0552185702. The first rider's booking used to be cancelled silently with the ride.
     const creator = makePassenger({ userId: creatorId });
     const leaver = makePassenger({ userId: oidStr() });
-    const ride = split({ notifiedDriverIds: [driverA] });
+    const ride = split({ notifiedDriverIds: [driverA], bookedSeats: 2, totalSeats: 0 });
     wire({ ride, passengers: [creator, leaver] });
 
     await run({ rideId }, asUser(leaver.userId));
 
-    expect(ride.status).toBe('cancelled');
-    expect(ride.cancellationReason).toBe('Only one passenger remaining. Ride cancelled.');
-    expect(creator.status).toBe('cancelled');
-    expect(io.payloadTo(`user:${creatorId}`, 'ride:cancelled')).toBeDefined();
-    expect(io.payloadTo(`driver:${driverA}`, 'ride:cancelled-by-rider').message).toBe('All passengers cancelled.');
-    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: expect.objectContaining({ rideCancelled: true, feeAmount: 0, feePercent: 0 }) });
+    expect(ride.status).toBe('pending');
+    expect(creator.status).toBe('pending');
+    expect(leaver.status).toBe('cancelled');
+    expect(PaymentService.cancelAuthorizedBookingPayment).toHaveBeenCalledTimes(0); // no booking wired for the creator either
+    expect(io.payloadTo(`user:${creatorId}`, 'ride:cancelled')).toBeUndefined();
+    expect(recalculateSplitFares).toHaveBeenCalledWith(rideId, 'passenger_cancelled', io);
+    // totalSeats is 0 before acceptance: seats left are unknown, never negative.
+    expect(io.payloadTo(`driver:${driverA}`, 'ride:cancelled-by-rider')).toEqual({
+      rideId,
+      message: 'A passenger cancelled before driver acceptance.',
+      rideCancelled: false,
+      passengerId: leaver._id,
+      remainingSeats: null,
+    });
+    expect(io.payloadTo(`user:${creatorId}`, 'ride:co-passenger-cancelled')).toEqual(
+      expect.objectContaining({ rideId, cancelledPassengerId: leaver._id }),
+    );
+    expect(ack).toHaveBeenCalledWith({
+      success: true,
+      message: 'Cancelled successfully.',
+      data: expect.objectContaining({ rideCancelled: false, remainingPassengers: 1, feeAmount: 0 }),
+    });
+  });
+
+  it('only the leaver\'s card hold is released, never the remaining rider\'s', async () => {
+    const creator = makePassenger({ userId: creatorId });
+    const leaver = makePassenger({ userId: oidStr() });
+    const creatorBooking = mockDoc({ _id: oidStr(), passengerId: String(creator._id), rideId, userId: creatorId });
+    const leaverBooking = mockDoc({ _id: oidStr(), passengerId: String(leaver._id), rideId, userId: leaver.userId });
+    wire({ ride: split(), passengers: [creator, leaver], bookings: [creatorBooking, leaverBooking] });
+
+    await run({ rideId }, asUser(leaver.userId));
+
+    expect(PaymentService.cancelAuthorizedBookingPayment).toHaveBeenCalledTimes(1);
+    expect(PaymentService.cancelAuthorizedBookingPayment).toHaveBeenCalledWith(String(leaverBooking._id));
+  });
+
+  it('a failed fare recalculation does not fail the cancellation', async () => {
+    const creator = makePassenger({ userId: creatorId });
+    const leaver = makePassenger({ userId: oidStr() });
+    wire({ ride: split(), passengers: [creator, leaver] });
+    vi.mocked(recalculateSplitFares).mockRejectedValueOnce(new Error('lock'));
+
+    await run({ rideId }, asUser(leaver.userId));
+
+    expect(ack).toHaveBeenCalledWith(expect.objectContaining({ success: true, message: 'Cancelled successfully.' }));
   });
 
   it('the only rider on a split ride cancels (not the creator): ride cancelled with reason "Last passenger cancelled"', async () => {
@@ -503,7 +549,7 @@ describe('FIXED BUGS (regression tests)', () => {
   // "remaining" uses status $ne cancelled, so passengers the driver REJECTED are counted as riders
   // still on the ride. With one real rider left plus a rejected one the ride is not cancelled and the
   // lone rider keeps waiting. The other handlers use $nin [cancelled, rejected]. Fix: match them.
-  it('BUG CANCEL-6: a rejected passenger must not count as a remaining rider (ride cancels when only one real rider is left)', async () => {
+  it('BUG CANCEL-6: a rejected passenger must not count as a remaining rider', async () => {
     const leaver = makePassenger({ userId: oidStr() });
     const real = makePassenger({ userId: oidStr() });
     const rejected = makePassenger({ userId: oidStr(), status: 'rejected' });
@@ -512,7 +558,21 @@ describe('FIXED BUGS (regression tests)', () => {
 
     await run({ rideId }, asUser(leaver.userId));
 
+    expect(ack).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ remainingPassengers: 1 }) }),
+    );
+  });
+
+  it('BUG CANCEL-6: with only a rejected passenger left, the ride is cancelled', async () => {
+    const leaver = makePassenger({ userId: oidStr() });
+    const rejected = makePassenger({ userId: oidStr(), status: 'rejected' });
+    const ride = makeRide({ type: 'split' });
+    wire({ ride, passengers: [leaver, rejected] });
+
+    await run({ rideId }, asUser(leaver.userId));
+
     expect(ride.status).toBe('cancelled');
+    expect(ride.cancellationReason).toBe('Last passenger cancelled');
   });
 
   // BUG-REPORT CANCEL-7 | low | rideCancelBeforeAccept.handler.ts:88
