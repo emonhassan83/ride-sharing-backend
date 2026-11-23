@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { isAllowedVehicleYear, VEHICLE_TOO_OLD_MESSAGE } from '../../utils/profileValidation.utils';
+
+// Issue 28: any car from 1900 on was accepted. The range is checked per request.
+const vehicleYearRule = (year: number) => isAllowedVehicleYear(year);
 
 const singleCarSchema = z.object({
   name: z.string().min(2, 'Vehicle name must be at least 2 characters'),
@@ -9,7 +13,8 @@ const singleCarSchema = z.object({
   year: z
     .number()
     .min(1900, 'Year must be after 1900')
-    .max(new Date().getFullYear() + 1, 'Invalid year'),
+    .max(new Date().getFullYear() + 1, 'Invalid year')
+    .refine(vehicleYearRule, { message: VEHICLE_TOO_OLD_MESSAGE }),
   seats: z
     .number()
     .min(1, 'At least 1 seat required')
@@ -35,7 +40,8 @@ const updateVehicleZodSchema = z.object({
       .string()
       .regex(/^[A-Za-z0-9- ]+$/)
       .optional(),
-    year: z.number().min(1900).max(new Date().getFullYear() + 1).optional(),
+    year: z.number().min(1900).max(new Date().getFullYear() + 1)
+      .refine(vehicleYearRule, { message: VEHICLE_TOO_OLD_MESSAGE }).optional(),
     seats: z.number().min(1).max(20).optional(),
     carPapers: z.array(z.string()).optional(),
   }),

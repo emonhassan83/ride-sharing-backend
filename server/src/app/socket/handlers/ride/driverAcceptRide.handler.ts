@@ -27,6 +27,7 @@ import { buildStoredFareBreakdown } from '../../../utils/fareBreakdownResponse.u
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 import { toLuggageFyiView } from '../../../utils/luggage.utils';
 import { buildWaitTimeNotice } from '../../../utils/waitTimeNotice.utils';
+import { getAcceptBlockReason } from '../../../utils/acceptGuard.utils';
 
 const ensureRiderInRoom = (userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
@@ -281,7 +282,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
 
     // ──────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.private) {
-      // Accept-time: no status/seats/booking-state gates — find passenger and proceed.
+      // Accept-time: no seats gates, but a cancelled/refunded passenger is rejected below.
       const passenger = passengerId
         ? await Passenger.findOne({ _id: passengerId, rideId }) ||
           await Passenger.findById(passengerId)
@@ -301,6 +302,9 @@ export const driverAcceptRideHandler = eventHandler<any>(
           message: 'Booking not found for this passenger.',
         });
       }
+
+      const privateBlock = getAcceptBlockReason(passenger, booking);
+      if (privateBlock) return callback?.({ success: false, message: privateBlock });
 
       const pickupLat = passenger.pickup.coordinates[1];
       const pickupLng = passenger.pickup.coordinates[0];
@@ -531,7 +535,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
 
     // ──────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.split) {
-      // Accept-time: no pending/seats/cap/booking-state gates — find passenger and proceed.
+      // Accept-time: no seats/cap gates, but a cancelled/refunded passenger is rejected below.
       const passenger = passengerId
         ? await Passenger.findOne({ _id: passengerId, rideId }) ||
           await Passenger.findById(passengerId)
@@ -552,6 +556,9 @@ export const driverAcceptRideHandler = eventHandler<any>(
           message: 'Booking not found for this passenger.',
         });
       }
+
+      const splitBlock = getAcceptBlockReason(passenger, booking);
+      if (splitBlock) return callback?.({ success: false, message: splitBlock });
 
       const pickupLat = passenger.pickup.coordinates[1];
       const pickupLng = passenger.pickup.coordinates[0];

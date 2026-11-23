@@ -615,7 +615,16 @@
     "Driver has started the trip and is heading to the pickup location.": "הנהג יצא לדרך ובדרכו לנקודת האיסוף.",
     "Payment Needs Attention": "נדרשת פעולה בנוגע לתשלום",
     "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.": "נהג ניסה לקבל את הנסיעה שלך, אך לא ניתן היה להשלים את התשלום. יש לבדוק את אמצעי התשלום.",
-    "Trip already started": "הנסיעה כבר התחילה"
+    "Trip already started": "הנסיעה כבר התחילה",
+    "This booking has been cancelled or refunded and cannot be paid again.": "הזמנה זו בוטלה או הוחזרה ולא ניתן לשלם עליה שוב.",
+    "Please enter a valid name (at least 2 letters).": "נא להזין שם תקין (לפחות 2 אותיות).",
+    "Please enter a valid address.": "נא להזין כתובת תקינה.",
+    "Please enter a valid date of birth.": "נא להזין תאריך לידה תקין.",
+    "Drivers must be at least 18 years old.": "נהגים חייבים להיות בני 18 לפחות.",
+    "Vehicle is too old. Please add a newer vehicle.": "הרכב ישן מדי. נא להוסיף רכב חדש יותר.",
+    "Passenger not found for this split ride": "הנוסע לא נמצא עבור נסיעה משותפת זו",
+    "Driver arrival marked and passenger notified successfully.": "הגעת הנהג סומנה והנוסע קיבל הודעה.",
+    "Trip must be accepted or started before picking up": "יש לאשר או להתחיל את הנסיעה לפני האיסוף"
   },
   "patterns": {
     "dropoff_fare": "סה\"כ תעריף: €{{totalFare}} (בסיס: €{{baseFare}} + המתנה: €{{waitingCharge}})",

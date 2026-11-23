@@ -1,3 +1,24 @@
+Date/Session: 2026-11-23 (client QA doc #3: backend issues 14, 23, 24, 27, 28, 29, 30, 5)
+
+Completed Tasks:
+- Triaged all 32 entries (7 already fixed in rounds 1-2, ~14 app-only). Fixed the backend ones. Report: `docs/CLIENT_BUG_FIXING_REPORT_3.md`.
+- Unit 1126 passing (48 new); integration 56 passing (19 new in `round3Issues.int.test.ts`; old code fails 15, the other 4 are controls). `tsc` + `test:types` clean.
+
+Key Changes:
+- Issue 14: `utils/acceptGuard.utils.ts`. `driverAcceptRide` (both branches) refuses cancelled/rejected/completed passengers or bookings and refunded/released payments. `confirmPayment` / `createPaymentIntent` / `payWithWallet` refuse closed bookings; refunded/released payments are never reused; the closed-booking error skips the confirm auto-refund (would refund the card on top of the wallet). `driverCompleteTrip` does not overwrite refunded bookings. Admin recent transactions sorted by `updatedAt`.
+- Wallet pay + cancel before accept: `rideCancelBeforeAccept` now refunds the wallet (atomic payment claim, Refund doc), closes the booking, and claims the passenger atomically (double tap).
+- Issue 30: `deleteUserProfile` uses `hasBlockingActiveRide` / `isRideStillActive` (stale accepted/pending rides past `isPastUpcomingWindow` no longer block).
+- Issue 23: `POST /provider` resubmits for rejected/pending KYC (status back to pending); verified still 409.
+- Issues 24/27/28/29: `utils/profileValidation.utils.ts` used by user + vehicle Zod schemas; drivers 18+ in `updateUserProfile`; vehicles max 30 years (`MAX_VEHICLE_AGE_YEARS`, product to confirm).
+- 9 strings added to all 5 locales. Integration Mongo is now a single-node replica set (transactions); see `vitest.integration.config.mts`.
+
+Pending/Next Steps:
+- Client: confirm max vehicle age (30 used) and driver minimum age (18).
+- Mobile: wait-notice amount from `waitTimeNotice.feeAmount` (EUR 20), not a hardcoded EUR 10; show server validation messages.
+- Pre-existing, not changed: `confirmPayment` auto-refunds the Stripe intent on any other error; `PATCH /payments/refund-payment` and `POST /payments/confirm-payment` have no auth middleware.
+
+---
+
 Date/Session: 2026-11-23 (client QA doc #2: issues 4, 8, 9, 13)
 
 Completed Tasks:

@@ -28,14 +28,34 @@ const insertIntoDB = async (userId: string, payload: TProvider & { type?: string
       userId: user._id,
     }).session(session);
 
-    if (existingOne) {
-      throw new ApiError(
-        StatusCodes.CONFLICT,
-        'User already sent KYC verification!'
-      );
-    }
-
     const { type: providerType, ...providerPayload } = payload;
+
+    // Issue 23: a rejected driver (or one retrying a submission that is still
+    // pending) used to get "User already sent KYC verification!" forever, and
+    // there was no other route to correct the documents. Resubmitting now
+    // updates the existing record and puts it back in the admin review queue.
+    if (existingOne) {
+      if (existingOne.status === PROVIDER_STATUS.verified) {
+        throw new ApiError(
+          StatusCodes.CONFLICT,
+          'User already sent KYC verification!'
+        );
+      }
+
+      if (providerType && user.type !== providerType) {
+        await User.findByIdAndUpdate(user._id, { type: providerType }, { session });
+      }
+
+      const { userId: _ignored, status: _s, rejectionReason: _r, ...fields } = providerPayload as any;
+      const resubmitted = await Provider.findByIdAndUpdate(
+        existingOne._id,
+        { $set: { ...fields, status: PROVIDER_STATUS.pending, rejectionReason: null } },
+        { returnDocument: 'after', session },
+      );
+
+      await session.commitTransaction();
+      return resubmitted;
+    }
     const userProviderType = providerType || user.type;
 
     if (!userProviderType) {

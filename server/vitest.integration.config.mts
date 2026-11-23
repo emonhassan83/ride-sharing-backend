@@ -9,8 +9,10 @@ const fromRoot = (p: string) => fileURLToPath(new URL(p, import.meta.url));
  * Only third-party services are faked: Firebase (push), Google Maps, Stripe, Twilio, SMTP.
  *
  * Start the services first (ports chosen not to clash with a dev stack):
- *   docker run -d --name splitride-it-mongo -p 27099:27017 mongo:latest
+ *   docker run -d --name splitride-it-mongo -p 27099:27017 mongo:latest --replSet rs0
+ *   docker exec splitride-it-mongo mongosh --quiet --eval "rs.initiate()"
  *   docker run -d --name splitride-it-redis -p 6399:6379 redis:7-alpine
+ * (A single-node replica set: account deletion and KYC submission use transactions.)
  * Then: npm run test:integration
  *
  * The developer's .env is NEVER read (dotenv is stubbed), so these tests can not touch
@@ -48,7 +50,7 @@ export default defineConfig({
       JWT_REFRESH_EXPIRATION_TIME: '7d',
       BCRYPT_SALT_ROUNDS: '4',
       STRIPE_SECRET_KEY: 'sk_test_dummy',
-      MONGODB_URL: process.env.IT_MONGODB_URL || 'mongodb://127.0.0.1:27099/splitride-it',
+      MONGODB_URL: process.env.IT_MONGODB_URL || 'mongodb://127.0.0.1:27099/splitride-it?directConnection=true',
       REDIS_HOST: process.env.IT_REDIS_HOST || '127.0.0.1',
       REDIS_PORT: process.env.IT_REDIS_PORT || '6399',
       REDIS_PASSWORD: '',

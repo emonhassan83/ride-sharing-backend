@@ -615,7 +615,16 @@
     "Driver has started the trip and is heading to the pickup location.": "Водитель начал поездку и направляется к месту посадки.",
     "Payment Needs Attention": "Требуется внимание к оплате",
     "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.": "Водитель попытался принять вашу поездку, но оплату не удалось завершить. Проверьте способ оплаты.",
-    "Trip already started": "Поездка уже началась"
+    "Trip already started": "Поездка уже началась",
+    "This booking has been cancelled or refunded and cannot be paid again.": "Это бронирование отменено или возвращено и не может быть оплачено повторно.",
+    "Please enter a valid name (at least 2 letters).": "Введите корректное имя (не менее 2 букв).",
+    "Please enter a valid address.": "Введите корректный адрес.",
+    "Please enter a valid date of birth.": "Введите корректную дату рождения.",
+    "Drivers must be at least 18 years old.": "Водителям должно быть не менее 18 лет.",
+    "Vehicle is too old. Please add a newer vehicle.": "Автомобиль слишком старый. Добавьте более новый автомобиль.",
+    "Passenger not found for this split ride": "Пассажир не найден для этой совместной поездки",
+    "Driver arrival marked and passenger notified successfully.": "Прибытие водителя отмечено, пассажир уведомлён.",
+    "Trip must be accepted or started before picking up": "Поездка должна быть принята или начата до посадки пассажира"
   },
   "patterns": {
     "dropoff_fare": "Итоговая стоимость: €{{totalFare}} (Базовая: €{{baseFare}} + Ожидание: €{{waitingCharge}})",

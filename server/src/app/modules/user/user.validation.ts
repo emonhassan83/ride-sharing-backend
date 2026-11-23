@@ -1,5 +1,18 @@
 import { z } from 'zod';
 import { PROVIDER_TYPE, USER_ROLE, USER_STATUS } from './user.constant';
+import {
+  INVALID_ADDRESS_MESSAGE,
+  INVALID_DOB_MESSAGE,
+  INVALID_NAME_MESSAGE,
+  isValidAddress,
+  isValidDateOfBirth,
+  isValidPersonName,
+} from '../../utils/profileValidation.utils';
+
+// Issues 24, 27, 29: "." was accepted as a name/address, and 1900 as a birth year.
+const nameField = z.string().trim().refine(isValidPersonName, { message: INVALID_NAME_MESSAGE });
+const addressField = z.string().trim().refine(isValidAddress, { message: INVALID_ADDRESS_MESSAGE });
+const dateOfBirthField = z.string().trim().refine((v) => isValidDateOfBirth(v), { message: INVALID_DOB_MESSAGE });
 
 const createUserValidationSchema = z.object({
   body: z
@@ -8,7 +21,8 @@ const createUserValidationSchema = z.object({
         .string({
           message: 'Name is required.',
         })
-        .min(1, { message: 'Name cannot be empty.' }),
+        .min(1, { message: 'Name cannot be empty.' })
+        .pipe(nameField),
 
       email: z
         .string({
@@ -41,11 +55,11 @@ const updateUserValidationSchema = z.object({
   body: z.object({
     role: z.enum([USER_ROLE.user, USER_ROLE.provider] as [string, ...string[]]).optional(),
     type: z.enum(Object.values(PROVIDER_TYPE) as [string, ...string[]]).optional(),
-    name: z.string().optional(),
+    name: nameField.optional(),
     phone: z.string().optional(),
     countryCode: z.string().optional(),
-    address: z.string().optional(),
-    dateOfBirth: z.string().optional(),
+    address: addressField.optional(),
+    dateOfBirth: dateOfBirthField.optional(),
     profileImage: z.string().optional(),
     gender: z.string().optional(),
     language: z.string().optional(),
@@ -68,7 +82,7 @@ const updateLocationValidationSchema = z.object({
     latitude: z.number({
       message: 'latitude is required!',
     }),
-    address: z.string().min(1, { message: 'Address cannot be empty.' }),
+    address: z.string().min(1, { message: 'Address cannot be empty.' }).pipe(addressField),
   }),
 });
 

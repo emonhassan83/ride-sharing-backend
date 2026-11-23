@@ -16,6 +16,7 @@ import { paymentNotifyToUser } from './payment.utils';
 import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
 import { PASSENGER_STATUS } from '../passenger/passenger.constant';
+import { BOOKING_CLOSED_FOR_PAYMENT_MESSAGE, isClosedForPayment } from '../../utils/acceptGuard.utils';
 import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
 import { getIO } from '../../socket/socket.init';
@@ -310,6 +311,11 @@ const createPaymentIntent = async (payload: {
   const passenger = await Passenger.findById(booking.passengerId).lean();
   if (!passenger) throw new ApiError(StatusCodes.NOT_FOUND, 'Passenger not found');
 
+  // Issue 14: a cancelled/refunded booking must not be paid (and later captured) again.
+  if (isClosedForPayment(booking, passenger)) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, BOOKING_CLOSED_FOR_PAYMENT_MESSAGE);
+  }
+
   const ride = booking.rideId ? await Ride.findById(booking.rideId).lean() : null;
   if (!ride && passenger.status !== PASSENGER_STATUS.split_matching) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Ride not found');
@@ -393,10 +399,13 @@ const createPaymentIntent = async (payload: {
   // ── 5. Check existing unpaid payment ──────────────────────────────────────
   const transactionId = generateTransactionId();
 
+  // A refunded or released payment is a closed record: never reuse it (it would
+  // overwrite the refund history and could be flipped back to "paid").
   let payment = await Payment.findOne({
     booking: bookingId,
     user: userId,
     isPaid: false,
+    status: { $nin: [PAYMENT_STATUS.refunded, PAYMENT_STATUS.cancelled_authorization] },
   });
 
   if (!payment) {
@@ -517,6 +526,16 @@ const confirmPayment = async (payload: Record<string, any>) => {
     // ── 2. Booking check ──
     const booking = await Booking.findById(payment.booking).session(session);
     if (!booking) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
+
+    // Issue 14: refund paths set isPaid=false, so the isPaid guard above let a
+    // repeated confirm turn a refunded payment back into "paid" (rider kept the
+    // wallet refund too). Refunded/released payments and closed bookings are final.
+    if (
+      [PAYMENT_STATUS.refunded, PAYMENT_STATUS.cancelled_authorization].includes(payment.status as any) ||
+      isClosedForPayment(booking, null)
+    ) {
+      throw new ApiError(httpStatus.BAD_REQUEST, BOOKING_CLOSED_FOR_PAYMENT_MESSAGE);
+    }
 
 
     if (paymentIntent?.status === 'requires_capture') {
@@ -680,6 +699,12 @@ const confirmPayment = async (payload: Record<string, any>) => {
     return payment;
   } catch (error: any) {
     if (transactionStarted) await session.abortTransaction();
+
+    // A closed booking was already refunded (usually to the wallet). Refunding the
+    // Stripe intent again here would pay the rider twice, so stop without touching Stripe.
+    if (error instanceof ApiError && error.message === BOOKING_CLOSED_FOR_PAYMENT_MESSAGE) {
+      throw error;
+    }
 
     // Auto-refund on failure
     if (paymentIntentId) {
@@ -1041,6 +1066,9 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
 
     if (booking.paymentStatus === PAYMENT_STATUS.paid) {
       throw new ApiError(StatusCodes.BAD_REQUEST, 'Payment already completed');
+    }
+    if (isClosedForPayment(booking, null)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, BOOKING_CLOSED_FOR_PAYMENT_MESSAGE);
     }
 
     // ── 2. Validate User & Wallet Balance ──

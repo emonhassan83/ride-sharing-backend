@@ -97,8 +97,17 @@ const wire = (w: World) => {
     applyUpdate(byId(w.passengers, id), update);
     return mockQuery(byId(w.passengers, id));
   }) as any);
+  // Atomic claim of the caller's pending passenger (double-tap guard).
+  vi.mocked(Passenger.findOneAndUpdate).mockImplementation(((filter: Doc, update: Doc) => {
+    const doc = w.passengers.find((d) => matchOne(d, filter)) ?? null;
+    applyUpdate(doc, update);
+    return mockQuery(doc);
+  }) as any);
   vi.mocked(Booking.findOne).mockImplementation(collection(w.bookings ?? []).findOne as any);
+  vi.mocked(Booking.updateOne).mockReturnValue(mockQuery({ modifiedCount: 1 }) as any);
   vi.mocked(Payment.findOne).mockImplementation(collection([]).findOne as any);
+  // No wallet payment in these scenarios: nothing to refund.
+  vi.mocked(Payment.findOneAndUpdate).mockReturnValue(mockQuery(null) as any);
 };
 
 const makeRide = (o: Doc = {}): Doc => ({
@@ -192,6 +201,41 @@ describe('ride:cancel-before-accept - guards', () => {
   });
 });
 
+describe('ride:cancel-before-accept - double tap / wallet payment (round 3)', () => {
+  it('the losing request of a double tap cancels nothing and notifies nobody', async () => {
+    const rider = oidStr();
+    const p = makePassenger({ userId: rider });
+    const ride = makeRide({ notifiedDriverIds: [driverA] });
+    wire({ ride, passengers: [p] });
+    // The other request already claimed the passenger.
+    vi.mocked(Passenger.findOneAndUpdate).mockReturnValueOnce(mockQuery(null) as any);
+
+    await run({ rideId }, asUser(rider));
+
+    expect(ack).toHaveBeenCalledWith({ success: false, message: 'No pending booking found' });
+    expect(Ride.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(notifyUserPush).not.toHaveBeenCalled();
+    expect(ride.status).toBe('pending');
+  });
+
+  it('a wallet-paid booking is closed as cancelled + refunded', async () => {
+    const rider = oidStr();
+    const p = makePassenger({ userId: rider });
+    const booking = { _id: oidStr(), passengerId: p._id, userId: rider, amountPaid: 0 };
+    wire({ ride: makeRide(), passengers: [p], bookings: [booking] });
+
+    await run({ rideId }, asUser(rider));
+
+    // No paid payment was claimed here, so only the status is closed (no refund fields).
+    expect(Payment.findOneAndUpdate).toHaveBeenCalledWith(
+      { booking: booking._id, status: 'paid', isPaid: true },
+      { $set: { status: 'refunded', isPaid: false } },
+      { returnDocument: 'after' },
+    );
+    expect(Booking.updateOne).toHaveBeenCalledWith({ _id: booking._id }, { $set: { bookingStatus: 'cancelled' } });
+  });
+});
+
 describe('ride:cancel-before-accept - PRIVATE ride', () => {
   it('cancels the rider\'s booking and the ride, clears matching state, notifies the driver(s)', async () => {
     const rider = oidStr();
@@ -201,7 +245,7 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
 
     await run({ rideId, reason: 'Changed my mind' }, asUser(rider));
 
-    expect(Passenger.findByIdAndUpdate).toHaveBeenCalledWith(p._id, {
+    expect(Passenger.findOneAndUpdate).toHaveBeenCalledWith({ _id: p._id, status: 'pending' }, {
       status: 'cancelled',
       cancellationReason: 'Changed my mind',
       cancelledBy: 'user',
@@ -243,8 +287,8 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
     const p = makePassenger({ userId: rider });
     wire({ ride: makeRide(), passengers: [p] });
     await run({ rideId }, asUser(rider));
-    expect(Passenger.findByIdAndUpdate).toHaveBeenCalledWith(
-      p._id,
+    expect(Passenger.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: p._id, status: 'pending' },
       expect.objectContaining({ cancellationReason: 'Cancelled by rider' }),
     );
     expect(Ride.findByIdAndUpdate).toHaveBeenCalledWith(

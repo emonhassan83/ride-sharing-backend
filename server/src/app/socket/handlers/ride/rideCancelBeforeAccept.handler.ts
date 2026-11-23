@@ -11,7 +11,12 @@ import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
-import { transferRideOwnership } from '../../../utils/splitFare.utils';
+import { transferRideOwnership, refundToWallet } from '../../../utils/splitFare.utils';
+import { Payment } from '../../../modules/payment/payment.model';
+import { Refund } from '../../../modules/refund/refund.model';
+import { User } from '../../../modules/user/user.model';
+import { BOOKING_STATUS, PAYMENT_STATUS } from '../../../modules/booking/booking.constant';
+import { REFUND_STATUS, REFUND_TYPE } from '../../../modules/refund/refund.constant';
 
 const notifyDriverCancelled = async (
   io: any,
@@ -44,11 +49,63 @@ const notifyDriverCancelled = async (
 };
 
 // A pending ride's card is only pre-authorised; release that hold when the rider leaves the ride.
+// A wallet payment, though, is taken in full before any driver accepts. The old code only
+// released card holds, so a rider who paid from the wallet and cancelled lost the money,
+// and the booking was never marked cancelled (it then blocked account deletion, issue 30).
 const releaseAuthorizedHold = async (passengerId: any) => {
   const booking = await Booking.findOne({ passengerId });
-  if (booking) {
-    await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
+  if (!booking) return;
+
+  await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
+
+  // Atomic claim on the paid payment: a double tap cannot refund twice.
+  const claimedPayment = await Payment.findOneAndUpdate(
+    { booking: booking._id, status: PAYMENT_STATUS.paid, isPaid: true },
+    { $set: { status: PAYMENT_STATUS.refunded, isPaid: false } },
+    { returnDocument: 'after' },
+  );
+
+  let refundAmount = 0;
+  if (claimedPayment) {
+    refundAmount = Math.round(Number(booking.amountPaid || claimedPayment.amount || 0) * 100) / 100;
+    try {
+      await refundToWallet(booking.userId.toString(), refundAmount, 'cancel_before_accept', getIO());
+    } catch (error) {
+      // Money did not move: put the payment back so the cancel can be retried.
+      await Payment.updateOne(
+        { _id: claimedPayment._id },
+        { $set: { status: PAYMENT_STATUS.paid, isPaid: true } },
+      );
+      throw error;
+    }
+
+    if (claimedPayment.providerEarning && claimedPayment.providerEarning > 0 && booking.driverId) {
+      await User.findByIdAndUpdate(booking.driverId, { $inc: { wallet: -claimedPayment.providerEarning } });
+    }
+
+    await Refund.create({
+      user: booking.userId,
+      ...(booking.rideId ? { ride: booking.rideId } : {}),
+      type: REFUND_TYPE.cancel_ride,
+      paymentIntentId: booking.transactionId || claimedPayment.transactionId || '',
+      amount: refundAmount,
+      reason: 'Cancelled by rider before acceptance',
+      note: `Booking ${String(booking._id)} cancelled before a driver accepted`,
+      status: REFUND_STATUS.confirmed,
+    });
   }
+
+  await Booking.updateOne(
+    { _id: booking._id },
+    {
+      $set: {
+        bookingStatus: BOOKING_STATUS.cancelled,
+        ...(claimedPayment
+          ? { paymentStatus: PAYMENT_STATUS.refunded, refundAmount }
+          : {}),
+      },
+    },
+  );
 };
 
 const cancelAndNotifyRemaining = async (
@@ -116,11 +173,17 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     // Release the card hold before recording the cancellation, so a failure stays retryable.
     await releaseAuthorizedHold(passenger._id);
 
-    await Passenger.findByIdAndUpdate(passenger._id, {
-      status:             PASSENGER_STATUS.cancelled,
-      cancellationReason: reason || 'Cancelled by rider',
-      cancelledBy:        CANCELLED_BY.user,
-    });
+    // Atomic: on a double tap only one request goes on to cancel the ride and notify.
+    const claimed = await Passenger.findOneAndUpdate(
+      { _id: passenger._id, status: PASSENGER_STATUS.pending },
+      {
+        status:             PASSENGER_STATUS.cancelled,
+        cancellationReason: reason || 'Cancelled by rider',
+        cancelledBy:        CANCELLED_BY.user,
+      },
+    );
+    if (!claimed)
+      return callback?.({ success: false, message: 'No pending booking found' });
 
     const redisCleanup = async () => {
       await Promise.all([

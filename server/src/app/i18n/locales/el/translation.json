@@ -615,7 +615,16 @@
     "Driver has started the trip and is heading to the pickup location.": "Ο οδηγός ξεκίνησε και κατευθύνεται στο σημείο παραλαβής.",
     "Payment Needs Attention": "Απαιτείται ενέργεια για την πληρωμή",
     "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.": "Ένας οδηγός προσπάθησε να αποδεχτεί τη διαδρομή σας, αλλά η πληρωμή δεν ολοκληρώθηκε. Ελέγξτε τον τρόπο πληρωμής σας.",
-    "Trip already started": "Η διαδρομή έχει ήδη ξεκινήσει"
+    "Trip already started": "Η διαδρομή έχει ήδη ξεκινήσει",
+    "This booking has been cancelled or refunded and cannot be paid again.": "Αυτή η κράτηση έχει ακυρωθεί ή επιστραφεί και δεν μπορεί να πληρωθεί ξανά.",
+    "Please enter a valid name (at least 2 letters).": "Εισαγάγετε ένα έγκυρο όνομα (τουλάχιστον 2 γράμματα).",
+    "Please enter a valid address.": "Εισαγάγετε μια έγκυρη διεύθυνση.",
+    "Please enter a valid date of birth.": "Εισαγάγετε μια έγκυρη ημερομηνία γέννησης.",
+    "Drivers must be at least 18 years old.": "Οι οδηγοί πρέπει να είναι τουλάχιστον 18 ετών.",
+    "Vehicle is too old. Please add a newer vehicle.": "Το όχημα είναι πολύ παλιό. Προσθέστε ένα νεότερο όχημα.",
+    "Passenger not found for this split ride": "Ο επιβάτης δεν βρέθηκε για αυτή την κοινή διαδρομή",
+    "Driver arrival marked and passenger notified successfully.": "Η άφιξη του οδηγού καταγράφηκε και ο επιβάτης ειδοποιήθηκε.",
+    "Trip must be accepted or started before picking up": "Η διαδρομή πρέπει να έχει γίνει αποδεκτή ή να έχει ξεκινήσει πριν από την παραλαβή"
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",

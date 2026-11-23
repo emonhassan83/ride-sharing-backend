@@ -119,6 +119,8 @@ export const driverCompleteTripHandler = eventHandler<any>(
         {
           passengerId: passenger._id,
           bookingStatus: { $ne: BOOKING_STATUS.cancelled },
+          // Issue 14: never overwrite a refunded/released booking with amountPaid = fare.
+          paymentStatus: { $nin: [PAYMENT_STATUS.refunded, PAYMENT_STATUS.cancelled_authorization] },
         },
         { totalFare, amountPaid: totalFare, bookingStatus: BOOKING_STATUS.completed },
         { returnDocument: 'after' }

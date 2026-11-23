@@ -615,7 +615,16 @@
     "Driver has started the trip and is heading to the pickup location.": "Driver has started the trip and is heading to the pickup location.",
     "Payment Needs Attention": "Payment Needs Attention",
     "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.": "A driver tried to accept your ride but the payment could not be completed. Please check your payment method.",
-    "Trip already started": "Trip already started"
+    "Trip already started": "Trip already started",
+    "This booking has been cancelled or refunded and cannot be paid again.": "This booking has been cancelled or refunded and cannot be paid again.",
+    "Please enter a valid name (at least 2 letters).": "Please enter a valid name (at least 2 letters).",
+    "Please enter a valid address.": "Please enter a valid address.",
+    "Please enter a valid date of birth.": "Please enter a valid date of birth.",
+    "Drivers must be at least 18 years old.": "Drivers must be at least 18 years old.",
+    "Vehicle is too old. Please add a newer vehicle.": "Vehicle is too old. Please add a newer vehicle.",
+    "Passenger not found for this split ride": "Passenger not found for this split ride",
+    "Driver arrival marked and passenger notified successfully.": "Driver arrival marked and passenger notified successfully.",
+    "Trip must be accepted or started before picking up": "Trip must be accepted or started before picking up"
   },
   "patterns": {
     "dropoff_fare": "Total fare: €{{totalFare}} (Base: €{{baseFare}} + Waiting: €{{waitingCharge}})",

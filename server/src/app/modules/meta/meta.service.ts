@@ -73,7 +73,8 @@ export const fetchDashboardMetaData = async (
   const [financialData] = await Payment.aggregate(paymentPipeline);
 
   // ── Determine amount sorting direction: 'asc' vs 'desc' / 'dsc' ──
-  let sortOption: Record<string, 1 | -1> = { createdAt: -1 };
+  // Issue 14: "recent" = most recently paid/refunded, not most recently booked.
+  let sortOption: Record<string, 1 | -1> = { updatedAt: -1 };
 
   const rawAmountSort = String(
     amount_sort || sort_amount || (typeof amount === 'string' && isNaN(Number(amount)) ? amount : '') || ''
@@ -103,9 +104,9 @@ export const fetchDashboardMetaData = async (
     ((rawOrder === 'desc' || rawOrder === 'dsc') && (rawSort.includes('amount') || rawAmountSort === 'desc' || rawAmountSort === 'dsc'));
 
   if (isAsc) {
-    sortOption = { amount: 1, createdAt: -1 };
+    sortOption = { amount: 1, updatedAt: -1 };
   } else if (isDesc) {
-    sortOption = { amount: -1, createdAt: -1 };
+    sortOption = { amount: -1, updatedAt: -1 };
   }
 
   // ── Transaction Filter Criteria ──
@@ -136,7 +137,7 @@ export const fetchDashboardMetaData = async (
     .populate('booking', 'id')
     .sort(sortOption)
     .limit(transactionLimit)
-    .select('id method transactionId amount status createdAt')
+    .select('id method transactionId amount status createdAt updatedAt')
     .lean();
 
   // Sales Report Summary (Current Year paid transactions)
@@ -204,6 +205,7 @@ export const fetchDashboardMetaData = async (
       method: t.method,
       status: t.status,
       createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
     })),
   };
 };

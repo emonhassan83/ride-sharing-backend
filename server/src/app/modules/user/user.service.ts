@@ -21,6 +21,8 @@ import { config } from '../../config/env.config';
 import { Vehicle } from '../vehicle/vehicle.model';
 import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
+import { isPastUpcomingWindow } from '../ride/ride.service';
+import { DRIVER_TOO_YOUNG_MESSAGE, isAdultDriverDob } from '../../utils/profileValidation.utils';
 import { Review } from '../review/review.model';
 import { Passenger } from '../passenger/passenger.model';
 import { PASSENGER_STATUS } from '../passenger/passenger.constant';
@@ -401,6 +403,16 @@ const updateUserProfile = async (
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found!');
   }
 
+  // Issue 27: drivers must be adults (riders only need a real, past date: see validation).
+  const effectiveRole = payload.role || user.role;
+  if (
+    payload.dateOfBirth &&
+    effectiveRole === USER_ROLE.provider &&
+    !isAdultDriverDob(payload.dateOfBirth)
+  ) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, DRIVER_TOO_YOUNG_MESSAGE);
+  }
+
   // Prepare update object
   const updateData: Partial<TUser> & {
     location?: any;
@@ -575,6 +587,71 @@ const ACTIVE_PASSENGER_STATUSES = [
   PASSENGER_STATUS.picked_up,
 ];
 
+const ON_BOARD_PASSENGER_STATUSES: string[] = [
+  PASSENGER_STATUS.driver_arrived,
+  PASSENGER_STATUS.in_progress,
+  PASSENGER_STATUS.picked_up,
+];
+
+/**
+ * Issue 30: an accepted ride the driver never started stays "accepted" forever
+ * (see issue 13, report #2), so any old test ride blocked account deletion for
+ * good. A ride now counts as active only while it is under way, or not yet past
+ * the same window that hides it from Upcoming (departure + grace).
+ */
+export const isRideStillActive = (
+  ride: { status?: string | null; departureDate?: unknown; departureTime?: unknown } | null | undefined,
+  now: Date = new Date(),
+): boolean => {
+  if (!ride || !ACTIVE_RIDE_STATUSES.includes(ride.status as any)) return false;
+  if (ride.status === RIDE_STATUS.started) return true;
+  return !isPastUpcomingWindow(ride.departureDate, ride.departureTime, now);
+};
+
+const hasBlockingActiveRide = async (userId: string, now: Date = new Date()): Promise<boolean> => {
+  const rideFields = 'status departureDate departureTime';
+
+  const [rides, passengers, bookings] = await Promise.all([
+    Ride.find({
+      status: { $in: ACTIVE_RIDE_STATUSES },
+      $or: [{ driverId: userId }, { rideCreatedBy: userId }],
+    }).select(rideFields).lean(),
+    Passenger.find({
+      userId,
+      status: { $in: ACTIVE_PASSENGER_STATUSES },
+    }).select('status rideId departureDate departureTime').lean(),
+    Booking.find({
+      userId,
+      bookingStatus: { $in: [BOOKING_STATUS.accepted, BOOKING_STATUS.running] },
+    }).select('bookingStatus rideId').lean(),
+  ]);
+
+  if (rides.some((r: any) => isRideStillActive(r, now))) return true;
+  if (passengers.some((p: any) => ON_BOARD_PASSENGER_STATUSES.includes(p.status))) return true;
+  if (bookings.some((b: any) => b.bookingStatus === BOOKING_STATUS.running)) return true;
+
+  // Remaining passengers/bookings are only active while their ride is.
+  const rideIds = [
+    ...passengers.map((p: any) => p.rideId),
+    ...bookings.map((b: any) => b.rideId),
+  ].filter(Boolean);
+  const linkedRides = rideIds.length
+    ? await Ride.find({ _id: { $in: rideIds } }).select(rideFields).lean()
+    : [];
+  const activeRideIds = new Set(
+    linkedRides.filter((r: any) => isRideStillActive(r, now)).map((r: any) => String(r._id)),
+  );
+
+  if (passengers.some((p: any) =>
+    p.rideId
+      ? activeRideIds.has(String(p.rideId))
+      // Split request still waiting for a match: active until its own departure window passes.
+      : !isPastUpcomingWindow(p.departureDate, p.departureTime, now),
+  )) return true;
+
+  return bookings.some((b: any) => b.rideId && activeRideIds.has(String(b.rideId)));
+};
+
 const deleteUserProfile = async (
   targetUserId: string,
   requester: { userId: string; role: string },
@@ -599,24 +676,7 @@ const deleteUserProfile = async (
       throw new ApiError(StatusCodes.NOT_FOUND, 'User not found!');
     }
 
-    const [activeRide, activePassenger, activeBooking] = await Promise.all([
-      Ride.exists({
-        status: { $in: ACTIVE_RIDE_STATUSES },
-        $or: [{ driverId: userId }, { rideCreatedBy: userId }],
-      }),
-      Passenger.exists({
-        userId,
-        status: { $in: ACTIVE_PASSENGER_STATUSES },
-      }),
-      Booking.findOne({
-        userId,
-        bookingStatus: {
-          $in: [BOOKING_STATUS.accepted, BOOKING_STATUS.running],
-        },
-      }).select('_id'),
-    ]);
-
-    if (activeRide || activePassenger || activeBooking) {
+    if (await hasBlockingActiveRide(userId)) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
         'Cannot delete profile while having an active ride',
