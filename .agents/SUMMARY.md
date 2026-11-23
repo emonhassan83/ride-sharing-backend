@@ -15,7 +15,7 @@ Key Changes:
 Pending/Next Steps:
 - Client: confirm max vehicle age (30 used) and driver minimum age (18).
 - Mobile: wait-notice amount from `waitTimeNotice.feeAmount` (EUR 20), not a hardcoded EUR 10; show server validation messages.
-- Pre-existing, not changed: `confirmPayment` auto-refunds the Stripe intent on any other error; `PATCH /payments/refund-payment` and `POST /payments/confirm-payment` have no auth middleware.
+- Follow-up done (report #3 section 8): payment endpoint auth. `confirm-payment` needs auth + owner, intent `metadata.paymentId` must match, auto-refund only for verified captured money not yet committed (`refundOnFailure`/`committed`), ApiError codes kept; `refund-payment` admin-only + validation + only paid payments; `GET /payments/:id` and `/booking/:id` restricted to rider/driver/admin. `paymentSecurity.int.test.ts` (11; old code fails 10). Integration now 67. Mobile must send the token on `confirm-payment`.
 
 ---
 

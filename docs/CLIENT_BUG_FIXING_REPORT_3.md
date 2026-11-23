@@ -140,12 +140,7 @@ and #2 still pass.
 - **Maximum vehicle age** is set to 30 years. **Minimum driver age** is set to 18. Please confirm both.
 - Report #2 question still open: should accepted rides that were never started be cancelled and refunded automatically?
 
-Found while checking, already like this before and **not changed** in this round:
-
-- `confirmPayment` still refunds the Stripe payment on any other error.
-- `PATCH /payments/refund-payment` and `POST /payments/confirm-payment` have no login check.
-
-Both deserve a separate review.
+The payment security problems found while checking are fixed in a follow-up. See section 8.
 
 ## 7. Files changed
 
@@ -160,3 +155,28 @@ Tests:
 - New: `tests/integration/round3Issues.int.test.ts`, 2 new unit test files.
 - Updated: `rideCancelBeforeAccept.handler.test.ts`.
 - `vitest.integration.config.mts`: the test MongoDB now runs as a single-node replica set.
+
+## 8. Follow-up: payment endpoint security
+
+These problems were found while checking issue 14. They were already in the code before this round.
+
+| Endpoint | Problem | Fix |
+|---|---|---|
+| `POST /payments/confirm-payment` | No login check. On **any** error the server refunded the Stripe payment. A rider could send their own captured payment id together with a wrong record id: the fare was refunded, but the ride stayed "paid" (free ride). | Login required (rider or admin), and only the payment's owner can confirm it. The Stripe payment must belong to that record. Automatic refund happens only when the money was taken and could not be recorded, before anything was saved. Error codes are now kept (400/403/404) instead of always 502. |
+| `PATCH /payments/refund-payment` | No login check. A booking already refunded to the wallet could be refunded on the card again. | Admin only, with request validation. Only a captured, not-yet-refunded payment can be refunded, and only once. |
+| `GET /payments/:id` | Any logged-in user could read any payment, including the payer's email and phone. | Only the rider who paid, the booking's driver, or an admin. |
+| `GET /payments/booking/:bookingId` | No login check. | Login required, and only for that booking's rider, its driver, or an admin. |
+
+**The mobile app must send the login token on `confirm-payment`.** Checkout already requires it, so the
+app most likely sends it already. If it does not, card payments fail with 401 until the app is updated.
+
+Tests: `tests/integration/paymentSecurity.int.test.ts` has 11 scenarios. **Old code: 10 failed, 1 passed** (the
+normal payment flow, a control check). **New code: 11 passed.** One of the 10 failures is only a status code:
+the old code did refund, but it answered 502 instead of 400.
+
+Totals after the follow-up:
+- Unit: 1126 passed.
+- Integration: 67 passed (37 from reports #1 and #2, 19 + 11 from this report).
+- `tsc` and `test:types`: clean.
+
+4 new messages are translated in all 5 languages.

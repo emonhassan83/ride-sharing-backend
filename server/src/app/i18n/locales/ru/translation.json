@@ -624,7 +624,11 @@
     "Vehicle is too old. Please add a newer vehicle.": "Автомобиль слишком старый. Добавьте более новый автомобиль.",
     "Passenger not found for this split ride": "Пассажир не найден для этой совместной поездки",
     "Driver arrival marked and passenger notified successfully.": "Прибытие водителя отмечено, пассажир уведомлён.",
-    "Trip must be accepted or started before picking up": "Поездка должна быть принята или начата до посадки пассажира"
+    "Trip must be accepted or started before picking up": "Поездка должна быть принята или начата до посадки пассажира",
+    "This payment does not belong to you": "Этот платёж вам не принадлежит",
+    "Payment intent does not match this payment": "Платёжное намерение не соответствует этому платежу",
+    "This payment has already been refunded or was never captured": "Этот платёж уже возвращён или не был списан",
+    "You do not have access to this payment": "У вас нет доступа к этому платежу"
   },
   "patterns": {
     "dropoff_fare": "Итоговая стоимость: €{{totalFare}} (Базовая: €{{baseFare}} + Ожидание: €{{waitingCharge}})",

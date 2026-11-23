@@ -20,8 +20,10 @@ router.post(
   PaymentControllers.payWithWallet
 );
 
+// Security (round 3): confirm, refund and payment reads used to have no auth at all.
 router.post(
   '/confirm-payment',
+  auth([USER_ROLE.user, USER_ROLE.admin]),
   validateRequest(PaymentValidation.confirmPaymentSchema),
   PaymentControllers.confirmPayment
 );
@@ -34,7 +36,11 @@ router.get(
   PaymentControllers.getDashboardData
 );
 
-router.get('/booking/:bookingId', PaymentControllers.getAPaymentByBookingId);
+router.get(
+  '/booking/:bookingId',
+  auth([USER_ROLE.admin, USER_ROLE.provider, USER_ROLE.user]),
+  PaymentControllers.getAPaymentByBookingId,
+);
 
 router.get(
   '/:id',
@@ -42,7 +48,12 @@ router.get(
   PaymentControllers.getAPayment
 );
 
-router.patch('/refund-payment', PaymentControllers.refundPayment);
+router.patch(
+  '/refund-payment',
+  auth(USER_ROLE.admin),
+  validateRequest(PaymentValidation.refundPaymentSchema),
+  PaymentControllers.refundPayment,
+);
 
 export const PaymentRoutes = router;
 

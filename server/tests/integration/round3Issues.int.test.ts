@@ -248,7 +248,7 @@ describe('ISSUE 14: a refunded / cancelled split passenger can not be revived', 
     fakeStripe.refunds.create.mockClear();
 
     const res = await api('/payments/confirm-payment', {
-      method: 'POST', body: JSON.stringify({ paymentIntentId: 'pi_old', paymentId }),
+      method: 'POST', token: rider.token, body: JSON.stringify({ paymentIntentId: 'pi_old', paymentId }),
     });
 
     expect(res.status).toBe(400);

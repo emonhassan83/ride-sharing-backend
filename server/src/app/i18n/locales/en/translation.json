@@ -624,7 +624,11 @@
     "Vehicle is too old. Please add a newer vehicle.": "Vehicle is too old. Please add a newer vehicle.",
     "Passenger not found for this split ride": "Passenger not found for this split ride",
     "Driver arrival marked and passenger notified successfully.": "Driver arrival marked and passenger notified successfully.",
-    "Trip must be accepted or started before picking up": "Trip must be accepted or started before picking up"
+    "Trip must be accepted or started before picking up": "Trip must be accepted or started before picking up",
+    "This payment does not belong to you": "This payment does not belong to you",
+    "Payment intent does not match this payment": "Payment intent does not match this payment",
+    "This payment has already been refunded or was never captured": "This payment has already been refunded or was never captured",
+    "You do not have access to this payment": "You do not have access to this payment"
   },
   "patterns": {
     "dropoff_fare": "Total fare: €{{totalFare}} (Base: €{{baseFare}} + Waiting: €{{waitingCharge}})",

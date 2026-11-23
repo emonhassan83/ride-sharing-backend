@@ -624,7 +624,11 @@
     "Vehicle is too old. Please add a newer vehicle.": "Το όχημα είναι πολύ παλιό. Προσθέστε ένα νεότερο όχημα.",
     "Passenger not found for this split ride": "Ο επιβάτης δεν βρέθηκε για αυτή την κοινή διαδρομή",
     "Driver arrival marked and passenger notified successfully.": "Η άφιξη του οδηγού καταγράφηκε και ο επιβάτης ειδοποιήθηκε.",
-    "Trip must be accepted or started before picking up": "Η διαδρομή πρέπει να έχει γίνει αποδεκτή ή να έχει ξεκινήσει πριν από την παραλαβή"
+    "Trip must be accepted or started before picking up": "Η διαδρομή πρέπει να έχει γίνει αποδεκτή ή να έχει ξεκινήσει πριν από την παραλαβή",
+    "This payment does not belong to you": "Αυτή η πληρωμή δεν σας ανήκει",
+    "Payment intent does not match this payment": "Η εντολή πληρωμής δεν αντιστοιχεί σε αυτή την πληρωμή",
+    "This payment has already been refunded or was never captured": "Αυτή η πληρωμή έχει ήδη επιστραφεί ή δεν χρεώθηκε ποτέ",
+    "You do not have access to this payment": "Δεν έχετε πρόσβαση σε αυτή την πληρωμή"
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",

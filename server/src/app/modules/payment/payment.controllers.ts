@@ -17,7 +17,7 @@ const checkout = catchAsync(async (req, res) => {
 })
 
 const confirmPayment = catchAsync(async (req, res) => {
-  const result = await PaymentService.confirmPayment(req.body)
+  const result = await PaymentService.confirmPayment(req.body, { userId: req.user.userId, role: req.user.role })
 
   sendResponse(res, {
     code: httpStatus.OK,
@@ -53,7 +53,7 @@ const getAllPayments = catchAsync(async (req, res) => {
 const getDashboardData = catchAsync(async (req, res) => {})
 
 const getAPayment = catchAsync(async (req, res) => {
-  const result = await PaymentService.getAPaymentsFromDB(req.params.id as string)
+  const result = await PaymentService.getAPaymentsFromDB(req.params.id as string, { userId: req.user.userId, role: req.user.role })
 
   sendResponse(res, {
     code: 200,
@@ -63,11 +63,11 @@ const getAPayment = catchAsync(async (req, res) => {
 })
 
 const getAPaymentByBookingId = catchAsync(async (req, res) => {
-  const query = {
-    ...req.query,
-    booking: req.params.bookingId,
-  }
-  const result = await PaymentService.getAllPaymentsFromDB(query)
+  const result = await PaymentService.getPaymentsForBooking(
+    req.params.bookingId as string,
+    req.query as Record<string, any>,
+    { userId: req.user.userId, role: req.user.role },
+  )
 
   sendResponse(res, {
     code: 200,

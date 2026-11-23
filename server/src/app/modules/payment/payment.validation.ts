@@ -19,9 +19,17 @@ const confirmPaymentSchema = z.object({
   }),
 })
 
+const refundPaymentSchema = z.object({
+  body: z.object({
+    intendId: z.string({ message: 'Payment intent ID is required' }).min(1, { message: 'Payment intent ID is required' }),
+    amount: z.number().positive().optional(),
+  }),
+})
+
 export const PaymentValidation = {
   createValidationSchema,
   confirmPaymentSchema,
+  refundPaymentSchema,
 }
 
 

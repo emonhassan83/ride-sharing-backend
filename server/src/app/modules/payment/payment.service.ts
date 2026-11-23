@@ -17,6 +17,7 @@ import { StatusCodes } from 'http-status-codes';
 import { Passenger } from '../passenger/passenger.model';
 import { PASSENGER_STATUS } from '../passenger/passenger.constant';
 import { BOOKING_CLOSED_FOR_PAYMENT_MESSAGE, isClosedForPayment } from '../../utils/acceptGuard.utils';
+import { USER_ROLE } from '../user/user.constant';
 import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
 import { getIO } from '../../socket/socket.init';
@@ -473,12 +474,22 @@ const createPaymentIntent = async (payload: {
   };
 };
 
-const confirmPayment = async (payload: Record<string, any>) => {
+const confirmPayment = async (
+  payload: Record<string, any>,
+  requester?: { userId: string; role: string },
+) => {
   const { paymentIntentId: requestedPaymentIntentId, paymentId } = payload;
 
   const session = await startSession();
   let paymentIntentId: string | null = requestedPaymentIntentId || null;
   let transactionStarted = false;
+  let committed = false;
+  // Security: the auto-refund below used to run on ANY error. Anyone could post a
+  // real (already captured) intent id with a bogus paymentId and get the money
+  // refunded while the ride stayed "paid". It now runs only when this call has
+  // verified the intent belongs to the caller's payment, the money was taken,
+  // and recording it failed before the transaction committed.
+  let refundOnFailure = false;
   let recalcRideId: string | null = null;
 
   try {
@@ -517,9 +528,24 @@ const confirmPayment = async (payload: Record<string, any>) => {
     const payment = await Payment.findById(resolvedPaymentId).session(session);
     if (!payment) throw new ApiError(httpStatus.NOT_FOUND, 'Payment not found');
 
+    // Only the rider who owns the payment (or an admin) may confirm it.
+    if (
+      requester &&
+      requester.role !== USER_ROLE.admin &&
+      String(payment.user) !== String(requester.userId)
+    ) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'This payment does not belong to you');
+    }
+
+    // The Stripe intent must be the one created for this payment.
+    if (paymentIntent && String(paymentIntent.metadata?.paymentId || '') !== String(payment._id)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Payment intent does not match this payment');
+    }
+
     // ✅ Idempotency guard - already paid, skip everything
     if (payment.isPaid) {
       await session.commitTransaction();
+      committed = true;
       return payment;
     }
 
@@ -537,6 +563,9 @@ const confirmPayment = async (payload: Record<string, any>) => {
       throw new ApiError(httpStatus.BAD_REQUEST, BOOKING_CLOSED_FOR_PAYMENT_MESSAGE);
     }
 
+    // From here on the request is legitimate: if the money was actually taken and
+    // recording it fails, give it back.
+    refundOnFailure = paymentIntent?.status === 'succeeded';
 
     if (paymentIntent?.status === 'requires_capture') {
       payment.isPaid = false;
@@ -558,6 +587,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
       );
 
       await session.commitTransaction();
+      committed = true;
       const notifiedDrivers = await startRideMatchingAfterPayment(booking._id.toString());
       return {
         success: true,
@@ -583,6 +613,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
         { session }
       );
       await session.commitTransaction();
+      committed = true;
       return payment;
     }
 
@@ -683,6 +714,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
     if (user?.fcmToken) await paymentNotifyToUser('SUCCESS', payment, user);
 
     await session.commitTransaction();
+    committed = true;
 
     if (recalcRideId) {
       // Do not report payment completion before existing split passengers
@@ -698,16 +730,12 @@ const confirmPayment = async (payload: Record<string, any>) => {
 
     return payment;
   } catch (error: any) {
-    if (transactionStarted) await session.abortTransaction();
+    if (transactionStarted && !committed) await session.abortTransaction();
 
-    // A closed booking was already refunded (usually to the wallet). Refunding the
-    // Stripe intent again here would pay the rider twice, so stop without touching Stripe.
-    if (error instanceof ApiError && error.message === BOOKING_CLOSED_FOR_PAYMENT_MESSAGE) {
-      throw error;
-    }
-
-    // Auto-refund on failure
-    if (paymentIntentId) {
+    // Auto-refund only for a verified request whose captured money could not be
+    // recorded (never for validation failures, and never after a commit). A closed
+    // booking is rejected before this flag is set, so it is never refunded twice.
+    if (refundOnFailure && !committed && paymentIntentId) {
       try {
         await stripe.refunds.create({ payment_intent: paymentIntentId });
       } catch (refundError: any) {
@@ -715,6 +743,7 @@ const confirmPayment = async (payload: Record<string, any>) => {
       }
     }
 
+    if (error instanceof ApiError) throw error;
     throw new ApiError(httpStatus.BAD_GATEWAY, error.message);
   } finally {
     session.endSession();
@@ -1349,16 +1378,59 @@ const getAllPaymentsFromDB = async (query: Record<string, any>) => {
 
 const getDashboardDataFromDB = async (query: Record<string, unknown>) => {};
 
-const getAPaymentsFromDB = async (id: string) => {
+type TPaymentRequester = { userId: string; role: string };
+
+const idOf = (v: any): string => String(v?._id ?? v ?? '');
+
+/** Admin, the rider on the booking, or the booking's driver. */
+const canSeeBookingPayments = (
+  requester: TPaymentRequester | undefined,
+  owners: { userId?: any; driverId?: any; provider?: any },
+): boolean => {
+  if (!requester) return false;
+  if (requester.role === USER_ROLE.admin) return true;
+  const me = String(requester.userId);
+  return [owners.userId, owners.driverId, owners.provider].some((o) => o && idOf(o) === me);
+};
+
+const getAPaymentsFromDB = async (id: string, requester?: TPaymentRequester) => {
   const payment = await Payment.findById(id).populate([
-    { path: 'booking', select: 'user status paymentStatus' },
+    { path: 'booking', select: 'user status paymentStatus driverId' },
     { path: 'user', select: 'name email photoUrl phone' },
   ]);
   if (!payment || payment?.isDeleted) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Payment not found!');
   }
 
+  // Security: any logged-in user could read any payment (with the payer's email and phone).
+  if (
+    !canSeeBookingPayments(requester, {
+      userId: payment.user,
+      provider: payment.provider,
+      driverId: (payment.booking as any)?.driverId,
+    })
+  ) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'You do not have access to this payment');
+  }
+
   return payment;
+};
+
+/** Payments of one booking; only for the booking's rider, its driver, or an admin. */
+const getPaymentsForBooking = async (
+  bookingId: string,
+  query: Record<string, any>,
+  requester: TPaymentRequester,
+) => {
+  if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
+  }
+  const booking = await Booking.findById(bookingId).select('userId driverId').lean();
+  if (!booking) throw new ApiError(httpStatus.NOT_FOUND, 'Booking not found');
+  if (!canSeeBookingPayments(requester, { userId: booking.userId, driverId: booking.driverId })) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'You do not have access to this payment');
+  }
+  return getAllPaymentsFromDB({ ...query, booking: bookingId });
 };
 
 const refundPayment = async (payload: { intendId: string; amount: number }) => {
@@ -1378,14 +1450,19 @@ const refundPayment = async (payload: { intendId: string; amount: number }) => {
       }),
     };
 
-    // Find and update payment status
+    // Find and update payment status. Only a captured, not-yet-refunded payment
+    // can be refunded: cancellation paths already refund to the wallet and mark
+    // the payment refunded, and refunding the card again would pay twice.
     const payment = await Payment.findOneAndUpdate(
-      { paymentIntentId: payload.intendId },
+      { paymentIntentId: payload.intendId, status: PAYMENT_STATUS.paid, isPaid: true },
       { status: PAYMENT_STATUS.refunded, isPaid: false },
       { returnDocument: 'after', session }
     );
     if (!payment || payment?.isDeleted) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Payment record not found');
+      const existing = await Payment.exists({ paymentIntentId: payload.intendId }).session(session);
+      throw existing
+        ? new ApiError(httpStatus.BAD_REQUEST, 'This payment has already been refunded or was never captured')
+        : new ApiError(httpStatus.NOT_FOUND, 'Payment record not found');
     }
 
     // Validate and update booking status
@@ -1470,6 +1547,7 @@ export const PaymentService = {
   getAllPaymentsFromDB,
   getDashboardDataFromDB,
   getAPaymentsFromDB,
+  getPaymentsForBooking,
   refundPayment,
 };
 

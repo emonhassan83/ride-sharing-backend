@@ -624,7 +624,11 @@
     "Vehicle is too old. Please add a newer vehicle.": "הרכב ישן מדי. נא להוסיף רכב חדש יותר.",
     "Passenger not found for this split ride": "הנוסע לא נמצא עבור נסיעה משותפת זו",
     "Driver arrival marked and passenger notified successfully.": "הגעת הנהג סומנה והנוסע קיבל הודעה.",
-    "Trip must be accepted or started before picking up": "יש לאשר או להתחיל את הנסיעה לפני האיסוף"
+    "Trip must be accepted or started before picking up": "יש לאשר או להתחיל את הנסיעה לפני האיסוף",
+    "This payment does not belong to you": "תשלום זה אינו שייך לך",
+    "Payment intent does not match this payment": "כוונת התשלום אינה תואמת לתשלום זה",
+    "This payment has already been refunded or was never captured": "תשלום זה כבר הוחזר או שמעולם לא חויב",
+    "You do not have access to this payment": "אין לך גישה לתשלום זה"
   },
   "patterns": {
     "dropoff_fare": "סה\"כ תעריף: €{{totalFare}} (בסיס: €{{baseFare}} + המתנה: €{{waitingCharge}})",
