@@ -45,6 +45,21 @@ import {
   sendRideStartOtp,
   verifyRideStartOtp,
 } from '../utils/rideStartOtp.utils';
+import eventHandler from './utils/eventHandler';
+import { getCancellationQuote } from '../utils/cancellationQuote.utils';
+
+const cancelQuoteHandler = eventHandler<any>(async (socket, data, callback) => {
+  const quote = await getCancellationQuote({
+    rideId: data?.rideId,
+    passengerId: data?.passengerId,
+    userId: socket.auth?._id?.toString() as string,
+  });
+  callback?.({
+    success: true,
+    message: 'Cancellation quote retrieved successfully',
+    data: quote,
+  });
+});
 
 export const registerSocketEvents = (socket: Socket) => {
   const tSocket = socket as TSocket; // Cast to TSocket
@@ -116,6 +131,9 @@ export const registerSocketEvents = (socket: Socket) => {
         passengerId: data?.passengerId,
         requesterId: tSocket.auth?._id?.toString(),
         requesterRole: tSocket.auth?.role,
+        // B-10: only an explicit "Resend" re-delivers inside the cooldown; the
+        // code itself is reused while it is still valid.
+        resend: data?.resend === true || data?.resend === 'true',
       });
       callback?.({
         success: true,
@@ -188,6 +206,10 @@ export const registerSocketEvents = (socket: Socket) => {
   );
   tSocket.on('ride:cancel-after-accept', (data, callback) =>
     rideCancelAfterAcceptHandler.call(tSocket, data, callback)
+  );
+  // B-04: the real fee/refund before the rider confirms a cancellation.
+  tSocket.on('ride:cancel-quote', (data, callback) =>
+    cancelQuoteHandler.call(tSocket, data, callback)
   );
   tSocket.on('ride:submit-rating', (data, callback) =>
     submitRatingHandler.call(tSocket, data, callback)

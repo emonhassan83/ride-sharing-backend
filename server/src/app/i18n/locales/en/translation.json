@@ -628,7 +628,29 @@
     "This payment does not belong to you": "This payment does not belong to you",
     "Payment intent does not match this payment": "Payment intent does not match this payment",
     "This payment has already been refunded or was never captured": "This payment has already been refunded or was never captured",
-    "You do not have access to this payment": "You do not have access to this payment"
+    "You do not have access to this payment": "You do not have access to this payment",
+    "Insufficient wallet balance": "Insufficient wallet balance",
+    "Your ride has been cancelled. The payment hold on your card has been released.": "Your ride has been cancelled. The payment hold on your card has been released.",
+    "Your ride has been cancelled.": "Your ride has been cancelled.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled and the payment hold on your card has been released.": "No driver accepted your ride before pickup time. Your booking has been cancelled and the payment hold on your card has been released.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled.": "No driver accepted your ride before pickup time. Your booking has been cancelled.",
+    "You cannot cancel a ride after a passenger has been picked up.": "You cannot cancel a ride after a passenger has been picked up.",
+    "It is too early to start this trip.": "It is too early to start this trip.",
+    "Too many wrong OTP attempts. Please wait for the code to expire and request a new one.": "Too many wrong OTP attempts. Please wait for the code to expire and request a new one.",
+    "You do not have access to this ride": "You do not have access to this ride",
+    "You do not have access to this passenger": "You do not have access to this passenger",
+    "FCM token updated successfully": "FCM token updated successfully",
+    "FCM token is required": "FCM token is required",
+    "Cancellation quote retrieved successfully": "Cancellation quote retrieved successfully",
+    "Refund Approved": "Refund Approved",
+    "Refund Rejected": "Refund Rejected",
+    "Refund Update": "Refund Update",
+    "Your refund has been added to your wallet.": "Your refund has been added to your wallet.",
+    "Your refund request was rejected.": "Your refund request was rejected.",
+    "Your refund request has been updated.": "Your refund request has been updated.",
+    "This refund request has already been processed.": "This refund request has already been processed.",
+    "Failed to update refund status": "Failed to update refund status",
+    "Invalid ID format": "Invalid ID format"
   },
   "patterns": {
     "dropoff_fare": "Total fare: €{{totalFare}} (Base: €{{baseFare}} + Waiting: €{{waitingCharge}})",
@@ -681,6 +703,9 @@
     "validation_max_value": "{{field}} must be at most {{max}}.",
     "validation_greater_than": "{{field}} must be greater than {{min}}.",
     "validation_less_than": "{{field}} must be less than {{max}}.",
-    "validation_unexpected_field": "Unexpected field: {{field}}."
+    "validation_unexpected_field": "Unexpected field: {{field}}.",
+    "ride_confirmed_scheduled": "Your ride is confirmed for {{date}} at {{time}}.",
+    "ride_cancelled_refunded_wallet": "Your ride has been cancelled. €{{amount}} has been refunded to your wallet.",
+    "no_driver_cancelled_refunded": "No driver accepted your ride before pickup time. Your booking has been cancelled and €{{amount}} has been refunded to your wallet."
   }
 }

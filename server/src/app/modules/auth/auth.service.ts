@@ -432,7 +432,7 @@ const loginWithPhone = async (payload: TLoginWithPhone) => {
   });
 
   // === মক মোড চেক করা ===
-  const isDevelopment = config.environment !== 'production';
+  const isDevelopment = config.exposeDevSecrets;
 
   if (isDevelopment) {
     console.log('🔑 [MOCK OTP] Phone:', phone);
@@ -770,7 +770,29 @@ const selectRole = async (userId: string, role: string) => {
   };
 };
 
+// B-09: the FCM token was only saved at login/register. When the app rotated its
+// token (onTokenRefresh) or stayed signed in on a refresh token, the server kept
+// a stale or empty token and the rider got no pushes. The app calls this on
+// start and on every token refresh.
+const updateFcmToken = async (userId: string, fcmToken: string) => {
+  const token = fcmToken.trim();
+  const user = await User.findById(userId).select('_id isDeleted');
+  if (!user || (user as any).isDeleted) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+  }
+  // One device token belongs to one account: the last account to sign in on a
+  // device receives its pushes (same rule as login).
+  const previousOwners = await User.countDocuments({ fcmToken: token, _id: { $ne: user._id } });
+  if (previousOwners > 0) {
+    console.warn(`FCM token moved to user ${userId} from ${previousOwners} other account(s) on the same device`);
+  }
+  await clearFcmTokenFromOtherUsers(token, user._id);
+  await User.updateOne({ _id: user._id }, { $set: { fcmToken: token } });
+  return { fcmTokenRegistered: true };
+};
+
 export const AuthService = {
+  updateFcmToken,
   createUser,
   loginWithEmail,
   loginWithPhone,

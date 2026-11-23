@@ -110,7 +110,7 @@ const attachIntendedSplitRideAfterPayment = async (
     );
     if (!updatedBooking) return null;
 
-    await recalculateSplitFares(ride._id.toString(), 'passenger_joined');
+    await recalculateSplitFares(ride._id.toString(), 'passenger_joined', getIO());
     await redis.del(`split:matching:passenger:${passenger._id}`);
     await redis.hset(`ride:request:${ride._id}:${passenger._id}`, {
       userId: passenger.userId.toString(),
@@ -188,6 +188,10 @@ const startRideMatchingAfterPayment = async (bookingId: string): Promise<number>
       id: (ride as any).id || '',
     },
     bookingId: booking._id.toString(),
+    // B-15: the passenger's public booking reference (what the rider sees),
+    // next to rideId.id (the trip reference).
+    bookingShortId: booking.id || null,
+    rideShortId: (ride as any).id || null,
     pickup: {
       address: (passenger as any).pickup?.address || (ride as any).pickup?.address,
       coordinates: (passenger as any).pickup?.coordinates || (ride as any).pickup?.coordinates,
@@ -720,7 +724,7 @@ const confirmPayment = async (
       // Do not report payment completion before existing split passengers
       // have received their fare adjustment.
       try {
-        await recalculateSplitFares(recalcRideId, 'passenger_paid');
+        await recalculateSplitFares(recalcRideId, 'passenger_paid', getIO());
       } catch (err) {
         // The payment transaction is already committed. A recalculation
         // failure must not trigger the payment rollback/refund path below.
@@ -1026,7 +1030,7 @@ const captureAuthorizedBookingPayment = async (
 
   if (recalcRideId) {
     try {
-      await recalculateSplitFares(recalcRideId, 'passenger_paid');
+      await recalculateSplitFares(recalcRideId, 'passenger_paid', getIO());
     } catch (err) {
       console.error('Recalculate error after capture:', err);
     }
@@ -1078,6 +1082,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
 
   const session = await mongoose.startSession();
   let recalcRideId: string | null = null;
+  let walletBalanceAfter = 0;
   session.startTransaction();
 
   try {
@@ -1153,11 +1158,17 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       { session }
     );
 
-    await User.findByIdAndUpdate(
-      userId,
+    // B-01: debit atomically and only if the balance still covers the fare, so a
+    // concurrent payment or withdrawal can't take the wallet below zero.
+    const debitedUser = await User.findOneAndUpdate(
+      { _id: userId, wallet: { $gte: totalFare } },
       { $inc: { wallet: -totalFare } },
       { session, returnDocument: 'after' }
     );
+    if (!debitedUser) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'Insufficient wallet balance');
+    }
+    walletBalanceAfter = Math.round(Number(debitedUser.wallet || 0) * 100) / 100;
 
     booking.paymentStatus = PAYMENT_STATUS.paid;
     booking.amountPaid = totalFare;
@@ -1225,9 +1236,17 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
       }
     }
 
-    if (user?.fcmToken) await paymentNotifyToUser('SUCCESS', payment[0], user);
-
     await session.commitTransaction();
+
+    // Notify only after the debit is committed, so a failed transaction never
+    // produces a "payment successful" push.
+    if (user?.fcmToken) {
+      try {
+        await paymentNotifyToUser('SUCCESS', payment[0], user);
+      } catch (err: any) {
+        console.warn('Wallet payment push failed:', err?.message || err);
+      }
+    }
 
     let notifiedDrivers = 0;
     if (isMatchingPayment) {
@@ -1236,7 +1255,7 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
 
     if (recalcRideId) {
       try {
-        await recalculateSplitFares(recalcRideId, 'passenger_paid');
+        await recalculateSplitFares(recalcRideId, 'passenger_paid', getIO());
       } catch (err) {
         console.error('Recalculate error after wallet payment:', err);
       }
@@ -1251,10 +1270,13 @@ const payWithWallet = async (payload: { booking: string; user: string }) => {
         : 'Payment successful via Wallet',
       payment: payment[0],
       booking,
+      // B-01: same public reference as the card flow, plus the spendable balance.
+      bookingShortId: (booking as any).id,
+      walletBalance: walletBalanceAfter,
       notifiedDrivers,
     };
   } catch (error: any) {
-    await session.abortTransaction();
+    if (session.inTransaction()) await session.abortTransaction();
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       error.message || 'Wallet payment failed'

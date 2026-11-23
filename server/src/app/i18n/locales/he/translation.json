@@ -628,7 +628,29 @@
     "This payment does not belong to you": "תשלום זה אינו שייך לך",
     "Payment intent does not match this payment": "כוונת התשלום אינה תואמת לתשלום זה",
     "This payment has already been refunded or was never captured": "תשלום זה כבר הוחזר או שמעולם לא חויב",
-    "You do not have access to this payment": "אין לך גישה לתשלום זה"
+    "You do not have access to this payment": "אין לך גישה לתשלום זה",
+    "Insufficient wallet balance": "אין מספיק יתרה בארנק",
+    "Your ride has been cancelled. The payment hold on your card has been released.": "הנסיעה שלך בוטלה. החסימה של הסכום בכרטיס שלך שוחררה.",
+    "Your ride has been cancelled.": "הנסיעה שלך בוטלה.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled and the payment hold on your card has been released.": "אף נהג לא אישר את הנסיעה שלך לפני שעת האיסוף. ההזמנה שלך בוטלה והחסימה של הסכום בכרטיס שלך שוחררה.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled.": "אף נהג לא אישר את הנסיעה שלך לפני שעת האיסוף. ההזמנה שלך בוטלה.",
+    "You cannot cancel a ride after a passenger has been picked up.": "לא ניתן לבטל נסיעה לאחר שנוסע נאסף.",
+    "It is too early to start this trip.": "מוקדם מדי להתחיל את הנסיעה הזו.",
+    "Too many wrong OTP attempts. Please wait for the code to expire and request a new one.": "יותר מדי ניסיונות OTP שגויים. המתן שהקוד יפוג ובקש קוד חדש.",
+    "You do not have access to this ride": "אין לך גישה לנסיעה זו",
+    "You do not have access to this passenger": "אין לך גישה לנוסע זה",
+    "FCM token updated successfully": "אסימון FCM עודכן בהצלחה",
+    "FCM token is required": "נדרש אסימון FCM",
+    "Cancellation quote retrieved successfully": "הצעת הביטול התקבלה בהצלחה",
+    "Refund Approved": "ההחזר אושר",
+    "Refund Rejected": "ההחזר נדחה",
+    "Refund Update": "עדכון החזר",
+    "Your refund has been added to your wallet.": "ההחזר נוסף לארנק שלך.",
+    "Your refund request was rejected.": "בקשת ההחזר שלך נדחתה.",
+    "Your refund request has been updated.": "בקשת ההחזר שלך עודכנה.",
+    "This refund request has already been processed.": "בקשת ההחזר הזו כבר טופלה.",
+    "Failed to update refund status": "עדכון סטטוס ההחזר נכשל",
+    "Invalid ID format": "פורמט מזהה לא תקין"
   },
   "patterns": {
     "dropoff_fare": "סה\"כ תעריף: €{{totalFare}} (בסיס: €{{baseFare}} + המתנה: €{{waitingCharge}})",
@@ -685,6 +707,9 @@
     "validation_max_value": "השדה {{field}} חייב להיות לכל היותר {{max}}.",
     "validation_greater_than": "השדה {{field}} חייב להיות גדול מ-{{min}}.",
     "validation_less_than": "השדה {{field}} חייב להיות קטן מ-{{max}}.",
-    "validation_unexpected_field": "שדה לא צפוי: {{field}}."
+    "validation_unexpected_field": "שדה לא צפוי: {{field}}.",
+    "ride_confirmed_scheduled": "הנסיעה שלך אושרה ל-{{date}} בשעה {{time}}.",
+    "ride_cancelled_refunded_wallet": "הנסיעה שלך בוטלה. €{{amount}} הוחזרו לארנק שלך.",
+    "no_driver_cancelled_refunded": "אף נהג לא אישר את הנסיעה שלך לפני שעת האיסוף. ההזמנה שלך בוטלה ו-€{{amount}} הוחזרו לארנק שלך."
   }
 }

@@ -45,6 +45,12 @@ const globalErrorHandler: ErrorRequestHandler = (error, req, res, next) => {
       .join(', ')}`;
     errorMessages = simplifiedError.errorMessages;
   }
+  // Malformed ObjectId in a path/query (Mongoose CastError): a client error, not a 500.
+  else if (error.name === 'CastError' && error.kind === 'ObjectId') {
+    code = 400;
+    message = 'Invalid ID format';
+    errorMessages = [{ path: String(error.path || ''), message }];
+  }
   // Handle ApiError (custom error type)
   else if (error instanceof ApiError) {
     code = error.code;

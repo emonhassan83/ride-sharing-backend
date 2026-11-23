@@ -598,6 +598,30 @@ describe('calculateCancellationRefund (Cases 20-21)', () => {
     });
   });
 
+  it('product fee settings: 20% outside the window, 50% inside; refund + fee = paid', async () => {
+    setSettingDocs([
+      { key: 'cancellationFeePercent', value: 20 },
+      { key: 'lateCancellationFeePercent', value: 50 },
+    ]);
+
+    expect(await calculateCancellationRefund(60, inHours(48), 'split')).toEqual({
+      refundAmount: 48,
+      platformAmount: 12,
+      refundReason: 'outside_refund_restriction_window',
+    });
+    const late = await calculateCancellationRefund(33.33, inHours(2), 'split');
+    expect(late.refundReason).toBe('split_refund_restricted_24h_before_pickup');
+    expect(Math.round((late.refundAmount + late.platformAmount) * 100) / 100).toBe(33.33);
+  });
+
+  it('an explicit 0% late fee is respected (full refund inside the window), bad values are clamped', async () => {
+    setSettingDocs([{ key: 'lateCancellationFeePercent', value: 0 }]);
+    expect((await calculateCancellationRefund(30, inHours(2), 'split')).refundAmount).toBe(30);
+
+    setSettingDocs([{ key: 'cancellationFeePercent', value: 250 }]);
+    expect((await calculateCancellationRefund(30, inHours(48), 'split')).platformAmount).toBe(30);
+  });
+
   it('a departure already in the past is kept by the platform', async () => {
     expect(await calculateCancellationRefund(30, inHours(-1), 'private')).toEqual({
       refundAmount: 0,
@@ -759,12 +783,18 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
     expect(Ride.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('skips passengers whose fare did not change (1 rider already at 60.00)', async () => {
-    wire({ passengers: [passenger({ estimatedFare: 60 })] });
+  it('an unchanged fare is not re-charged, but its surcharge fields are kept in sync (B-06)', async () => {
+    const p = passenger({ estimatedFare: 60 });
+    wire({ passengers: [p] });
 
     await recalculateSplitFares(RIDE_ID, 'passenger_joined');
 
-    expect(Passenger.findByIdAndUpdate).not.toHaveBeenCalled();
+    // Only the matched-state fields are written; no fare change, no charge/refund.
+    expect(Passenger.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+    expect(Passenger.findByIdAndUpdate).toHaveBeenCalledWith(p._id, {
+      surchargePercent: expect.any(Number),
+      surchargeAmount: expect.any(Number),
+    });
     // Ride summary is still refreshed
     expect(Ride.findByIdAndUpdate).toHaveBeenCalledWith(RIDE_ID, { currentSurchargePercent: 0, bookedSeats: 1 });
   });
@@ -857,7 +887,11 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
       paymentStatus: PAYMENT_STATUS.requires_reauthorization,
     });
     expect(booking.paymentStatus).toBe(PAYMENT_STATUS.requires_reauthorization);
-    const driverRooms = io.to.mock.calls.map((c) => c[0]).filter((room) => String(room).startsWith('driver:'));
+    // Request cards are removed for both drivers; each also gets the B-07 card update.
+    const removed = emit.mock.calls.filter((c) => c[0] === 'ride:request-removed');
+    expect(removed).toHaveLength(2);
+    expect(emit.mock.calls.filter((c) => c[0] === 'ride:request-updated')).toHaveLength(2);
+    const driverRooms = [...new Set(io.to.mock.calls.map((c) => c[0]).filter((room) => String(room).startsWith('driver:')))];
     expect(driverRooms.sort()).toEqual([`driver:${driverA}`, `driver:${driverB}`].sort());
     expect(emit).toHaveBeenCalledWith('ride:request-removed', {
       rideId: RIDE_ID,
@@ -878,11 +912,15 @@ describe('recalculateSplitFares (fare recalculation under lock)', () => {
       booking: bookingDoc(),
       payment,
     });
-    const io = { to: vi.fn((_room: string) => ({ emit: vi.fn() })) };
+    const emit = vi.fn();
+    const io = { to: vi.fn((_room: string) => ({ emit })) };
 
     await recalculateSplitFares(RIDE_ID, 'passenger_joined', io);
 
-    const driverRooms = io.to.mock.calls.map((c) => c[0]).filter((room) => String(room).startsWith('driver:'));
+    // One removal and one card update (B-07) for the single driver, not two of each.
+    expect(emit.mock.calls.filter((c) => c[0] === 'ride:request-removed')).toHaveLength(1);
+    expect(emit.mock.calls.filter((c) => c[0] === 'ride:request-updated')).toHaveLength(1);
+    const driverRooms = [...new Set(io.to.mock.calls.map((c) => c[0]).filter((room) => String(room).startsWith('driver:')))];
     expect(driverRooms).toEqual([`driver:${driver}`]);
   });
 

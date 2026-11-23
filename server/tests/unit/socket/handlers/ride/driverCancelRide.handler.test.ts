@@ -251,7 +251,7 @@ describe('driver:cancel-ride - PRIVATE ride', () => {
     expect(Passenger.findOne).toHaveBeenCalledWith({ rideId, status: { $in: ACTIVE } });
   });
 
-  it('full refund: rider wallet credited exactly, booking & payment refunded, driver debited, Refund created', async () => {
+  it('full refund: rider wallet credited exactly, booking & payment refunded, driver NOT debited, Refund created', async () => {
     const passenger = makePassenger();
     const { booking, payment } = paidBooking(passenger, 25.5, 20.4);
     wire(makeWorld(makeRide(), [passenger], [{ booking, payment }]));
@@ -273,9 +273,9 @@ describe('driver:cancel-ride - PRIVATE ride', () => {
     expect(payment.isPaid).toBe(false);
     expect(payment.save).toHaveBeenCalledTimes(1);
 
-    // driver: providerEarning clawed back from wallet
-    expect(User.findByIdAndUpdate).toHaveBeenCalledTimes(1);
-    expect(User.findByIdAndUpdate).toHaveBeenCalledWith(driverId, { $inc: { wallet: -20.4 } });
+    // driver: the earning is only credited at completion, so there is nothing to
+    // claw back; debiting it here used to push driver wallets negative.
+    expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
 
     // Refund document with the exact amount
     expect(Refund.create).toHaveBeenCalledWith({
@@ -423,7 +423,8 @@ describe('driver:cancel-ride - PRIVATE ride', () => {
 
     await run({ rideId });
 
-    expect(ack).toHaveBeenCalledWith({ success: false, message: 'Stripe is down' });
+    // B-22: unexpected errors are not echoed verbatim to users.
+    expect(ack).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'INTERNAL_ERROR', message: 'Something went wrong!' }));
     expect(booking.save).not.toHaveBeenCalled();
     expect(Passenger.findByIdAndUpdate).not.toHaveBeenCalled();
     expect(Ride.findByIdAndUpdate).not.toHaveBeenCalled();
@@ -440,7 +441,8 @@ describe('driver:cancel-ride - PRIVATE ride', () => {
 
     await run({ rideId });
 
-    expect(ack).toHaveBeenCalledWith({ success: false, message: 'wallet down' });
+    // B-22: unexpected errors are not echoed verbatim to users.
+    expect(ack).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'INTERNAL_ERROR', message: 'Something went wrong!' }));
     expect(Passenger.findByIdAndUpdate).not.toHaveBeenCalled();
     expect(Ride.findByIdAndUpdate).not.toHaveBeenCalled();
     expect(ride.status).toBe('accepted');
@@ -457,7 +459,7 @@ describe('driver:cancel-ride - PRIVATE ride', () => {
     expect(ack).toHaveBeenLastCalledWith({ success: false, message: 'Cannot cancel now' });
     expect(refundToWallet).toHaveBeenCalledTimes(1);
     expect(Refund.create).toHaveBeenCalledTimes(1);
-    expect(User.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+    expect(User.findByIdAndUpdate).not.toHaveBeenCalled(); // not credited yet → never debited
   });
 });
 
@@ -478,8 +480,7 @@ describe('driver:cancel-ride - SPLIT ride', () => {
     expect(refundToWallet).toHaveBeenCalledTimes(2);
     expect(refundToWallet).toHaveBeenNthCalledWith(1, riderId, 25.5, 'driver_cancelled', io);
     expect(refundToWallet).toHaveBeenNthCalledWith(2, riderId, 10, 'driver_cancelled', io);
-    expect(User.findByIdAndUpdate).toHaveBeenCalledWith(driverId, { $inc: { wallet: -20.4 } });
-    expect(User.findByIdAndUpdate).toHaveBeenCalledWith(driverId, { $inc: { wallet: -8 } });
+    expect(User.findByIdAndUpdate).not.toHaveBeenCalled(); // not credited yet → never debited
     expect(p1.status).toBe('cancelled');
     expect(p2.status).toBe('cancelled');
     expect(p1.cancellationReason).toBe('Vehicle issue');
@@ -610,5 +611,44 @@ describe('FIXED BUGS (regression tests)', () => {
     await run({ rideId });
 
     expect(Refund.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('B-23: no driver cancel once a passenger was picked up', () => {
+  const boarded = ['picked_up', 'dropped_off', 'completed'];
+
+  for (const status of boarded) {
+    it(`refuses (code CANNOT_CANCEL_AFTER_PICKUP) when a passenger is ${status}, and changes nothing`, async () => {
+      const onBoard = makePassenger({ status });
+      const waiting = makePassenger({ userId: oidStr() });
+      const ride = makeRide({ type: 'split', status: 'started' });
+      wire(makeWorld(ride, [onBoard, waiting], [paidBooking(waiting)]));
+      vi.mocked(Passenger.exists).mockReturnValue(mockQuery({ _id: onBoard._id }) as any);
+
+      await run({ rideId });
+
+      expect(ack).toHaveBeenCalledWith({
+        success: false,
+        code: 'CANNOT_CANCEL_AFTER_PICKUP',
+        message: 'You cannot cancel a ride after a passenger has been picked up.',
+      });
+      expect(ride.status).toBe('started');
+      expect(waiting.status).toBe('confirmed');
+      expect(refundToWallet).not.toHaveBeenCalled();
+      expect(Refund.create).not.toHaveBeenCalled();
+    });
+  }
+
+  it('checks only boarded statuses on this ride', async () => {
+    const p = makePassenger();
+    wire(makeWorld(makeRide(), [p], [paidBooking(p)]));
+
+    await run({ rideId });
+
+    expect(Passenger.exists).toHaveBeenCalledWith({
+      rideId,
+      status: { $in: ['picked_up', 'dropped_off', 'completed'] },
+    });
+    expect(ack).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 });

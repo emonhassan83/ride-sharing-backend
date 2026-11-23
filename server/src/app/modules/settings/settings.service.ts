@@ -2,6 +2,11 @@ import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../errors/ApiError';
 import { Setting } from './settings.model';
 import {
+  WAIT_NOTICE_FEE_AMOUNT_EUR,
+  WAIT_NOTICE_MAX_MINUTES,
+} from '../../utils/waitTimeNotice.utils';
+import { getTripStartEarlyWindowMinutes } from '../../utils/rideSchedule.utils';
+import {
   DEFAULT_GENERAL_SETTINGS,
   DEFAULT_PLATFORM_SELLER,
   GENERAL_KEYS,
@@ -71,11 +76,25 @@ const getSettingGenerals = async () => {
     if (updated) byKey.set('splitRideMinDistanceKm', updated);
   }
 
-  return GENERAL_KEYS.map((key) => {
+  const generals: any[] = GENERAL_KEYS.map((key) => {
     const existing = byKey.get(key);
     if (existing) return existing;
     return { key, value: DEFAULT_GENERAL_SETTINGS[key] };
   });
+
+  // B-17: the app hard-coded "€10 for delays over 5 minutes" while the backend
+  // notice says €20. Expose the real values (read-only) so the app can show them.
+  // B-21: same for the server-enforced trip start window.
+  generals.push(
+    { key: 'waitNoticeFeeAmount', value: WAIT_NOTICE_FEE_AMOUNT_EUR, readOnly: true },
+    { key: 'waitNoticeMaxMinutes', value: WAIT_NOTICE_MAX_MINUTES, readOnly: true },
+    {
+      key: 'tripStartEarlyWindowMinutes',
+      value: await getTripStartEarlyWindowMinutes(),
+      readOnly: true,
+    },
+  );
+  return generals;
 };
 
 const createOrUpdate = async (key: string, payload: any) => {

@@ -28,6 +28,27 @@ import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 import { toLuggageFyiView } from '../../../utils/luggage.utils';
 import { buildWaitTimeNotice } from '../../../utils/waitTimeNotice.utils';
 import { getAcceptBlockReason } from '../../../utils/acceptGuard.utils';
+import { getDepartureDateTime } from '../../../utils/rideSchedule.utils';
+
+// B-19: "Your driver is on the way. ETA: 6 minutes" was sent even for rides
+// booked hours ahead. Rides more than 30 minutes out get a scheduled-ride text.
+const SCHEDULED_RIDE_THRESHOLD_MS = 30 * 60 * 1000;
+export const buildAcceptedPushDescription = (
+  ride: { departureDate?: string; departureTime?: string } | null | undefined,
+  etaText: string,
+): string => {
+  try {
+    if (ride?.departureDate && ride?.departureTime) {
+      const departAt = getDepartureDateTime(ride.departureDate, ride.departureTime);
+      if (departAt.getTime() - Date.now() > SCHEDULED_RIDE_THRESHOLD_MS) {
+        return `Your ride is confirmed for ${ride.departureDate} at ${ride.departureTime}.`;
+      }
+    }
+  } catch {
+    /* fall back to the ETA text */
+  }
+  return etaText;
+};
 
 const ensureRiderInRoom = (userId: string, rideId: string) => {
   const riderSocket = onlineUsers[userId];
@@ -432,6 +453,18 @@ export const driverAcceptRideHandler = eventHandler<any>(
         });
       }
 
+      // B-01: a wallet booking is already "paid" before any driver accepts, so the
+      // capture above returns early and never counts the seats (the driver saw
+      // "Booked Seats: 0"). A private ride has exactly one passenger, so set the
+      // counters to that passenger's values. This is idempotent on retries.
+      await Ride.findByIdAndUpdate(rideId, {
+        $set: {
+          bookedSeats: Number(passenger.requestedSeats) || 1,
+          malePassengers: Number(passenger.malePassengers) || 0,
+          femalePassengers: Number(passenger.femalePassengers) || 0,
+        },
+      });
+
       // Only now is the ride really taken: tell the other drivers.
       if (!alreadyClaimedByMe) {
         await notifyOtherNotifiedDriversRideTaken(ride, driverId, io, passenger._id.toString());
@@ -514,7 +547,10 @@ export const driverAcceptRideHandler = eventHandler<any>(
         await notifyUserPush({
           userId: passenger.userId.toString(),
           message: 'Driver Accepted Your Ride!',
-          description: `Your driver is on the way. ETA: ${estimatedArrival} minutes.`,
+          description: buildAcceptedPushDescription(
+            ride as any,
+            `Your driver is on the way. ETA: ${estimatedArrival} minutes.`,
+          ),
           reference: passenger._id.toString(),
           modelType: modeType.Passenger,
           dedupeKey: `ride-accepted:${passenger._id.toString()}`,
@@ -736,7 +772,10 @@ export const driverAcceptRideHandler = eventHandler<any>(
         await notifyUserPush({
           userId: passenger.userId.toString(),
           message: 'Driver Accepted Your Split Ride!',
-          description: `Your booking is confirmed. ETA: ${estimatedArrival} minutes.`,
+          description: buildAcceptedPushDescription(
+            ride as any,
+            `Your booking is confirmed. ETA: ${estimatedArrival} minutes.`,
+          ),
           reference: passenger._id.toString(),
           modelType: modeType.Passenger,
           dedupeKey: `ride-accepted:${passenger._id.toString()}`,

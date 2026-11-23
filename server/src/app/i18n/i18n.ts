@@ -372,6 +372,21 @@ const PATTERN_RULES: PatternRule[] = [
     extract: (m) => ({ eta: m[1] }),
   },
   {
+    regex: /^Your ride is confirmed for (\S+) at (\S+)\.$/i,
+    patternKey: 'ride_confirmed_scheduled',
+    extract: (m) => ({ date: m[1], time: m[2] }),
+  },
+  {
+    regex: /^Your ride has been cancelled\.\s*€([0-9.]+) has been refunded to your wallet\.$/i,
+    patternKey: 'ride_cancelled_refunded_wallet',
+    extract: (m) => ({ amount: m[1] }),
+  },
+  {
+    regex: /^No driver accepted your ride before pickup time\.\s*Your booking has been cancelled and €([0-9.]+) has been refunded to your wallet\.$/i,
+    patternKey: 'no_driver_cancelled_refunded',
+    extract: (m) => ({ amount: m[1] }),
+  },
+  {
     regex: /^(\d+)\s*matching split ride\(s\)\s*found$/i,
     patternKey: 'matching_split_rides_found',
     extract: (m) => ({ count: m[1] }),

@@ -21,4 +21,6 @@ export type TNotification = {
   date?: Date
   read?: boolean
   isDeleted?: boolean
+  type?: string | null
+  data?: Record<string, string>
 }

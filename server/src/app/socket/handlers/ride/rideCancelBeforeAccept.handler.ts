@@ -14,7 +14,7 @@ import eventHandler from '../../utils/eventHandler';
 import { transferRideOwnership, refundToWallet } from '../../../utils/splitFare.utils';
 import { Payment } from '../../../modules/payment/payment.model';
 import { Refund } from '../../../modules/refund/refund.model';
-import { User } from '../../../modules/user/user.model';
+import { revertDriverEarningIfCredited } from '../../../utils/driverEarning.utils';
 import { BOOKING_STATUS, PAYMENT_STATUS } from '../../../modules/booking/booking.constant';
 import { REFUND_STATUS, REFUND_TYPE } from '../../../modules/refund/refund.constant';
 
@@ -52,11 +52,13 @@ const notifyDriverCancelled = async (
 // A wallet payment, though, is taken in full before any driver accepts. The old code only
 // released card holds, so a rider who paid from the wallet and cancelled lost the money,
 // and the booking was never marked cancelled (it then blocked account deletion, issue 30).
-const releaseAuthorizedHold = async (passengerId: any) => {
-  const booking = await Booking.findOne({ passengerId });
-  if (!booking) return;
+type TReleaseResult = { refundAmount: number; holdReleased: boolean };
 
-  await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
+const releaseAuthorizedHold = async (passengerId: any): Promise<TReleaseResult> => {
+  const booking = await Booking.findOne({ passengerId });
+  if (!booking) return { refundAmount: 0, holdReleased: false };
+
+  const holdReleased = await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
 
   // Atomic claim on the paid payment: a double tap cannot refund twice.
   const claimedPayment = await Payment.findOneAndUpdate(
@@ -79,9 +81,12 @@ const releaseAuthorizedHold = async (passengerId: any) => {
       throw error;
     }
 
-    if (claimedPayment.providerEarning && claimedPayment.providerEarning > 0 && booking.driverId) {
-      await User.findByIdAndUpdate(booking.driverId, { $inc: { wallet: -claimedPayment.providerEarning } });
-    }
+    // Only reverses money the driver was actually credited (at completion).
+    await revertDriverEarningIfCredited({
+      rideId: booking.rideId,
+      driverId: booking.driverId,
+      amount: claimedPayment.providerEarning,
+    });
 
     await Refund.create({
       user: booking.userId,
@@ -106,6 +111,54 @@ const releaseAuthorizedHold = async (passengerId: any) => {
       },
     },
   );
+
+  return { refundAmount, holdReleased };
+};
+
+// B-11: the rider who cancelled used to get no confirmation at all (no socket
+// event, no push), so the app had nothing telling it the money came back.
+const notifyRiderOwnCancellation = async (
+  io: any,
+  userId: string,
+  rideId: string,
+  passengerId: string,
+  result: TReleaseResult,
+) => {
+  const description =
+    result.refundAmount > 0
+      ? `Your ride has been cancelled. €${result.refundAmount.toFixed(2)} has been refunded to your wallet.`
+      : result.holdReleased
+        ? 'Your ride has been cancelled. The payment hold on your card has been released.'
+        : 'Your ride has been cancelled.';
+
+  io.to(`user:${userId}`).emit('ride:cancelled', {
+    rideId,
+    passengerId,
+    cancelledBy: CANCELLED_BY.user,
+    refundAmount: result.refundAmount,
+    paymentReleased: result.holdReleased,
+    message: description,
+  });
+
+  try {
+    await notifyUserPush({
+      userId,
+      message: 'Ride Cancelled',
+      description,
+      reference: rideId,
+      modelType: modeType.Ride,
+      dedupeKey: `rider-cancelled:${passengerId}`,
+      data: {
+        type: 'RIDE_CANCELLED_BY_RIDER',
+        rideId: String(rideId),
+        passengerId: String(passengerId),
+        refundAmount: String(result.refundAmount),
+        screen: 'ride_details',
+      },
+    });
+  } catch (err: any) {
+    console.warn('Rider cancellation push failed:', err?.message || err);
+  }
 };
 
 const cancelAndNotifyRemaining = async (
@@ -171,7 +224,14 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     const io    = getIO();
 
     // Release the card hold before recording the cancellation, so a failure stays retryable.
-    await releaseAuthorizedHold(passenger._id);
+    const releaseResult = await releaseAuthorizedHold(passenger._id);
+    // B-04: cancelling before acceptance is free; say so explicitly in every ack.
+    const cancelInfo = {
+      refundAmount: releaseResult.refundAmount,
+      feeAmount: 0,
+      feePercent: 0,
+      refundDestination: releaseResult.refundAmount > 0 ? 'wallet' : releaseResult.holdReleased ? 'card_release' : null,
+    };
 
     // Atomic: on a double tap only one request goes on to cancel the ride and notify.
     const claimed = await Passenger.findOneAndUpdate(
@@ -185,10 +245,24 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     if (!claimed)
       return callback?.({ success: false, message: 'No pending booking found' });
 
+    try {
+      await redis.del(`ride:request:${rideId}:${passenger._id}`);
+    } catch {
+      /* best effort: the key also expires on its own */
+    }
+    await notifyRiderOwnCancellation(
+      io,
+      userId,
+      rideId,
+      passenger._id.toString(),
+      releaseResult,
+    );
+
     const redisCleanup = async () => {
       await Promise.all([
         redis.zrem('ride:matching:queue', rideId),
         redis.del(`ride:request:${rideId}`),
+        redis.del(`ride:matching:renotify:${rideId}`),
       ]);
     };
 
@@ -207,7 +281,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
         'Rider cancelled before acceptance.',
         { rideCancelled: true },
       );
-      return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+      return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true, ...cancelInfo } });
     }
 
     // ── SPLIT RIDE ────────────────────────────────────────────────────────────
@@ -242,7 +316,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
             : 'Only one passenger remaining. Ride cancelled.',
           { rideCancelled: true },
         );
-        return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+        return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true, ...cancelInfo } });
       }
 
       const transferred = await transferRideOwnership(rideId, userId, io);
@@ -256,7 +330,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
         await notifyDriverCancelled(io, ride, rideId, 'All passengers cancelled.', {
           rideCancelled: true,
         });
-        return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+        return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true, ...cancelInfo } });
       }
     }
 
@@ -291,7 +365,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
       await notifyDriverCancelled(io, ride, rideId, 'All passengers cancelled.', {
         rideCancelled: true,
       });
-      return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+      return callback?.({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true, ...cancelInfo } });
     }
 
     const remainingSeats = (updatedRide?.totalSeats ?? 0) - (updatedRide?.bookedSeats ?? 0);
@@ -334,7 +408,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     return callback?.({
       success: true,
       message: 'Cancelled successfully.',
-      data:    { rideCancelled: false, remainingPassengers: remaining.length },
+      data:    { rideCancelled: false, remainingPassengers: remaining.length, ...cancelInfo },
     });
   },
 );

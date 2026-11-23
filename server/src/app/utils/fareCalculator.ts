@@ -56,6 +56,8 @@ interface FareSettings {
   fivePassengerExtraChargePercentage: number;
   sixPassengerExtraChargePercentage: number;
   baseFare: number;
+  /** 0 = same as baseFare. */
+  splitRideMinimumFare: number;
   platformVat: number;
   platformCommissionPercent: number;
   splitRideMatchedSurchargePercent: number;
@@ -77,6 +79,7 @@ const DEFAULTS: FareSettings = {
   fivePassengerExtraChargePercentage: 20,
   sixPassengerExtraChargePercentage: 40,
   baseFare: 20,
+  splitRideMinimumFare: 0,
   platformVat: 9,
   platformCommissionPercent: 10,
   splitRideMatchedSurchargePercent: 30,
@@ -145,6 +148,7 @@ export async function loadFareSettings(): Promise<FareSettings> {
     sixPassengerExtraChargePercentage:
       map.get('sixPassengerExtraChargePercentage') ?? DEFAULTS.sixPassengerExtraChargePercentage,
     baseFare: map.get('baseFare') ?? DEFAULTS.baseFare,
+    splitRideMinimumFare: map.get('splitRideMinimumFare') ?? DEFAULTS.splitRideMinimumFare,
     platformVat: map.get('platformVat') ?? DEFAULTS.platformVat,
     platformCommissionPercent:
       map.get('platformCommissionPercent') ?? DEFAULTS.platformCommissionPercent,
@@ -228,6 +232,7 @@ export async function calculateFareBreakdown(params: {
     platformCommissionPercent: settings.platformCommissionPercent,
     splitRideMatchedSurchargePercent: matchedSurchargePercent,
     fareRoundingBracket: settings.fareRoundingBracket,
+    splitMinimumFare: settings.splitRideMinimumFare,
   });
 
   return {

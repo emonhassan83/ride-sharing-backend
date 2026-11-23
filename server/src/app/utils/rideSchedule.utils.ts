@@ -250,6 +250,36 @@ export const getRefundRestrictionHours = async (
     : getNumericSetting('privateRideRefundRestrictionHours', DEFAULT_PRIVATE_REFUND_RESTRICTION_HOURS);
 };
 
+// ── Cancellation fee policy (B-04 product decision) ──
+// The defaults reproduce the original policy: a full refund outside the refund
+// restriction window, nothing inside it. Product can change both from the admin
+// generals settings without a deploy (for example 20 / 100).
+export const DEFAULT_CANCELLATION_FEE_PERCENT = 0;
+export const DEFAULT_LATE_CANCELLATION_FEE_PERCENT = 100;
+
+/** Percent setting where 0 is a valid value; clamped to 0..100. */
+const getPercentSetting = async (key: string, fallback: number): Promise<number> => {
+  const setting = await Setting.findOne({ key }).lean();
+  const raw = (setting as any)?.value;
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(100, Math.max(0, value));
+};
+
+export const getCancellationFeePercents = async (): Promise<{
+  /** Fee when cancelling outside the refund restriction window. */
+  early: number;
+  /** Fee when cancelling inside the refund restriction window. */
+  late: number;
+}> => {
+  const [early, late] = await Promise.all([
+    getPercentSetting('cancellationFeePercent', DEFAULT_CANCELLATION_FEE_PERCENT),
+    getPercentSetting('lateCancellationFeePercent', DEFAULT_LATE_CANCELLATION_FEE_PERCENT),
+  ]);
+  return { early, late };
+};
+
 export const assertMinimumBookingLeadTime = async (
   departureDate: string,
   departureTime: string,
@@ -267,4 +297,30 @@ export const assertMinimumBookingLeadTime = async (
   }
 
   return { departureDateTime, hoursUntilDeparture, minLeadHours };
+};
+// ── Trip start window (B-21) ──
+// The app only let drivers start a trip 30 minutes before pickup; the server
+// did not check at all. Configurable via the `tripStartEarlyWindowMinutes` setting.
+export const DEFAULT_TRIP_START_EARLY_WINDOW_MINUTES = 30;
+
+export const getTripStartEarlyWindowMinutes = async (): Promise<number> =>
+  getNumericSetting('tripStartEarlyWindowMinutes', DEFAULT_TRIP_START_EARLY_WINDOW_MINUTES);
+
+/** Returns null if the trip may start now, otherwise the earliest allowed start. */
+export const getEarliestTripStart = async (
+  departureDate: string,
+  departureTime: string,
+  now: Date = new Date(),
+): Promise<Date | null> => {
+  if (!departureDate || !departureTime) return null;
+  let departAt: Date;
+  try {
+    departAt = getDepartureDateTime(departureDate, departureTime);
+  } catch {
+    // A malformed schedule must not lock the driver out of starting the trip.
+    return null;
+  }
+  const windowMinutes = await getTripStartEarlyWindowMinutes();
+  const earliest = new Date(departAt.getTime() - windowMinutes * 60 * 1000);
+  return now.getTime() < earliest.getTime() ? earliest : null;
 };

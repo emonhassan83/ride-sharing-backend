@@ -370,19 +370,30 @@ describe('checkNoDriverFound - cancel rides whose pickup time has passed', () =>
       { rideId: { $in: [rideId] }, status: { $nin: ['cancelled', 'completed'] } },
       { status: 'cancelled', cancellationReason: 'no_driver_found', cancelledBy: 'system' },
     );
-    expect(io.payloadTo(`user:${riderId}`, 'ride:no-driver-found')).toEqual({
-      rideId,
-      message: 'No driver accepted your ride before pickup time. Your booking has been cancelled.',
-      retryAfter: 5,
-    });
+    // B-12: the rider is told what happened to the money.
+    expect(io.payloadTo(`user:${riderId}`, 'ride:no-driver-found')).toEqual(
+      expect.objectContaining({
+        rideId,
+        refundAmount: 25.5,
+        paymentReleased: false,
+        cancellationReason: 'no_driver_found',
+        message: 'No driver accepted your ride before pickup time. Your booking has been cancelled and €25.50 has been refunded to your wallet.',
+        retryAfter: 5,
+      }),
+    );
     expect(notifyUserPush).toHaveBeenCalledWith({
       userId: riderId,
       message: 'Ride Cancelled — No Driver Found',
-      description: 'No driver accepted your ride before pickup time. Your booking has been cancelled.',
+      description: 'No driver accepted your ride before pickup time. Your booking has been cancelled and €25.50 has been refunded to your wallet.',
       reference: rideId,
       modelType: expect.anything(),
       dedupeKey: `no-driver-cancelled:${rideId}`,
-      data: { type: 'RIDE_CANCELLED_NO_DRIVER', rideId },
+      data: expect.objectContaining({
+        type: 'RIDE_CANCELLED_NO_DRIVER',
+        rideId,
+        refundAmount: '25.5',
+        screen: 'ride_details',
+      }),
     });
     for (const d of [d1, d2]) {
       expect(io.payloadTo(`driver:${d}`, 'ride:request-removed')).toEqual({

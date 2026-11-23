@@ -37,6 +37,21 @@ async function main() {
         )
       );
 
+      // B-02: make a wrong NODE_ENV visible in the logs on every start.
+      if (config.exposeDevSecrets) {
+        logger.warn(
+          colors.red.bold(
+            `⚠️  NODE_ENV=${config.environment}: OTP codes are returned in API responses and SMS is mocked. Never expose this server publicly; set NODE_ENV=production.`
+          )
+        );
+      } else if (config.environment !== 'production') {
+        logger.warn(
+          colors.yellow(
+            `⚠️  NODE_ENV is "${config.environment ?? ''}" (not production). Running with production-safe OTP behaviour.`
+          )
+        );
+      }
+
       // Start cron jobs & BullMQ chat push worker AFTER the server is fully listening —
       startBackgroundJobs();
       initChatPushWorker();

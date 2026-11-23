@@ -24,6 +24,51 @@ import {
 export const RIDE_STATE_TTL_SECONDS = 10 * 60;
 export const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
 
+/**
+ * B-14: every push and in-app notification carries a routing payload so the
+ * app can open the right screen: `type` (UPPER_SNAKE), the target ids and a
+ * `screen` hint. Callers that already set `type` keep it; older callers
+ * (payment, KYC, withdraw, refund) get a type derived from the model.
+ */
+const DEFAULT_TYPE_BY_MODEL: Record<string, string> = {
+  Ride: 'RIDE_UPDATE',
+  Passenger: 'RIDE_UPDATE',
+  Booking: 'BOOKING_UPDATE',
+  Payment: 'PAYMENT_UPDATE',
+  Refund: 'REFUND_ISSUED',
+  Withdraw: 'WITHDRAW_STATUS',
+  Provider: 'KYC_STATUS',
+  User: 'ACCOUNT_STATUS',
+  Auth: 'ACCOUNT_STATUS',
+};
+
+const screenForType = (type: string): string => {
+  if (type === 'CHAT_MESSAGE') return 'chat';
+  if (type === 'NEW_RIDE_REQUEST') return 'ride_request';
+  if (type === 'KYC_STATUS' || type === 'ACCOUNT_STATUS') return 'home';
+  if (type === 'REFUND_ISSUED' || type === 'PAYMENT_UPDATE') return 'wallet';
+  if (type === 'WITHDRAW_STATUS') return 'earnings';
+  return 'ride_details';
+};
+
+export const buildNotificationRoutingData = (payload: {
+  data?: Record<string, unknown> | null;
+  reference?: unknown;
+  modelType?: unknown;
+}): Record<string, string> => {
+  const out: Record<string, string> = {};
+  Object.entries(payload?.data || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) out[key] = String(value);
+  });
+  const modelType = payload?.modelType ? String(payload.modelType) : '';
+  if (payload?.reference) out.reference = String(payload.reference);
+  if (modelType) out.modelType = modelType;
+  if (!out.type) out.type = DEFAULT_TYPE_BY_MODEL[modelType] || 'GENERAL';
+  if (!out.rideId && modelType === 'Ride' && out.reference) out.rideId = out.reference;
+  if (!out.screen) out.screen = screenForType(out.type);
+  return out;
+};
+
 const RIDE_STATE_TYPES = new Set([
   'NEW_RIDE_REQUEST',
   'DRIVERS_NOTIFIED',
@@ -31,6 +76,7 @@ const RIDE_STATE_TYPES = new Set([
   'SPLIT_TO_SOLO',
   'RIDE_ACCEPTED',
   'TRIP_STARTED',
+  'DRIVER_EN_ROUTE',
   'DRIVER_ARRIVED',
   'PASSENGER_PICKED_UP',
   'BOARD_SOON',
@@ -90,21 +136,7 @@ export const sendNotification = async (
       return { successCount: 0, failureCount: 0, responses: [] };
     }
 
-    const dataPayload: Record<string, string> = {};
-    const sourceData = localizedPayload?.data || {};
-
-    Object.entries(sourceData).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        dataPayload[key] = String(value);
-      }
-    });
-
-    if (localizedPayload?.reference) {
-      dataPayload.reference = String(localizedPayload.reference);
-    }
-    if (localizedPayload?.modelType) {
-      dataPayload.modelType = String(localizedPayload.modelType);
-    }
+    const dataPayload = buildNotificationRoutingData(localizedPayload);
 
     const delivery = buildPushDeliveryOptions(dataPayload, payload?.ttlSeconds);
 
@@ -151,7 +183,11 @@ export const sendNotification = async (
     if (response.successCount > 0 && !payload?.skipPersist) {
       // Create a single database entry for the notification instead of inside a loop.
       // Callers that already saved the in-app row pass skipPersist.
-      await Notification.create(localizedPayload);
+      await Notification.create({
+        ...localizedPayload,
+        type: dataPayload.type,
+        data: dataPayload,
+      });
     }
 
     return response;

@@ -5,7 +5,7 @@ import ApiError from '../errors/ApiError';
 import { getRedisClient } from '../config/redis.config';
 import { config } from '../config/env.config';
 import { Ride } from '../modules/ride/ride.model';
-import { RIDE_STATUS } from '../modules/ride/ride.constant';
+import { RIDE_STATUS, RIDE_TYPE } from '../modules/ride/ride.constant';
 import { Passenger } from '../modules/passenger/passenger.model';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { User } from '../modules/user/user.model';
@@ -20,6 +20,10 @@ const RIDE_START_OTP_TTL_SECONDS = 10 * 60; // 10 minutes
 const OTP_REUSE_MIN_REMAINING_SECONDS = 60;
 const OTP_RESEND_COOLDOWN_SECONDS = 60;
 const RIDE_START_VERIFIED_TTL_SECONDS = 2 * 60 * 60; // 2 hours
+const MAX_OTP_VERIFY_ATTEMPTS = 5;
+
+const getRideStartOtpAttemptsKey = (rideId: string, passengerId: string) =>
+  `ride:start:otp:attempts:${rideId}:${passengerId}`;
 
 export const getRideStartOtpKey = (rideId: string, passengerId: string) =>
   `ride:start:otp:${rideId}:${passengerId}`;
@@ -50,8 +54,10 @@ export const sendRideStartOtp = async (params: {
   passengerId?: string;
   requesterId?: string;
   requesterRole?: string;
+  /** Explicit "Resend" from the app: re-deliver the code even inside the cooldown. */
+  resend?: boolean;
 }) => {
-  const { rideId, passengerId, requesterId, requesterRole } = params;
+  const { rideId, passengerId, requesterId, requesterRole, resend = false } = params;
   if (!rideId) {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'rideId is required');
   }
@@ -130,40 +136,41 @@ export const sendRideStartOtp = async (params: {
   for (const passenger of passengers) {
     const pid = passenger._id.toString();
     const uid = passenger.userId.toString();
-    // Issue 9: every pickup attempt / resend used to create a NEW code and send a
-    // new push + SMS. Re-use the current code while it still has more than
-    // OTP_REUSE_MIN_REMAINING_SECONDS left; only then issue a fresh one.
+    // B-10: a code the passenger already has stays valid until it expires.
+    // Re-opening the "Verify passenger" sheet (or a pickup retry) used to issue
+    // a new code once less than a minute was left, so the passenger's code was
+    // rejected. The existing code is now always reused; if it is about to
+    // expire (or on an explicit resend) its lifetime is extended instead.
     const otpKey = getRideStartOtpKey(rideId, pid);
     const [existingOtp, existingTtl] = await Promise.all([
       redis.get(otpKey),
       redis.ttl(otpKey),
     ]);
-    const reuse =
-      !!existingOtp && Number(existingTtl) > OTP_REUSE_MIN_REMAINING_SECONDS;
+    const reuse = !!existingOtp && Number(existingTtl) > 0;
     // Guaranteed 6-digit OTP
     const otp = reuse ? String(existingOtp) : String(generateOtp()).padStart(6, '0');
-    const expiresInSeconds = reuse ? Number(existingTtl) : RIDE_START_OTP_TTL_SECONDS;
+    let expiresInSeconds = reuse ? Number(existingTtl) : RIDE_START_OTP_TTL_SECONDS;
 
     if (!reuse) {
       await Promise.all([
         redis.setex(otpKey, RIDE_START_OTP_TTL_SECONDS, otp),
-        redis.setex(
-          getRideStartOtpFallbackKey(rideId),
-          RIDE_START_OTP_TTL_SECONDS,
-          otp,
-        ),
+        redis.del(getRideStartOtpAttemptsKey(rideId, pid)),
       ]);
+    } else if (resend || expiresInSeconds <= OTP_REUSE_MIN_REMAINING_SECONDS) {
+      await redis.expire(otpKey, RIDE_START_OTP_TTL_SECONDS);
+      expiresInSeconds = RIDE_START_OTP_TTL_SECONDS;
     }
 
-    // Same code is pushed / texted at most once per OTP_RESEND_COOLDOWN_SECONDS.
-    const smsAllowed =
-      (await redis.set(
-        `ride-start-otp:sms:${pid}:${otp}`,
-        '1',
-        'EX',
-        OTP_RESEND_COOLDOWN_SECONDS,
-        'NX',
-      )) === 'OK';
+    // Same code is texted/emailed at most once per OTP_RESEND_COOLDOWN_SECONDS,
+    // unless the driver explicitly asked to resend it.
+    const smsKey = `ride-start-otp:sms:${pid}:${otp}`;
+    let smsAllowed = true;
+    if (resend) {
+      await redis.set(smsKey, '1', 'EX', OTP_RESEND_COOLDOWN_SECONDS);
+    } else {
+      smsAllowed =
+        (await redis.set(smsKey, '1', 'EX', OTP_RESEND_COOLDOWN_SECONDS, 'NX')) === 'OK';
+    }
 
     const riderUser = await User.findById(uid)
       .select('name email phone fcmToken')
@@ -184,18 +191,43 @@ export const sendRideStartOtp = async (params: {
       io.to(`user:${uid}`).emit('driver:send-start-otp', otpSocketPayload);
     }
 
-    // 2. Direct Phone SMS via Twilio (same pattern as sendOtpViaDirectPhone)
-    if (riderUser?.phone && smsAllowed) {
-      const isDevelopment = config.environment !== 'production';
-      if (isDevelopment) {
+    // B-09: the push used to wait for the Twilio SMS, and the driver's ack
+    // waited for every channel. The push now goes out first and all channels
+    // run in parallel in the background.
+    const sendPush = () =>
+      notifyUserPush({
+        userId: uid,
+        message: 'Ride Start OTP Code',
+        description: `Your 6-digit verification code to start the ride is ${otp}. Share this OTP with your driver when boarding.`,
+        reference: String(ride._id),
+        modelType: modeType.Ride,
+        // An explicit resend must not be swallowed by the dedupe slot.
+        ...(resend
+          ? {}
+          : {
+              dedupeKey: `ride-start-otp:${pid}:${otp}`,
+              dedupeTtlSeconds: OTP_RESEND_COOLDOWN_SECONDS,
+            }),
+        data: {
+          type: 'RIDE_START_OTP',
+          rideId: String(ride._id),
+          passengerId: pid,
+          otp,
+          screen: 'ride_details',
+        },
+      }).catch((err) => {
+        console.warn(`Failed to send ride start OTP push to ${uid}:`, err);
+      });
+
+    const sendSms = async () => {
+      if (!riderUser?.phone || !smsAllowed) return;
+      if (config.exposeDevSecrets) {
         console.log(`🔑 [RIDE START OTP] Passenger Phone: ${riderUser.phone}`);
         console.log(`🔑 [RIDE START OTP] 6-digit Code: ${otp}`);
         console.log('⚠️  Real SMS skipped in development mode');
-      } else if (
-        config.twilio?.accountSid &&
-        config.twilio?.authToken &&
-        config.twilio?.phoneNumber
-      ) {
+        return;
+      }
+      if (config.twilio?.accountSid && config.twilio?.authToken && config.twilio?.phoneNumber) {
         try {
           const twilioClient = twilio(config.twilio.accountSid, config.twilio.authToken);
           await twilioClient.messages.create({
@@ -204,32 +236,13 @@ export const sendRideStartOtp = async (params: {
             to: riderUser.phone,
           });
         } catch (twilioErr: any) {
-          console.error(`Twilio SMS failed for passenger phone ${riderUser.phone}:`, twilioErr);
+          console.error(`Twilio SMS failed for passenger ${uid}:`, twilioErr?.message || twilioErr);
         }
       }
-    }
+    };
 
-    // 3. Push notification + in-app notification to rider
-    await notifyUserPush({
-      userId: uid,
-      message: 'Ride Start OTP Code',
-      description: `Your 6-digit verification code to start the ride is ${otp}. Share this OTP with your driver when boarding.`,
-      reference: String(ride._id),
-      modelType: modeType.Ride,
-      dedupeKey: `ride-start-otp:${pid}:${otp}`,
-      dedupeTtlSeconds: OTP_RESEND_COOLDOWN_SECONDS,
-      data: {
-        type: 'RIDE_START_OTP',
-        rideId: String(ride._id),
-        passengerId: pid,
-        otp,
-      },
-    }).catch((err) => {
-      console.warn(`Failed to send ride start OTP push to ${uid}:`, err);
-    });
-
-    // 4. Email notification to rider
-    if (riderUser?.email && smsAllowed) {
+    const sendEmail = async () => {
+      if (!riderUser?.email || !smsAllowed) return;
       try {
         const expiresAt = moment().add(10, 'minute');
         const emailQueue = await getEmailQueueInstance();
@@ -251,16 +264,18 @@ export const sendRideStartOtp = async (params: {
           },
         );
       } catch (emailErr) {
-        console.warn(`Failed to queue ride start OTP email for ${riderUser.email}:`, emailErr);
+        console.warn(`Failed to queue ride start OTP email for passenger ${uid}:`, emailErr);
       }
-    }
+    };
+
+    void Promise.allSettled([sendPush(), sendSms(), sendEmail()]);
 
     results.push({
       passengerId: pid,
       userId: uid,
       phone: riderUser?.phone || '',
       expiresInSeconds,
-      ...(config.environment !== 'production' ? { otp } : {}),
+      ...(config.exposeDevSecrets ? { otp } : {}),
     });
   }
 
@@ -269,7 +284,7 @@ export const sendRideStartOtp = async (params: {
     passengerId: results[0]?.passengerId || passengerId,
     expiresInSeconds: RIDE_START_OTP_TTL_SECONDS,
     passengers: results,
-    ...(config.environment !== 'production' && results[0]?.otp
+    ...(config.exposeDevSecrets && results[0]?.otp
       ? { otp: results[0].otp, mock: true }
       : {}),
   };
@@ -339,6 +354,17 @@ export const verifyRideStartOtp = async (params: {
   const redis = getRedisClient();
   let matchedPassenger: any = null;
 
+  // B-10: brute-force guard. Five wrong codes lock this passenger's OTP until
+  // it expires and a new one is issued.
+  const attemptsKey = getRideStartOtpAttemptsKey(rideId, passengerId);
+  const priorAttempts = Number((await redis.get(attemptsKey)) || 0);
+  if (priorAttempts >= MAX_OTP_VERIFY_ATTEMPTS) {
+    throw new ApiError(
+      StatusCodes.TOO_MANY_REQUESTS,
+      'Too many wrong OTP attempts. Please wait for the code to expire and request a new one.',
+    );
+  }
+
   for (const p of passengers) {
     const pid = p._id.toString();
     const storedForPassenger = await redis.get(getRideStartOtpKey(rideId, pid));
@@ -348,7 +374,11 @@ export const verifyRideStartOtp = async (params: {
     }
   }
 
-  if (!matchedPassenger && passengers.length === 1) {
+  // B-10: the ride-level fallback key held whichever split passenger's code was
+  // written last, so on a split ride passenger A's code could verify passenger
+  // B. It is no longer written; it is only read on private rides, for codes
+  // issued before this change.
+  if (!matchedPassenger && passengers.length === 1 && ride.type === RIDE_TYPE.private) {
     const fallbackStored = await redis.get(getRideStartOtpFallbackKey(rideId));
     if (fallbackStored && fallbackStored.trim() === submittedOtp) {
       matchedPassenger = passengers[0];
@@ -356,6 +386,8 @@ export const verifyRideStartOtp = async (params: {
   }
 
   if (!matchedPassenger) {
+    await redis.incr(attemptsKey);
+    await redis.expire(attemptsKey, RIDE_START_OTP_TTL_SECONDS);
     const storedOtp = await redis.get(getRideStartOtpKey(rideId, passengerId));
     const fallbackExists = await redis.get(getRideStartOtpFallbackKey(rideId));
     const hasActiveOtp = !!storedOtp || !!fallbackExists;
@@ -387,6 +419,7 @@ export const verifyRideStartOtp = async (params: {
     ),
     redis.del(getRideStartOtpKey(rideId, pid)),
     redis.del(getRideStartOtpFallbackKey(rideId)),
+    redis.del(getRideStartOtpAttemptsKey(rideId, pid)),
   ]);
 
   try {

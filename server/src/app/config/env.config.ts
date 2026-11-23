@@ -38,6 +38,12 @@ process.env.TZ = activeTimeZone;
 
 export const config = {
   environment: process.env.NODE_ENV,
+  /**
+   * B-02: mock OTPs (returned in API responses, real SMS skipped) ONLY when
+   * NODE_ENV is explicitly development or test. Unset / staging / anything else
+   * behaves like production, so a misconfigured server never leaks codes.
+   */
+  exposeDevSecrets: ['development', 'test'].includes(String(process.env.NODE_ENV || '')),
   port: process.env.PORT,
   socketPort: process.env.SOCKET,
 

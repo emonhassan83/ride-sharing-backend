@@ -77,7 +77,7 @@ Stripe PaymentIntents use `capture_method: 'manual'`. The card is authorized at 
 
 - refund the rider's wallet
 - set the booking or payment to refunded
-- debit the driver's `providerEarning`
+- reverse the driver's `providerEarning` via `utils/driverEarning.utils.ts` (`revertDriverEarningIfCredited`), which debits only if the earning was actually credited. The driver wallet is credited once, at trip completion (`ride.driverEarningCredited`), so a cancellation before completion must not debit it.
 - create a `Refund` document
 
 Keep these consistent across `driverCancelRide`, `rideCancelAfterAccept`, and `job/noDriverFound.job.ts`.

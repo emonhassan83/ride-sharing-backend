@@ -14,7 +14,11 @@ import {
   resolveSplitMatchedSurchargePercent,
   roundMoney,
 } from './fareMath.utils';
-import { getDepartureDateTime, getRefundRestrictionHours } from './rideSchedule.utils';
+import {
+  getCancellationFeePercents,
+  getDepartureDateTime,
+  getRefundRestrictionHours,
+} from './rideSchedule.utils';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { sendNotification } from './sentPushNotification';
 import { modeType } from '../modules/notification/notification.interface';
@@ -136,6 +140,7 @@ export const calcSplitPassengerFare = async (
     splitRideMatchedSurchargePercent: matchedSurchargePercent,
     poolKomistraBase: options.poolKomistraBase,
     fareRoundingBracket: Number(s.fareRoundingBracket || 5),
+    splitMinimumFare: Number((s as any).splitRideMinimumFare || 0),
   });
 
   const perPassengerTotal = fareTotals.totalFare;
@@ -422,8 +427,6 @@ export const recalculateSplitFares = async (
       const oldFare = passenger.estimatedFare || 0;
       const diff = Math.round((newFare.estimatedFare - oldFare) * 100) / 100;
 
-      if (Math.abs(diff) < 0.01) continue; // Case 13 - ignore rounding noise
-
       const booking = await Booking.findOne({
         passengerId: passenger._id,
         rideId,
@@ -442,6 +445,29 @@ export const recalculateSplitFares = async (
         payout.driverPlatformFeeAmount + payout.driverVatAmount,
       );
       const nextProviderEarning = payout.driverEarningAmount;
+
+      if (Math.abs(diff) < 0.01) {
+        // Case 13 - no charge/refund for rounding noise. B-06: but the matched
+        // state still changed (e.g. the €20 minimum hides the surcharge), so
+        // keep the commission split and surcharge fields in sync; otherwise the
+        // payment stays priced as an unmatched rider and capture uses that.
+        await Passenger.findByIdAndUpdate(passenger._id, {
+          surchargePercent: newFare.surchargePercent,
+          surchargeAmount: newFare.surchargeAmount,
+        });
+        if (
+          payment &&
+          [
+            PAYMENT_RECORD_STATUS.authorized,
+            PAYMENT_RECORD_STATUS.requires_reauthorization,
+          ].includes(payment.status as any)
+        ) {
+          payment.platformCommission = nextPlatformCommission;
+          payment.providerEarning = nextProviderEarning;
+          await payment.save();
+        }
+        continue;
+      }
 
       if (
         payment &&
@@ -601,6 +627,47 @@ export const recalculateSplitFares = async (
       currentSurchargePercent: newSurchargePercent,
       bookedSeats: exactBookedSeats,
     });
+
+    // B-07: drivers' request cards kept showing the first rider's "1 seat · €20"
+    // after a second rider joined, because nothing told them the ride changed.
+    try {
+      const emitter = io || (global as any).socketio;
+      const updatedRide = emitter
+        ? await Ride.findById(rideId).select('notifiedDriverIds driverId totalSeats').lean()
+        : null;
+      if (emitter && updatedRide) {
+        const driverIds = new Set<string>(
+          ((updatedRide as any).notifiedDriverIds || []).map((id: any) => String(id)),
+        );
+        if ((updatedRide as any).driverId) driverIds.add(String((updatedRide as any).driverId));
+        if (driverIds.size) {
+          const fresh = await Passenger.find({ _id: { $in: activePassengers.map((p: any) => p._id) } })
+            .select('_id requestedSeats estimatedFare')
+            .lean();
+          const payload = {
+            rideId: String(rideId),
+            reason,
+            bookedSeats: exactBookedSeats,
+            totalSeats: Number((updatedRide as any).totalSeats || 0),
+            riders: activeRiderCount,
+            surchargePercent: newSurchargePercent,
+            totalFare:
+              Math.round(fresh.reduce((s: number, p: any) => s + Number(p.estimatedFare || 0), 0) * 100) / 100,
+            passengers: fresh.map((p: any) => ({
+              passengerId: String(p._id),
+              requestedSeats: Number(p.requestedSeats) || 1,
+              estimatedFare: Number(p.estimatedFare || 0),
+            })),
+          };
+          for (const id of driverIds) {
+            emitter.to(`driver:${id}`).emit('ride:request-updated', payload);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('ride:request-updated emit failed:', err?.message || err);
+    }
+
     console.log(
       `✅ Recalculated | ride: ${rideId} | reason: ${reason} | riders: ${activeRiderCount} | surcharge: ${newSurchargePercent}%`
     );
@@ -640,17 +707,23 @@ export const calculateCancellationRefund = async (
     };
   }
 
+  // Fee percentages come from settings (defaults: 0% outside, 100% inside the window).
+  const fees = await getCancellationFeePercents();
+  const split = (feePercent: number) => {
+    const platformAmount = roundMoney((paidAmount * feePercent) / 100);
+    // Refund = paid - fee, so the two always add up to exactly what was paid.
+    return { platformAmount, refundAmount: roundMoney(paidAmount - platformAmount) };
+  };
+
   if (hoursBeforeDep <= restrictionHours) {
     return {
-      refundAmount: 0,
-      platformAmount: paidAmount,
+      ...split(fees.late),
       refundReason: `${rideType}_refund_restricted_${restrictionHours}h_before_pickup`,
     };
   }
 
   return {
-    refundAmount: paidAmount,
-    platformAmount: 0,
+    ...split(fees.early),
     refundReason: 'outside_refund_restriction_window',
   };
 };

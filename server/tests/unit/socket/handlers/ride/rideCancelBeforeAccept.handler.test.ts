@@ -270,7 +270,11 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
       message: 'Rider cancelled before acceptance.',
       rideCancelled: true,
     });
-    expect(notifyUserPush).toHaveBeenCalledTimes(2);
+    // 2 drivers + the cancelling rider's own confirmation (B-11)
+    expect(notifyUserPush).toHaveBeenCalledTimes(3);
+    expect(notifyUserPush).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Ride Cancelled', data: expect.objectContaining({ type: 'RIDE_CANCELLED_BY_RIDER' }) }),
+    );
     expect(notifyUserPush).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: driverA,
@@ -279,7 +283,7 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
         data: { type: 'RIDE_CANCELLED_BY_RIDER', rideId },
       }),
     );
-    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: expect.objectContaining({ rideCancelled: true, feeAmount: 0, feePercent: 0 }) });
   });
 
   it('defaults the reason to "Cancelled by rider" for passenger and ride', async () => {
@@ -301,7 +305,7 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
     const rider = oidStr();
     wire({ ride: makeRide({ notifiedDriverIds: [driverA, driverA, driverB] }), passengers: [makePassenger({ userId: rider })] });
     await run({ rideId }, asUser(rider));
-    expect(notifyUserPush).toHaveBeenCalledTimes(2);
+    expect(notifyUserPush).toHaveBeenCalledTimes(3); // 2 drivers + the rider's own confirmation (B-11)
     expect(io.emittedEvents('ride:cancelled-by-rider')).toHaveLength(2);
   });
 
@@ -309,9 +313,11 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
     const rider = oidStr();
     wire({ ride: makeRide({ notifiedDriverIds: [] }), passengers: [makePassenger({ userId: rider })] });
     await run({ rideId }, asUser(rider));
-    expect(notifyUserPush).not.toHaveBeenCalled();
-    expect(io.emitted).toHaveLength(0);
-    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+    // Only the rider's own confirmation (B-11); no driver is pushed.
+    expect(notifyUserPush).toHaveBeenCalledTimes(1);
+    expect(notifyUserPush).toHaveBeenCalledWith(expect.objectContaining({ userId: rider }));
+    expect(io.emittedEvents('ride:cancelled-by-rider')).toHaveLength(0);
+    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: expect.objectContaining({ rideCancelled: true, feeAmount: 0, feePercent: 0 }) });
   });
 
   it('idempotent: a repeat cancel of the same ride is refused and sends no second notice', async () => {
@@ -319,7 +325,7 @@ describe('ride:cancel-before-accept - PRIVATE ride', () => {
     wire({ ride: makeRide({ notifiedDriverIds: [driverA] }), passengers: [makePassenger({ userId: rider })] });
     await run({ rideId }, asUser(rider));
     await run({ rideId }, asUser(rider));
-    expect(notifyUserPush).toHaveBeenCalledTimes(1);
+    expect(notifyUserPush).toHaveBeenCalledTimes(2); // driver + rider confirmation, once each
     expect(ack).toHaveBeenLastCalledWith({ success: false, message: 'Ride already accepted or cancelled' });
   });
 });
@@ -347,7 +353,7 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
     expect(io.payloadTo(`driver:${driverA}`, 'ride:cancelled-by-rider').message).toBe(
       'Only one passenger remaining. Ride cancelled.',
     );
-    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: expect.objectContaining({ rideCancelled: true, feeAmount: 0, feePercent: 0 }) });
   });
 
   it('creator leaves and NOBODY else remains: ride cancelled with the creator-specific reason', async () => {
@@ -359,7 +365,7 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
 
     expect(ride.cancellationReason).toBe('Creator cancelled before acceptance');
     expect(io.payloadTo(`driver:${driverA}`, 'ride:cancelled-by-rider').message).toBe('All passengers cancelled.');
-    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: expect.objectContaining({ rideCancelled: true, feeAmount: 0, feePercent: 0 }) });
   });
 
   it('creator leaves with TWO others: ownership is transferred and the ride stays open with seats released', async () => {
@@ -377,7 +383,7 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
     expect(ack).toHaveBeenCalledWith({
       success: true,
       message: 'Cancelled successfully.',
-      data: { rideCancelled: false, remainingPassengers: 2 },
+      data: expect.objectContaining({ rideCancelled: false, remainingPassengers: 2, feeAmount: 0 }),
     });
   });
 
@@ -393,7 +399,7 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
 
     expect(ride.status).toBe('cancelled');
     expect(ride.cancellationReason).toBe('Creator cancelled before acceptance');
-    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: expect.objectContaining({ rideCancelled: true, feeAmount: 0, feePercent: 0 }) });
   });
 
   it('a non-creator leaves a 3-rider ride: seats released, co-riders and driver told with seats left, ride stays pending', async () => {
@@ -432,7 +438,7 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
     expect(ack).toHaveBeenCalledWith({
       success: true,
       message: 'Cancelled successfully.',
-      data: { rideCancelled: false, remainingPassengers: 2 },
+      data: expect.objectContaining({ rideCancelled: false, remainingPassengers: 2, feeAmount: 0 }),
     });
   });
 
@@ -449,7 +455,7 @@ describe('ride:cancel-before-accept - SPLIT ride', () => {
     expect(creator.status).toBe('cancelled');
     expect(io.payloadTo(`user:${creatorId}`, 'ride:cancelled')).toBeDefined();
     expect(io.payloadTo(`driver:${driverA}`, 'ride:cancelled-by-rider').message).toBe('All passengers cancelled.');
-    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: { rideCancelled: true } });
+    expect(ack).toHaveBeenCalledWith({ success: true, message: 'Ride cancelled.', data: expect.objectContaining({ rideCancelled: true, feeAmount: 0, feePercent: 0 }) });
   });
 
   it('the only rider on a split ride cancels (not the creator): ride cancelled with reason "Last passenger cancelled"', async () => {

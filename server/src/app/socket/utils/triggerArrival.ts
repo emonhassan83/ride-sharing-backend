@@ -5,6 +5,7 @@ import { Passenger } from '../../modules/passenger/passenger.model';
 import { modeType } from '../../modules/notification/notification.interface';
 import { notifyUserPush } from '../../utils/notifyUser.utils';
 import { buildWaitTimeNotice } from '../../utils/waitTimeNotice.utils';
+import { sendRideStartOtp } from '../../utils/rideStartOtp.utils';
 
 export async function triggerArrival(
   rideId: string,
@@ -72,8 +73,25 @@ export async function triggerArrival(
         type: 'DRIVER_ARRIVED',
         rideId: String(rideId),
         passengerId: String(passenger._id),
+        screen: 'ride_details',
       },
     });
+
+    // B-09: the start OTP used to be created only when the driver tapped
+    // pickup / "Resend", so the passenger waited for it at the car. Issue it on
+    // arrival; later sends reuse this same code (B-10).
+    Promise.resolve()
+      .then(() =>
+        sendRideStartOtp({
+          rideId: String(rideId),
+          passengerId: passenger._id.toString(),
+          requesterId: driverId,
+          requesterRole: 'provider',
+        }),
+      )
+      .catch((err: any) =>
+        console.warn(`Start OTP on arrival failed for passenger ${String(passenger._id)}:`, err?.message || err),
+      );
 
     const remaining = await Passenger.countDocuments({
       rideId,

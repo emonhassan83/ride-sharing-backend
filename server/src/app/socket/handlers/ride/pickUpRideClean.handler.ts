@@ -14,6 +14,7 @@ import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
+import { getEarliestTripStart } from '../../../utils/rideSchedule.utils';
 import {
   isPassengerStartOtpVerified,
   sendRideStartOtp,
@@ -52,6 +53,20 @@ export const pickUpRideHandler = eventHandler<any>(
         success: false,
         message: `Cannot pick up passenger when ride status is ${ride.status}`,
       });
+    }
+
+    // B-21: picking up on an accepted ride also starts the trip, so the same
+    // server-side start window applies here.
+    if (ride.status === RIDE_STATUS.accepted) {
+      const earliestStart = await getEarliestTripStart(ride.departureDate, ride.departureTime);
+      if (earliestStart) {
+        return callback?.({
+          success: false,
+          code: 'TRIP_START_TOO_EARLY',
+          message: 'It is too early to start this trip.',
+          data: { earliestStartAt: earliestStart.toISOString() },
+        });
+      }
     }
 
     const io = getIO();

@@ -20,8 +20,10 @@ router.post(
 );
 
 router.get('/generals', SettingController.getSettingGenerals);
+// Security: this route changes fares, commission and VAT and had no auth at all.
 router.post(
   '/generals',
+  auth(USER_ROLE.admin),
   validateRequest(SettingValidation.updateGeneralsZodSchema),
   SettingController.updateGenerals,
 );

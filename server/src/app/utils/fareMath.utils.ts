@@ -123,7 +123,15 @@ export interface PassengerFareTotalsInput {
   /** Sum of each rider's initial upfront totals (after PMCrfPR + €5 + min). */
   poolKomistraBase?: number;
   fareRoundingBracket?: number;
+  /** Per-rider minimum for a MATCHED split ride; missing or <= 0 means baseFare. */
+  splitMinimumFare?: number;
 }
+
+/** Setting `splitRideMinimumFare`: 0 / unset = same minimum as private (baseFare). */
+export const resolveSplitMinimumFare = (splitMinimumFare: unknown, baseFare: number): number => {
+  const value = Number(splitMinimumFare);
+  return Number.isFinite(value) && value > 0 ? value : baseFare;
+};
 
 export interface PassengerFareTotals {
   actualFare: number;
@@ -207,7 +215,10 @@ export const buildPassengerFareTotals = (
       perRiderBeforeBracket,
       fareRoundingBracket,
     );
-    totalFare = Math.max(bracketRoundedFare, baseFare);
+    totalFare = Math.max(
+      bracketRoundedFare,
+      resolveSplitMinimumFare(input.splitMinimumFare, baseFare),
+    );
     fareBeforeFees = averageInitial;
     minimumFareApplied = totalFare > bracketRoundedFare;
     minimumFareAdjustment = roundMoney(totalFare - bracketRoundedFare);

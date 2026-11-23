@@ -628,7 +628,29 @@
     "This payment does not belong to you": "Αυτή η πληρωμή δεν σας ανήκει",
     "Payment intent does not match this payment": "Η εντολή πληρωμής δεν αντιστοιχεί σε αυτή την πληρωμή",
     "This payment has already been refunded or was never captured": "Αυτή η πληρωμή έχει ήδη επιστραφεί ή δεν χρεώθηκε ποτέ",
-    "You do not have access to this payment": "Δεν έχετε πρόσβαση σε αυτή την πληρωμή"
+    "You do not have access to this payment": "Δεν έχετε πρόσβαση σε αυτή την πληρωμή",
+    "Insufficient wallet balance": "Ανεπαρκές υπόλοιπο πορτοφολιού",
+    "Your ride has been cancelled. The payment hold on your card has been released.": "Η διαδρομή σας ακυρώθηκε. Η δέσμευση του ποσού στην κάρτα σας αποδεσμεύτηκε.",
+    "Your ride has been cancelled.": "Η διαδρομή σας ακυρώθηκε.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled and the payment hold on your card has been released.": "Κανένας οδηγός δεν αποδέχτηκε τη διαδρομή σας πριν από την ώρα παραλαβής. Η κράτησή σας ακυρώθηκε και η δέσμευση του ποσού στην κάρτα σας αποδεσμεύτηκε.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled.": "Κανένας οδηγός δεν αποδέχτηκε τη διαδρομή σας πριν από την ώρα παραλαβής. Η κράτησή σας ακυρώθηκε.",
+    "You cannot cancel a ride after a passenger has been picked up.": "Δεν μπορείτε να ακυρώσετε μια διαδρομή αφού έχει παραληφθεί επιβάτης.",
+    "It is too early to start this trip.": "Είναι πολύ νωρίς για να ξεκινήσει αυτή η διαδρομή.",
+    "Too many wrong OTP attempts. Please wait for the code to expire and request a new one.": "Πάρα πολλές λανθασμένες προσπάθειες OTP. Περιμένετε να λήξει ο κωδικός και ζητήστε νέο.",
+    "You do not have access to this ride": "Δεν έχετε πρόσβαση σε αυτή τη διαδρομή",
+    "You do not have access to this passenger": "Δεν έχετε πρόσβαση σε αυτόν τον επιβάτη",
+    "FCM token updated successfully": "Το διακριτικό FCM ενημερώθηκε με επιτυχία",
+    "FCM token is required": "Απαιτείται διακριτικό FCM",
+    "Cancellation quote retrieved successfully": "Η εκτίμηση ακύρωσης ανακτήθηκε με επιτυχία",
+    "Refund Approved": "Η επιστροφή χρημάτων εγκρίθηκε",
+    "Refund Rejected": "Η επιστροφή χρημάτων απορρίφθηκε",
+    "Refund Update": "Ενημέρωση επιστροφής χρημάτων",
+    "Your refund has been added to your wallet.": "Η επιστροφή χρημάτων προστέθηκε στο πορτοφόλι σας.",
+    "Your refund request was rejected.": "Το αίτημα επιστροφής χρημάτων απορρίφθηκε.",
+    "Your refund request has been updated.": "Το αίτημα επιστροφής χρημάτων ενημερώθηκε.",
+    "This refund request has already been processed.": "Αυτό το αίτημα επιστροφής χρημάτων έχει ήδη διεκπεραιωθεί.",
+    "Failed to update refund status": "Αποτυχία ενημέρωσης της κατάστασης επιστροφής χρημάτων",
+    "Invalid ID format": "Μη έγκυρη μορφή αναγνωριστικού"
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",
@@ -685,6 +707,9 @@
     "validation_max_value": "Το πεδίο «{{field}}» πρέπει να είναι το πολύ {{max}}.",
     "validation_greater_than": "Το πεδίο «{{field}}» πρέπει να είναι μεγαλύτερο από {{min}}.",
     "validation_less_than": "Το πεδίο «{{field}}» πρέπει να είναι μικρότερο από {{max}}.",
-    "validation_unexpected_field": "Μη αναμενόμενο πεδίο: {{field}}."
+    "validation_unexpected_field": "Μη αναμενόμενο πεδίο: {{field}}.",
+    "ride_confirmed_scheduled": "Η διαδρομή σας επιβεβαιώθηκε για {{date}} στις {{time}}.",
+    "ride_cancelled_refunded_wallet": "Η διαδρομή σας ακυρώθηκε. €{{amount}} επιστράφηκαν στο πορτοφόλι σας.",
+    "no_driver_cancelled_refunded": "Κανένας οδηγός δεν αποδέχτηκε τη διαδρομή σας πριν από την ώρα παραλαβής. Η κράτησή σας ακυρώθηκε και €{{amount}} επιστράφηκαν στο πορτοφόλι σας."
   }
 }

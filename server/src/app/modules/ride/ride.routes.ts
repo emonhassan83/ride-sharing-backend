@@ -15,6 +15,13 @@ router.get(
 );
 router.get('/rider-rides', auth(USER_ROLE.user), RideController.getRiderRides);
 
+// B-04: real cancellation fee before the rider confirms (same policy as the cancel handlers)
+router.get(
+  '/:id/cancellation-quote',
+  auth(USER_ROLE.user),
+  RideController.getCancellationQuote
+);
+
 // Monthly driver invoice (must be before /:id)
 router.get(
   '/driver-invoice',

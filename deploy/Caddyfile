@@ -1,0 +1,27 @@
+# HTTPS for the REST API and WSS for Socket.io (B-03).
+# Caddy obtains and renews the Let's Encrypt certificate for {$DOMAIN}
+# automatically and redirects http:// to https://. WebSocket upgrades
+# (Socket.io) are proxied by reverse_proxy with no extra config.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Uploads (KYC documents, avatars) can be large.
+	request_body {
+		max_size 25MB
+	}
+
+	reverse_proxy server:8080 {
+		header_up X-Real-IP {remote_host}
+	}
+}

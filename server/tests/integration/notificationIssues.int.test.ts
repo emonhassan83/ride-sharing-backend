@@ -25,6 +25,7 @@ import { Ride } from '../../src/app/modules/ride/ride.model';
 import { Passenger } from '../../src/app/modules/passenger/passenger.model';
 import { Booking } from '../../src/app/modules/booking/booking.model';
 import { Payment } from '../../src/app/modules/payment/payment.model';
+import { Setting } from '../../src/app/modules/settings/settings.model';
 import { notifyRiderDriversNotified } from '../../src/app/utils/notifyDrivers.utils';
 import { getRideStartOtpKey } from '../../src/app/utils/rideStartOtp.utils';
 import { apiFor, connectClient, localParts, wait, type RawClient } from './helpers';
@@ -192,7 +193,21 @@ describe('One private ride through its whole lifecycle', () => {
     expect(pushes[0].apns.headers['apns-collapse-id']).toBe(`RIDE_ACCEPTED:${a.passengerId}`);
   });
 
+  it('B-21: starting a trip scheduled for tomorrow is refused by the server', async () => {
+    const ack = await driver.request('driver:start-trip', { rideId: a.rideId });
+    expect(ack?.success).toBe(false);
+    expect(ack?.code).toBe('TRIP_START_TOO_EARLY');
+    expect(ack?.data?.earliestStartAt).toEqual(expect.any(String));
+    expect((await Ride.findById(a.rideId).lean())?.status).toBe('accepted');
+  });
+
   it('ISSUE 9: driver double-taps "start trip" -> ONE push "Driver On The Way", ONE trip-started event', async () => {
+    // The fixture ride is tomorrow; open the (configurable) start window for the rest of the lifecycle.
+    await Setting.updateOne(
+      { key: 'tripStartEarlyWindowMinutes' },
+      { $set: { key: 'tripStartEarlyWindowMinutes', value: 3 * 24 * 60 } },
+      { upsert: true },
+    );
     vi.mocked(messaging.sendEach).mockClear();
     const before = rider.named('ride:trip-started').length;
 
@@ -203,7 +218,8 @@ describe('One private ride through its whole lifecycle', () => {
     await wait(500);
 
     expect(acks.every((x) => x?.success)).toBe(true);
-    expect(riderPushes('TRIP_STARTED').map((m) => m.notification.title)).toEqual(['Driver On The Way']);
+    // B-20: "heading to pickup" has its own push type now.
+    expect(riderPushes('DRIVER_EN_ROUTE').map((m) => m.notification.title)).toEqual(['Driver On The Way']);
     expect(rider.named('ride:trip-started').length - before).toBe(1);
     expect((await Ride.findById(a.rideId).lean())?.status).toBe('started');
   });
@@ -214,6 +230,13 @@ describe('One private ride through its whole lifecycle', () => {
 
     expect(ack?.success).toBe(true);
     expect(arrived).toMatchObject({ phase: 'arrived', eta: 0, passengerStatus: 'driver_arrived', autoDetected: false });
+  });
+
+  it('B-09: the start OTP is issued and pushed on arrival, not only when the driver taps pickup', async () => {
+    await wait(500);
+    const code = await getRedisClient().get(getRideStartOtpKey(a.rideId, a.passengerId));
+    expect(code).toMatch(/^\d{6}$/);
+    expect(riderPushes('RIDE_START_OTP').length).toBeGreaterThanOrEqual(1);
   });
 
   it('ISSUE 13: the next location ping tells the rider eta 0 / "arrived" (was "arriving in 1 min")', async () => {
@@ -227,8 +250,9 @@ describe('One private ride through its whole lifecycle', () => {
     expect(updates[0]).toMatchObject({ phase: 'arrived', eta: 0, distance: 0, passengerId: a.passengerId });
   });
 
-  it('ISSUE 9: two pickup attempts without OTP -> the SAME code, pushed once', async () => {
+  it('ISSUE 9 / B-10: two pickup attempts without OTP -> the SAME code (issued at arrival), not pushed again', async () => {
     vi.mocked(messaging.sendEach).mockClear();
+    const atArrival = await getRedisClient().get(getRideStartOtpKey(a.rideId, a.passengerId));
 
     const first = await driver.request('driver:pickup-ride', { rideId: a.rideId });
     const code1 = await getRedisClient().get(getRideStartOtpKey(a.rideId, a.passengerId));
@@ -238,8 +262,10 @@ describe('One private ride through its whole lifecycle', () => {
 
     expect(first?.requiresOtp).toBe(true);
     expect(second?.requiresOtp).toBe(true);
+    expect(code1).toBe(atArrival);
     expect(code2).toBe(code1);
-    expect(riderPushes('RIDE_START_OTP')).toHaveLength(1);
+    // Already pushed at arrival inside the cooldown, so no duplicate push.
+    expect(riderPushes('RIDE_START_OTP')).toHaveLength(0);
   });
 
   it('pickup with the OTP -> ONE "Trip Started!" push', async () => {

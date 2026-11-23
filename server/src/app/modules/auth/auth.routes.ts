@@ -71,6 +71,13 @@ router.put(
   AuthController.selectRole
 );
 
+router.patch(
+  '/fcm-token',
+  auth('common'),
+  validateRequest(AuthValidation.updateFcmTokenValidationSchema),
+  AuthController.updateFcmToken
+);
+
 router.post('/logout', auth('common'), AuthController.logout);
 router.post('/refresh-auth', AuthController.refreshToken);
 

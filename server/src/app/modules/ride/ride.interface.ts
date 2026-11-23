@@ -51,6 +51,9 @@ export interface TRide {
   driverEarningAmount: number
   platformCommissionAmount: number
   totalCollectedAmount: number
+  driverGrossAmount?: number
+  driverPlatformFeeAmount?: number
+  driverVatAmount?: number
   splitFareLocked: boolean
   splitFareLockedAt?: Date
   splitFareLockReason?: 'departure_time' | 'trip_start'

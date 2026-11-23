@@ -1,0 +1,99 @@
+# Production stack (B-02 / B-03): production builds, NODE_ENV=production, and
+# HTTPS + WSS terminated by Caddy with automatic Let's Encrypt certificates.
+#
+#   DOMAIN=api.example.com ACME_EMAIL=ops@example.com REDIS_PASSWORD=<strong> \
+#     docker compose -f docker-compose.prod.yml up --build -d
+#
+# Only ports 80/443 are published. The API (8080) and Redis are reachable only
+# inside the Docker network. MongoDB stays external (MONGODB_URL in server/.env).
+# See docs/DEPLOYMENT.md, section "Production".
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["sh", "-c", "redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    volumes:
+      - splitride_redis_prod:/data
+    networks: [splitride_prod]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    env_file:
+      - ./server/.env
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY: "1"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    expose:
+      - "8080"
+    volumes:
+      - ./server/uploads:/app/uploads
+      - ./server/logs:/app/logs
+    networks: [splitride_prod]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    env_file:
+      - ./worker/.env
+    environment:
+      NODE_ENV: production
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    volumes:
+      - ./worker/logs:/app/logs
+    networks: [splitride_prod]
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN, e.g. api.example.com}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [splitride_prod]
+    depends_on:
+      - server
+    restart: unless-stopped
+
+networks:
+  splitride_prod:
+    name: splitride_prod
+
+volumes:
+  splitride_redis_prod:
+  caddy_data:
+  caddy_config:

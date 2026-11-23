@@ -255,6 +255,9 @@ const getMyWithdrawsFromDB = async (
         bookingId: booking._id.toString(),
         paymentId: payment._id.toString(),
         bookingReference: booking.id,
+        // B-15: trip reference (what the driver sees) next to the booking reference.
+        rideReference: ride.id || null,
+        referenceType: 'booking',
         rideDate: ride.departureDate,
         rideTime: ride.departureTime,
         pickup: ride.pickup,
@@ -274,6 +277,9 @@ const getMyWithdrawsFromDB = async (
       bookingId: withdraw?.booking?.toString() || null,
       paymentId: null,
       bookingReference: ride.id,
+      // B-15: split earnings are per trip, so this reference is the trip (Ride SR).
+      rideReference: ride.id || null,
+      referenceType: 'trip',
       rideDate: ride.departureDate,
       rideTime: ride.departureTime,
       pickup: ride.pickup,

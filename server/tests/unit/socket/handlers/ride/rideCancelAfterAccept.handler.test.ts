@@ -288,7 +288,16 @@ describe('ride:cancel-after-accept - input & stage guards', () => {
 });
 
 describe('ride:cancel-after-accept - PRIVATE ride refund window', () => {
-  it('outside the window: full refund to wallet, booking/payment refunded, driver debited, Refund created', async () => {
+  it('a driver earning that WAS credited (ride.driverEarningCredited) is reverted', async () => {
+    const p = makePassenger();
+    wire(makeWorld(makeRide({ driverEarningCredited: true }), [p], [paidBooking(p, 25.5, 20.4)]));
+
+    await run({ rideId, reason: 'Changed plans' });
+
+    expect(User.findByIdAndUpdate).toHaveBeenCalledWith(driverId, { $inc: { wallet: -20.4 } });
+  });
+
+  it('outside the window: full refund to wallet, booking/payment refunded, driver NOT debited, Refund created', async () => {
     const p = makePassenger();
     const { booking, payment } = paidBooking(p, 25.5, 20.4);
     const ride = makeRide();
@@ -307,7 +316,8 @@ describe('ride:cancel-after-accept - PRIVATE ride refund window', () => {
     expect(payment.status).toBe('refunded');
     expect(payment.isPaid).toBe(false);
 
-    expect(User.findByIdAndUpdate).toHaveBeenCalledWith(driverId, { $inc: { wallet: -20.4 } });
+    // The earning is credited only at completion: nothing to claw back yet.
+    expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
 
     expect(Refund.create).toHaveBeenCalledWith({
       user: riderId,
@@ -340,7 +350,16 @@ describe('ride:cancel-after-accept - PRIVATE ride refund window', () => {
     expect(ack).toHaveBeenCalledWith({
       success: true,
       message: 'Ride cancelled.',
-      data: { refundAmount: 25.5, refundReason: 'outside_refund_restriction_window', rideCancelled: true },
+      data: {
+        refundAmount: 25.5,
+        refundReason: 'outside_refund_restriction_window',
+        // B-04: the fee actually applied is returned so the app can show it.
+        paidAmount: 25.5,
+        feeAmount: 0,
+        feePercent: 0,
+        refundDestination: 'wallet',
+        rideCancelled: true,
+      },
     });
   });
 
@@ -387,7 +406,16 @@ describe('ride:cancel-after-accept - PRIVATE ride refund window', () => {
     expect(ack).toHaveBeenCalledWith({
       success: true,
       message: 'Ride cancelled.',
-      data: { refundAmount: 0, refundReason: 'private_refund_restricted_1h_before_pickup', rideCancelled: true },
+      data: {
+        refundAmount: 0,
+        refundReason: 'private_refund_restricted_1h_before_pickup',
+        // B-04: inside the restriction window the whole amount is the fee.
+        paidAmount: 25.5,
+        feeAmount: 25.5,
+        feePercent: 100,
+        refundDestination: null,
+        rideCancelled: true,
+      },
     });
     expect(refundToWallet).not.toHaveBeenCalled();
     expect(Refund.create).not.toHaveBeenCalled();
@@ -447,7 +475,15 @@ describe('ride:cancel-after-accept - PRIVATE ride refund window', () => {
     expect(ack).toHaveBeenCalledWith({
       success: true,
       message: 'Ride cancelled.',
-      data: { refundAmount: 0, refundReason: 'no_amount_paid', rideCancelled: true },
+      data: {
+        refundAmount: 0,
+        refundReason: 'no_amount_paid',
+        paidAmount: 0,
+        feeAmount: 0,
+        feePercent: 0,
+        refundDestination: null,
+        rideCancelled: true,
+      },
     });
     expect(refundToWallet).not.toHaveBeenCalled();
     expect(Refund.create).not.toHaveBeenCalled();
@@ -477,7 +513,10 @@ describe('ride:cancel-after-accept - PRIVATE ride refund window', () => {
 
     await run({ rideId });
 
-    expect(ack).toHaveBeenCalledWith({ success: false, message: 'Stripe is down' });
+    // B-22: unexpected errors are not echoed verbatim; the ack carries a code instead.
+    expect(ack).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false, code: 'INTERNAL_ERROR', message: 'Something went wrong!' }),
+    );
     expect(Passenger.findByIdAndUpdate).not.toHaveBeenCalled();
     expect(booking.save).not.toHaveBeenCalled();
     expect(Ride.findByIdAndUpdate).not.toHaveBeenCalled();
@@ -557,6 +596,10 @@ describe('ride:cancel-after-accept - SPLIT ride', () => {
         passengerId: leaver._id,
         refundAmount: 25.5,
         refundReason: 'outside_refund_restriction_window',
+        paidAmount: 25.5,
+        feeAmount: 0,
+        feePercent: 0,
+        refundDestination: 'wallet',
         rideCancelled: false,
         remainingPassengers: 2,
       },
@@ -580,6 +623,10 @@ describe('ride:cancel-after-accept - SPLIT ride', () => {
       data: {
         refundAmount: 25.5,
         refundReason: 'outside_refund_restriction_window',
+        paidAmount: 25.5,
+        feeAmount: 0,
+        feePercent: 0,
+        refundDestination: 'wallet',
         rideCancelled: true,
       },
     });

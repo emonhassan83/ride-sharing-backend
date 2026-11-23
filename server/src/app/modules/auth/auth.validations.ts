@@ -147,7 +147,20 @@ const selectRoleValidationSchema = z.object({
   }),
 });
 
+const updateFcmTokenValidationSchema = z.object({
+  body: z
+    .object({
+      fcmToken: z
+        .string({ message: 'FCM token is required' })
+        .trim()
+        .min(10, { message: 'FCM token is required' })
+        .max(4096),
+    })
+    .strict(),
+});
+
 export const AuthValidation = {
+  updateFcmTokenValidationSchema,
   loginValidationSchema,
   loginWithPhoneValidationSchema,
   verifyEmailValidationSchema,

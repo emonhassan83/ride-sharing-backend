@@ -1,3 +1,101 @@
+Date/Session: 2026-11-23 (app doc checklist)
+
+Completed Tasks:
+- Added section 7, a test checklist for the app team, to `docs/APP_INTEGRATION_ROUND4.md`.
+
+---
+
+Date/Session: 2026-11-23 (app integration doc check)
+
+Completed Tasks:
+- Checked `docs/APP_INTEGRATION_ROUND4.md` against the code. Fixed: socket error shape (`details`/`data`, `status` not always present, missing codes), FCM token length, B-15 wording (earnings rows do not carry short ids), split-search contact masking, B-19 text, 400 for malformed ids.
+
+---
+
+Date/Session: 2026-11-23 (coverage check of round 4)
+
+Completed Tasks:
+- Mapped every B-01..B-24 to tests; added missing ones: B-02 (NODE_ENV gate, 7 cases), B-19 (scheduled accept text; helper now exported), B-07 (ride:request-updated reaches only notified drivers), B-17/B-21 (settings exposed in GET generals).
+- Still no automated test: B-03 (TLS/infra), B-05 (policy, wallet refund by design), B-22 beyond existing socket error tests.
+- tsc clean; unit 1176, integration 96 passing.
+
+---
+
+Date/Session: 2026-11-23 (verification follow-ups)
+
+Completed Tasks:
+- Rider split search now masks the unassigned driver's phone and hides the email (`findNearBySplitRide.handler.ts`).
+- `globalErrorHandler` maps Mongoose ObjectId CastError to 400 "Invalid ID format" (new string in all 5 locales); was 500 on every route.
+- tsc clean; unit 1166, integration 94 passing.
+
+---
+
+Date/Session: 2026-11-23 (independent verification of QA round 4 fixes)
+
+Completed Tasks:
+- Re-ran everything independently, added `tests/integration/round4Verification.int.test.ts` (7 adversarial probes: wallet boundaries/ownership/invalid input, quote auth + malformed id, settings validation, split-search PII).
+- Found and fixed 2 defects the earlier round missed: (1) `ride:find-nearby-split-ride` returned other riders' full phone numbers (B-18 class) because `passengers[].userId` was populated with `phone`; phone removed. (2) `GET /ride/:id/cancellation-quote` with a malformed id returned 500 (CastError); now 404.
+- tsc clean; unit 1166 passing; integration 92 passing.
+
+Pending/Next Steps:
+- Confirm with the app team whether `driverEmail`/`driverPhone` in the same search result are needed before a rider joins (still returned; contact of an unassigned driver).
+- Malformed ObjectIds still give 500 on most other routes (no global CastError mapping); consider mapping CastError to 400/404 in globalErrorHandler.
+- B-01 root cause not reproduced: the original `payWithWallet` already debited the wallet; the fix is hardening (atomic conditional debit), not a proven root-cause fix.
+
+---
+
+Date/Session: 2026-11-23 (QA round 4: last two open items)
+
+Completed Tasks:
+- Driver wallet going negative: cancel/refund paths debited `payment.providerEarning`, but since 4a0e2ba the driver is only credited at trip completion. New `utils/driverEarning.utils.ts` `revertDriverEarningIfCredited` debits only when `ride.driverEarningCredited` is true; used in driverCancelRide, rideCancelAfterAccept (x2), rideCancelBeforeAccept, noDriverFound job. CLAUDE.md rule updated.
+- Refund status push: empty title made `Notification.create` fail ("Message is required") inside the refund transaction, so admin approval returned 500 and the wallet credit rolled back for any rider with an FCM token (reproduced in an integration test before the fix). `refund.utils.ts` now has real titles/bodies per status (6 strings in all 5 locales), correct `modelType` key + `REFUND_ISSUED` routing data; the push is sent after commit and cannot fail the refund. Dead `refundAddNotifyToVendor` removed.
+- Refund status endpoint (`PATCH /refunds/status/:id`): ApiErrors keep their status (404/400), "already processed" is a fixed translated 409 (was a 403 with an interpolated, untranslatable message, then wrapped into 500), a concurrent double approval's write conflict maps to 409, unknown errors return a generic 500 without internal text. 2 strings in all 5 locales.
+- Unit 1166, integration 85 passing; tsc clean.
+
+---
+
+Date/Session: 2026-11-23 (QA round 4 follow-up: open items: product settings, release hardening, app guide)
+
+Completed Tasks:
+- Product decisions turned into admin settings (defaults = previous behaviour): `cancellationFeePercent` (0), `lateCancellationFeePercent` (100), `splitRideMinimumFare` (0 = baseFare).
+- Release: OTP mock mode fail-closed, production compose with Caddy HTTPS/WSS, `TRUST_PROXY`.
+- Docs for the other teams: `docs/APP_INTEGRATION_ROUND4.md` (app), `docs/PRODUCT_SETTINGS_ROUND4.md` (product, incl. suggested T&C refund wording), `docs/DEPLOYMENT.md` §5 (ops).
+- Unit 1159 passing (5 new); integration 81 passing (1 new: admin fee → quote). `tsc` + `test:types` clean. Compose file and Caddyfile validated with `docker compose config` / `caddy validate`.
+
+Key Changes:
+- `rideSchedule.utils.getCancellationFeePercents` (0 allowed, clamped 0..100) used by `calculateCancellationRefund`; refund = paid − fee. Quote adds `lateFeeFrom`, `earlyFeePercent`, `lateFeePercent`; `freeCancellationUntil` is null when an early fee is set.
+- `fareMath.resolveSplitMinimumFare` + `splitMinimumFare` input, applied to MATCHED split riders only; passed from `fareCalculator`, `splitFare.calcSplitPassengerFare`, `fareBreakdownResponse`.
+- `config.exposeDevSecrets` (true only for NODE_ENV development/test) replaces `!== 'production'` in auth/otp services and `rideStartOtp.utils`; startup warning in `server.ts`.
+- New: `docker-compose.prod.yml`, `deploy/Caddyfile`.
+
+Next Steps:
+- Product: pick fee % / split minimum and set them in admin; legal review of the T&C wording.
+- App team: implement `docs/APP_INTEGRATION_ROUND4.md`. Ops: DNS + `docker-compose.prod.yml`, switch app URLs to https.
+- Still open from round 4: driver wallet debit on cancel before completion credit (needs decision); empty push titles in `refund.utils.ts`. `cancellationFreeWindowHours` / `cancellationPercentage50Hours` settings are unused.
+
+---
+
+Date/Session: 2026-11-23 (QA round 4: SplitRide_Backend_Issues_2026-11-23, B-01..B-24)
+
+Completed Tasks:
+- Verified all 24 items. Fixed: B-01, 04 (quote + fee in acks; policy unchanged), 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 18, 19, 20, 21, 22, 23, 24. No code (by design / infra / app-side): B-02, 03, 05, 16, 17 (values now exposed in /setting/generals).
+- Unit 1154 passing (28 new or updated); integration 80 passing (11 new in `round4Issues.int.test.ts`, lifecycle test updated). `tsc` + `test:types` clean.
+
+Key Changes:
+- Money: `payWithWallet` conditional atomic debit, returns `bookingShortId` + `walletBalance`; private accept sets exact `bookedSeats` (wallet bookings showed 0). `recalculateSplitFares` keeps surcharge/commission in sync when the fare is unchanged (€20 minimum hid the matched state); split completion writes the ride payout pro rata to payments; Ride stores `driverGrossAmount/driverPlatformFeeAmount/driverVatAmount`; invoice totals are an explicit breakdown (old `vatAmount` was a residual).
+- Cancel: `utils/cancellationQuote.utils.ts` (`GET /ride/:id/cancellation-quote`, socket `ride:cancel-quote`), fee fields in cancel acks; cancel-before-accept notifies the rider; `notifyRiderDriversNotified` skips riders no longer waiting; no-driver job reports refund/release, sorts by departure, expires pending riders on accepted rides; driver cancel refused once anyone boarded (`CANNOT_CANCEL_AFTER_PICKUP`).
+- Realtime: split notify dedupes per passenger (Redis `ride:notified:<ride>:passenger:<p>`) and re-sends to previously notified drivers; `ride:request-updated` to drivers after recalculation; push dedupe per passenger.
+- OTP: issued on arrival, reused until expiry (extended, never replaced), `resend` flag, deliveries in parallel/background, 5-attempt lock, no split fallback key. `PATCH /auth/fcm-token`.
+- Notifications: `type` + `data` persisted; `buildNotificationRoutingData` adds type/screen everywhere. `ride:driver-en-route` + `DRIVER_EN_ROUTE`; scheduled-ride accept text. Socket errors carry `code`, no internal text.
+- Privacy: `utils/contactPrivacy.utils.ts` on `/passenger/ride/:id`, `/passenger/:id`, `/ride/:id` (access check + masking until accepted). Start window `tripStartEarlyWindowMinutes` (default 30). `POST /setting/generals` now admin-only (was unauthenticated).
+
+Pending/Next Steps:
+- Product: cancellation-fee policy (app says 20% within 24h; backend refunds 100% outside 1h private / 24h split and 0% inside); split minimum fare per rider; refunds-to-wallet wording in terms.
+- Pre-existing, not fixed: cancel paths debit `providerEarning` from the driver wallet although it is only credited at completion (driver wallet can go negative). `refund.utils.ts` sends empty titles.
+- Release: `NODE_ENV=production` (OTP leaves responses), TLS/wss. App: call `PATCH /auth/fcm-token`, `ride:cancel-quote`, handle `ride:request-updated`, `ride:driver-en-route`, error `code`.
+
+---
+
 Date/Session: 2026-11-23 (client QA doc #3: backend issues 14, 23, 24, 27, 28, 29, 30, 5)
 
 Completed Tasks:

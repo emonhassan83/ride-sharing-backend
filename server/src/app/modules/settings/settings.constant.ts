@@ -13,6 +13,10 @@
   matchingLastNotifyHours: 1,
   cancellationFreeWindowHours: 24,
   cancellationPercentage50Hours: 3,
+  /** % of the paid fare kept when a rider cancels OUTSIDE the refund restriction window. */
+  cancellationFeePercent: 0,
+  /** % of the paid fare kept when a rider cancels INSIDE the refund restriction window. */
+  lateCancellationFeePercent: 100,
   waitingReminderIntervals: 10,
   waitingTimeMinutes: 60,
 
@@ -27,6 +31,8 @@
   fivePassengerExtraChargePercentage: 20,
   sixPassengerExtraChargePercentage: 40,
   baseFare: 20,
+  /** Per-rider minimum on a MATCHED split ride. 0 = same as baseFare. */
+  splitRideMinimumFare: 0,
   splitRideMatchedSurchargePercent: 30,
   splitRideMatchedSurchargePercent3: 50,
   splitRideMaxMatchedRiders: 3,
@@ -80,6 +86,8 @@ export const GENERAL_KEYS = [
   'matchingLastNotifyHours',
   'cancellationFreeWindowHours',
   'cancellationPercentage50Hours',
+  'cancellationFeePercent',
+  'lateCancellationFeePercent',
   'waitingReminderIntervals',
   'waitingTimeMinutes',
   'dayFareInitialCharge',
@@ -93,6 +101,7 @@ export const GENERAL_KEYS = [
   'fivePassengerExtraChargePercentage',
   'sixPassengerExtraChargePercentage',
   'baseFare',
+  'splitRideMinimumFare',
   'splitRideMatchedSurchargePercent',
   'splitRideMatchedSurchargePercent3',
   'splitRideMaxMatchedRiders',

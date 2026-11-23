@@ -23,7 +23,16 @@ import {
   sendRideStartOtp,
   verifyRideStartOtp,
 } from '../../utils/rideStartOtp.utils';
+import { getCancellationQuote } from '../../utils/cancellationQuote.utils';
 import { formatRideLocalDate, getDepartureDateTime } from '../../utils/rideSchedule.utils';
+import {
+  TRequester,
+  assertCanViewRide,
+  canSeeDriverContact,
+  canSeeRiderContact,
+  isAdmin,
+  maskUserContact,
+} from '../../utils/contactPrivacy.utils';
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -680,10 +689,34 @@ const getDriverRides = async (
     }
   }
 
-  const resultWithPassengers = result.map(ride => ({
-    ...ride.toObject ? ride.toObject() : ride,
-    passengers: passengerMap.get(ride._id.toString()) || [],
-  }));
+  // B-15: the driver saw only the trip reference (Ride SR) while the rider saw
+  // the booking reference (Booking SR). Return the riders' booking references
+  // too, clearly labelled, so support can match both sides.
+  const driverBookings = await Booking.find({
+    passengerId: { $in: allPassengers.map((p: any) => p._id) },
+  })
+    .select('id rideId')
+    .lean();
+  const bookingRefsByRide = new Map<string, string[]>();
+  for (const b of driverBookings as any[]) {
+    const key = String(b.rideId || '');
+    if (!key || !b.id) continue;
+    if (!bookingRefsByRide.has(key)) bookingRefsByRide.set(key, []);
+    bookingRefsByRide.get(key)!.push(b.id);
+  }
+
+  const resultWithPassengers = result.map(ride => {
+    const plain: any = ride.toObject ? ride.toObject() : ride;
+    const bookingShortIds = bookingRefsByRide.get(ride._id.toString()) || [];
+    return {
+      ...plain,
+      rideShortId: plain.id || null,
+      bookingShortIds,
+      // Private rides have exactly one booking: expose it as the primary reference.
+      bookingShortId: plain.type === RIDE_TYPE.private ? bookingShortIds[0] || null : null,
+      passengers: passengerMap.get(ride._id.toString()) || [],
+    };
+  });
 
   return { meta, result: resultWithPassengers };
 };
@@ -718,12 +751,11 @@ const getRiderRides = async (
           ],
         }
       : includesCancelledOrRejected
-        ? {
-            $nin: [
-              PASSENGER_STATUS.pending,
-              PASSENGER_STATUS.split_matching,
-            ],
-          }
+        ? // B-13: no passenger-status exclusion here. A rider left "pending" on a
+          // ride that was cancelled used to vanish from History → Cancelled; the
+          // row filter below keeps a row only if the ride matched the requested
+          // status or the passenger itself is cancelled/rejected.
+          { $exists: true }
         : {
       $nin: [
         PASSENGER_STATUS.pending,
@@ -763,9 +795,12 @@ const getRiderRides = async (
     bookings.map(b => [b.passengerId.toString(), b]),
   );
 
+  // B-08: a split fare re-calculation can move a waiting rider to
+  // requires_reauthorization; the booking is still live and must stay listed.
   const paidStatuses = new Set<string>([
     PAYMENT_STATUS.authorized,
     PAYMENT_STATUS.paid,
+    PAYMENT_STATUS.requires_reauthorization,
   ]);
 
   const eligiblePassengers = isPendingList
@@ -804,7 +839,11 @@ const getRiderRides = async (
     _id: { $in: rideIds },
     ...(isPendingList
       ? {
-          status: RIDE_STATUS.pending,
+          // B-08: a rider who joined (and paid for) a split ride the driver had
+          // already accepted is still "pending" for themselves. The old filter
+          // required ride status "pending", so that booking was on no tab at all.
+          // The passenger filter above already limits this to pending riders.
+          status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
           ...(normalizedType ? { type: normalizedType } : {}),
         }
       : rideStatusFilter),
@@ -846,6 +885,8 @@ const getRiderRides = async (
         destination: p.destination,
         departureDate: p.departureDate,
         departureTime: p.departureTime,
+        // B-24: full ISO-8601 UTC instant next to the local date/time strings.
+        departureAt: safeDepartureIso(p.departureDate, p.departureTime),
         createdAt: (p as any).createdAt || null,
         ...toLuggageFyiView(p),
 
@@ -854,6 +895,9 @@ const getRiderRides = async (
         paymentStatus: booking?.paymentStatus || p.paymentStatus || null,
 
         rideId: ride?._id ?? null,
+        // B-15: the trip reference the driver sees, clearly separate from bookingShortId.
+        rideShortId: (ride as any)?.id ?? null,
+        cancellationReason: (p as any).cancellationReason ?? null,
         rideType: ride?.type ?? (isUnmatchedSplit ? RIDE_TYPE.split : null),
         rideStatus:
           ride?.status ??
@@ -899,7 +943,7 @@ const getRiderRides = async (
 
 const roundMoney = (value: any): number => Math.round(Number(value || 0) * 100) / 100;
 
-const getRideById = async (rideId: string) => {
+const getRideById = async (rideId: string, requester?: TRequester) => {
   const ride = await Ride.findById(rideId)
     .populate([
       { path: 'driverId', select: 'name email phone profileImage type address' },
@@ -907,7 +951,7 @@ const getRideById = async (rideId: string) => {
       { path: 'rideCreatedBy', select: 'name email phone profileImage' },
     ])
     .select(
-      'id pickup destination departureDate departureTime totalSeats bookedSeats malePassengers femalePassengers status createdAt completedAt type driverId vehicleId rideCreatedBy driverEarningCredited driverEarningCreditedAt driverEarningAmount platformCommissionAmount totalCollectedAmount currentSurchargePercent splitFareLocked splitFareLockedAt splitFareLockReason'
+      'id pickup destination departureDate departureTime totalSeats bookedSeats malePassengers femalePassengers status createdAt completedAt type driverId vehicleId rideCreatedBy driverEarningCredited driverEarningCreditedAt driverEarningAmount platformCommissionAmount totalCollectedAmount driverGrossAmount driverPlatformFeeAmount driverVatAmount currentSurchargePercent splitFareLocked splitFareLockedAt splitFareLockReason'
     )
     .lean();
 
@@ -1017,9 +1061,35 @@ const getRideById = async (rideId: string) => {
       paymentProviderEarning ||
       Math.max(platformReceived - platformFeeAmount, 0),
   );
-  const vatAmount = roundMoney(
-    Math.max(platformReceived - driverEarning - platformFeeAmount, 0),
-  );
+  // B-06: `vatAmount` used to be a residual (received − earning − fee), which is
+  // actually the passenger-side markup, not VAT, and `platformFeeAmount` was the
+  // driver fee + VAT combined. Return one explicit breakdown that adds up:
+  //   platformReceived = passengerMarkupAmount + driverGrossAmount
+  //   driverGrossAmount = driverPlatformFeeAmount + driverVatAmount + driverEarning
+  // Completed rides use the values stored at completion; others are computed
+  // with the same formula (computeDriverPayoutFromPassengerTotal).
+  let driverGrossAmount = roundMoney((ride as any).driverGrossAmount || 0);
+  let driverPlatformFeeAmount = roundMoney((ride as any).driverPlatformFeeAmount || 0);
+  let driverVatAmount = roundMoney((ride as any).driverVatAmount || 0);
+  let breakdownEarning = driverEarning;
+  if (!driverGrossAmount && platformReceived > 0) {
+    const isMatched =
+      (ride as any).type === RIDE_TYPE.split &&
+      (Number((ride as any).currentSurchargePercent || 0) > 0 ||
+        payments.filter((p: any) => p.status === PAYMENT_STATUS.paid).length >= 2);
+    const computed = computeDriverPayoutFromPassengerTotal(
+      platformReceived,
+      ((ride as any).type || RIDE_TYPE.private) as 'private' | 'split',
+      await loadFareSettings(),
+      isMatched,
+    );
+    driverGrossAmount = computed.komistraGross;
+    driverPlatformFeeAmount = computed.driverPlatformFeeAmount;
+    driverVatAmount = computed.driverVatAmount;
+    if (!rideDriverEarningAmount) breakdownEarning = computed.driverEarningAmount;
+  }
+  const passengerMarkupAmount = roundMoney(Math.max(platformReceived - driverGrossAmount, 0));
+  const vatAmount = driverVatAmount;
   const seller = await SettingService.getPlatformSeller();
 
   const invoiceOverview = {
@@ -1047,9 +1117,14 @@ const getRideById = async (rideId: string) => {
     seller,
     totals: {
       platformReceived,
-      driverEarning,
+      driverEarning: breakdownEarning,
+      // Driver fee + VAT on it (what the platform keeps from the driver's gross).
       platformFeeAmount,
       vatAmount,
+      passengerMarkupAmount,
+      driverGrossAmount,
+      driverPlatformFeeAmount,
+      driverVatAmount,
     },
     payments: payments.map((payment: any) => {
       const booking = bookings.find((item: any) => item._id.toString() === payment.booking?.toString());
@@ -1072,11 +1147,60 @@ const getRideById = async (rideId: string) => {
     }),
   };
 
+  // B-18: ownership check and contact masking (no check existed before).
+  if (requester && !isAdmin(requester)) {
+    const access = await Ride.findById(rideId).select('driverId notifiedDriverIds rideCreatedBy').lean();
+    const riderIds = passengers.map((p: any) => String(p.userId?._id ?? p.userId ?? ''));
+    assertCanViewRide(requester, (access || {}) as any, riderIds);
+
+    const rideRef = { driverId: (access as any)?.driverId };
+    const isDriverViewer = String((access as any)?.driverId || '') === String(requester.userId);
+    const maskedPassengers = passengersWithFareBreakdown.map((p: any) => {
+      const own = String(p.userId?._id ?? p.userId ?? '') === String(requester.userId);
+      // Riders never see co-riders' payment records; drivers keep their view.
+      const visible = canSeeRiderContact(requester, rideRef, p);
+      return {
+        ...p,
+        userId: visible ? p.userId : maskUserContact(p.userId),
+        ...(own || isDriverViewer ? {} : { payment: undefined, booking: undefined }),
+      };
+    });
+    const showDriverContact = canSeeDriverContact(requester, rideRef, passengers as any);
+    const creatorId = String((ride as any).rideCreatedBy?._id ?? (ride as any).rideCreatedBy ?? '');
+    const creatorPassenger = passengers.find(
+      (p: any) => String(p.userId?._id ?? p.userId ?? '') === creatorId,
+    );
+    const showCreatorContact =
+      creatorId === String(requester.userId) ||
+      (creatorPassenger ? canSeeRiderContact(requester, rideRef, creatorPassenger as any) : false);
+
+    return {
+      ...ride,
+      driverId: showDriverContact ? (ride as any).driverId : maskUserContact((ride as any).driverId),
+      rideCreatedBy: showCreatorContact
+        ? (ride as any).rideCreatedBy
+        : maskUserContact((ride as any).rideCreatedBy),
+      passengers: maskedPassengers,
+      invoiceOverview,
+      departureAt: safeDepartureIso(ride.departureDate, ride.departureTime),
+    };
+  }
+
   return {
     ...ride,
     passengers: passengersWithFareBreakdown,
     invoiceOverview,
+    // B-24: full UTC instant next to the local departureDate/departureTime strings.
+    departureAt: safeDepartureIso(ride.departureDate, ride.departureTime),
   };
+};
+
+const safeDepartureIso = (date?: string, time?: string): string | null => {
+  try {
+    return date && time ? getDepartureDateTime(date, time).toISOString() : null;
+  } catch {
+    return null;
+  }
 };
 
 const ACTIVE_RIDE_STATUSES_FOR_DELETE = [
@@ -1139,6 +1263,7 @@ export const RideService = {
   getDriverMonthlyInvoice,
   deleteARide,
   sendRideStartOtp,
+  getCancellationQuote,
   verifyRideStartOtp,
 };
 

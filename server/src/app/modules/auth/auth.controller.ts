@@ -184,7 +184,18 @@ const selectRole = catchAsync(async (req, res) => {
   });
 });
 
+const updateFcmToken = catchAsync(async (req, res) => {
+  const result = await AuthService.updateFcmToken(req.user.userId, req.body.fcmToken);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'FCM token updated successfully',
+    data: result,
+  });
+});
+
 export const AuthController = {
+  updateFcmToken,
   register,
   registerWithGoogle,
   registerWithApple,

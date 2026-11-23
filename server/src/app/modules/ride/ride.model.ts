@@ -85,6 +85,11 @@ const rideSchema = new Schema<TRide>(
     driverEarningAmount: { type: Number, default: 0 },
     platformCommissionAmount: { type: Number, default: 0 },
     totalCollectedAmount: { type: Number, default: 0 },
+    // B-06: the full payout breakdown stored at completion, so every endpoint
+    // reads the same numbers instead of recomputing them.
+    driverGrossAmount: { type: Number, default: 0 },
+    driverPlatformFeeAmount: { type: Number, default: 0 },
+    driverVatAmount: { type: Number, default: 0 },
     splitFareLocked: { type: Boolean, default: false },
     splitFareLockedAt: { type: Date },
     splitFareLockReason: {

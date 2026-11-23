@@ -15,7 +15,7 @@ import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
 import { Refund } from '../../../modules/refund/refund.model';
-import { User } from '../../../modules/user/user.model';
+import { revertDriverEarningIfCredited } from '../../../utils/driverEarning.utils';
 import { Payment } from '../../../modules/payment/payment.model';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { modeType } from '../../../modules/notification/notification.interface';
@@ -90,11 +90,12 @@ const cancelBookingWithRefund = async (
         payment.isPaid = false;
         await payment.save();
 
-        if (payment.providerEarning && payment.providerEarning > 0) {
-          await User.findByIdAndUpdate(driverId, {
-            $inc: { wallet: -payment.providerEarning }
-          });
-        }
+        // Only reverses money the driver was actually credited (at completion).
+        await revertDriverEarningIfCredited({
+          rideId,
+          driverId,
+          amount: payment.providerEarning,
+        });
       }
 
       await Refund.create({
@@ -218,6 +219,27 @@ export const driverCancelRideHandler = eventHandler<any>(
     const cancellableStatuses = [RIDE_STATUS.accepted, RIDE_STATUS.started];
     if (!cancellableStatuses.includes(ride.status as any))
       return callback?.({ success: false, message: 'Cannot cancel now' });
+
+    // B-23: once anyone has been picked up the trip is under way. Cancelling then
+    // refunded riders mid-trip, and on split rides it flipped the ride to
+    // "cancelled" with dropped-off riders' captured money stuck (complete-trip
+    // then refused the ride, so the driver was never paid).
+    const boardedPassenger = await Passenger.exists({
+      rideId,
+      status: {
+        $in: [
+          PASSENGER_STATUS.picked_up,
+          PASSENGER_STATUS.dropped_off,
+          PASSENGER_STATUS.completed,
+        ],
+      },
+    });
+    if (boardedPassenger)
+      return callback?.({
+        success: false,
+        code: 'CANNOT_CANCEL_AFTER_PICKUP',
+        message: 'You cannot cancel a ride after a passenger has been picked up.',
+      });
 
     const redis = getRedisClient();
     const io = getIO();

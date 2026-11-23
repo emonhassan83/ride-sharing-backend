@@ -34,6 +34,8 @@ export const updateGeneralsZodSchema = z.object({
       matchingLastNotifyHours: z.number().optional(),
       cancellationFreeWindowHours: z.number().optional(),
       cancellationPercentage50Hours: z.number().optional(),
+      cancellationFeePercent: z.number().min(0).max(100).optional(),
+      lateCancellationFeePercent: z.number().min(0).max(100).optional(),
       waitingReminderIntervals: z.number().optional(),
       waitingTimeMinutes: z.number().optional(),
 
@@ -49,6 +51,7 @@ export const updateGeneralsZodSchema = z.object({
       fivePassengerExtraChargePercentage: z.number().optional(),
       sixPassengerExtraChargePercentage: z.number().optional(),
       baseFare: z.number().optional(),
+      splitRideMinimumFare: z.number().min(0).optional(),
       splitRideMatchedSurchargePercent: z.number().optional(),
       splitRideMatchedSurchargePercent3: z.number().optional(),
       splitRideMaxMatchedRiders: z.number().optional(),

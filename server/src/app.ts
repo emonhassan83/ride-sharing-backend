@@ -11,6 +11,13 @@ import { i18nMiddleware, translateText } from './app/i18n/i18n';
 
 const app = express();
 
+// Behind the TLS reverse proxy (docs/DEPLOYMENT.md) set TRUST_PROXY=1 so req.ip,
+// req.protocol and req.secure reflect the client, not the proxy. Off by default.
+if (process.env.TRUST_PROXY) {
+  const raw = process.env.TRUST_PROXY;
+  app.set('trust proxy', /^\d+$/.test(raw) ? Number(raw) : raw === 'true' ? true : raw);
+}
+
 // i18n language detection & context middleware
 app.use(i18nMiddleware);
 

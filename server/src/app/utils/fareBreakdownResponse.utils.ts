@@ -18,6 +18,7 @@ export const buildStoredFareBreakdown = async (
     'platformVat',
     'platformCommissionPercent',
     'baseFare',
+    'splitRideMinimumFare',
     'fivePassengerExtraChargePercentage',
     'sixPassengerExtraChargePercentage',
     'splitRideMatchedSurchargePercent',
@@ -79,6 +80,7 @@ export const buildStoredFareBreakdown = async (
     platformCommissionPercent: platformCommissionPercentage,
     splitRideMatchedSurchargePercent: defaultSplitRideMatchedSurchargePercent,
     fareRoundingBracket,
+    splitMinimumFare: settingMap.get('splitRideMinimumFare') ?? 0,
   });
 
   const splitRideMatchedSurchargePercent = isSplitRide

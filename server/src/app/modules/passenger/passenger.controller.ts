@@ -16,7 +16,10 @@ const getDriverRideRequest = catchAsync(async (req: Request, res: Response) => {
 
 // Get all passengers by rideId
 const getPassengersByRide = catchAsync(async (req: Request, res: Response) => {
-  const result = await PassengerService.getPassengersByRide(req.params.rideId as string);
+  const result = await PassengerService.getPassengersByRide(req.params.rideId as string, {
+    userId: req.user?.userId,
+    role: req.user?.role,
+  });
 
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -27,7 +30,10 @@ const getPassengersByRide = catchAsync(async (req: Request, res: Response) => {
 
 // Get single passenger by passengerId
 const getAPassenger = catchAsync(async (req: Request, res: Response) => {
-  const result = await PassengerService.getPassengerById(req.params.id as string);
+  const result = await PassengerService.getPassengerById(req.params.id as string, {
+    userId: req.user?.userId,
+    role: req.user?.role,
+  });
 
   sendResponse(res, {
     code: StatusCodes.OK,

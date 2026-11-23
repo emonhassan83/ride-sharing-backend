@@ -1,7 +1,7 @@
 import { User } from '../modules/user/user.model';
 import { Notification } from '../modules/notification/notification.model';
 import { modeType } from '../modules/notification/notification.interface';
-import { sendNotification } from './sentPushNotification';
+import { buildNotificationRoutingData, sendNotification } from './sentPushNotification';
 import { normalizeLanguage, sanitizeText, translateText } from '../i18n/i18n';
 import { getRedisClient } from '../config/redis.config';
 
@@ -88,12 +88,16 @@ export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
       userLang,
     );
 
+    // B-14: the in-app row keeps the same routing data as the push.
+    const routingData = buildNotificationRoutingData({ data, reference, modelType });
     const inAppRow = {
       receiver: userId,
       message: localizedMessage,
       description: localizedDescription,
       reference,
       modelType,
+      type: routingData.type,
+      data: routingData,
     };
 
     try {

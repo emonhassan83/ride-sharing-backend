@@ -628,7 +628,29 @@
     "This payment does not belong to you": "Цей платіж вам не належить",
     "Payment intent does not match this payment": "Платіжний намір не відповідає цьому платежу",
     "This payment has already been refunded or was never captured": "Цей платіж уже повернено або його не було списано",
-    "You do not have access to this payment": "У вас немає доступу до цього платежу"
+    "You do not have access to this payment": "У вас немає доступу до цього платежу",
+    "Insufficient wallet balance": "Недостатньо коштів у гаманці",
+    "Your ride has been cancelled. The payment hold on your card has been released.": "Вашу поїздку скасовано. Блокування суми на вашій картці знято.",
+    "Your ride has been cancelled.": "Вашу поїздку скасовано.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled and the payment hold on your card has been released.": "Жоден водій не прийняв вашу поїздку до часу посадки. Ваше бронювання скасовано, блокування суми на картці знято.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled.": "Жоден водій не прийняв вашу поїздку до часу посадки. Ваше бронювання скасовано.",
+    "You cannot cancel a ride after a passenger has been picked up.": "Не можна скасувати поїздку після того, як пасажира забрано.",
+    "It is too early to start this trip.": "Занадто рано починати цю поїздку.",
+    "Too many wrong OTP attempts. Please wait for the code to expire and request a new one.": "Забагато невірних спроб введення OTP. Дочекайтеся закінчення терміну дії коду та запросіть новий.",
+    "You do not have access to this ride": "У вас немає доступу до цієї поїздки",
+    "You do not have access to this passenger": "У вас немає доступу до цього пасажира",
+    "FCM token updated successfully": "Токен FCM успішно оновлено",
+    "FCM token is required": "Потрібен токен FCM",
+    "Cancellation quote retrieved successfully": "Розрахунок скасування успішно отримано",
+    "Refund Approved": "Повернення схвалено",
+    "Refund Rejected": "Повернення відхилено",
+    "Refund Update": "Оновлення щодо повернення",
+    "Your refund has been added to your wallet.": "Повернення зараховано на ваш гаманець.",
+    "Your refund request was rejected.": "Ваш запит на повернення відхилено.",
+    "Your refund request has been updated.": "Ваш запит на повернення оновлено.",
+    "This refund request has already been processed.": "Цей запит на повернення вже оброблено.",
+    "Failed to update refund status": "Не вдалося оновити статус повернення",
+    "Invalid ID format": "Неправильний формат ідентифікатора"
   },
   "patterns": {
     "dropoff_fare": "Загальна вартість: €{{totalFare}} (Базова: €{{baseFare}} + Очікування: €{{waitingCharge}})",
@@ -685,6 +707,9 @@
     "validation_max_value": "Значення поля «{{field}}» має бути не більшим за {{max}}.",
     "validation_greater_than": "Значення поля «{{field}}» має бути більшим за {{min}}.",
     "validation_less_than": "Значення поля «{{field}}» має бути меншим за {{max}}.",
-    "validation_unexpected_field": "Неочікуване поле: {{field}}."
+    "validation_unexpected_field": "Неочікуване поле: {{field}}.",
+    "ride_confirmed_scheduled": "Вашу поїздку підтверджено на {{date}} о {{time}}.",
+    "ride_cancelled_refunded_wallet": "Вашу поїздку скасовано. €{{amount}} повернуто на ваш гаманець.",
+    "no_driver_cancelled_refunded": "Жоден водій не прийняв вашу поїздку до часу посадки. Ваше бронювання скасовано, €{{amount}} повернуто на ваш гаманець."
   }
 }

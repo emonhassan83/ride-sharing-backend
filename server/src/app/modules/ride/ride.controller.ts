@@ -44,7 +44,10 @@ const getRiderRides = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getARide = catchAsync(async (req: Request, res: Response) => {
-  const result = await RideService.getRideById(req.params.id as string);
+  const result = await RideService.getRideById(req.params.id as string, {
+    userId: req.user?.userId,
+    role: req.user?.role,
+  });
 
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -83,12 +86,27 @@ const deleteARide = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getCancellationQuote = catchAsync(async (req: Request, res: Response) => {
+  const result = await RideService.getCancellationQuote({
+    rideId: req.params.id as string,
+    userId: req.user?.userId as string,
+    passengerId: (req.query?.passengerId as string) || undefined,
+  });
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Cancellation quote retrieved successfully',
+    data: result,
+  });
+});
+
 const sendStartOtp = catchAsync(async (req: Request, res: Response) => {
   const result = await RideService.sendRideStartOtp({
     rideId: req.body?.rideId || (req.params?.id as string),
     passengerId: req.body?.passengerId,
     requesterId: req.user?.userId as string,
     requesterRole: req.user?.role as string,
+    resend: req.body?.resend === true || req.body?.resend === 'true',
   });
 
   sendResponse(res, {
@@ -115,6 +133,7 @@ const verifyStartOtp = catchAsync(async (req: Request, res: Response) => {
 });
 
 export const RideController = {
+  getCancellationQuote,
   getAllRides,
   getDriverRides,
   getRiderRides,

@@ -45,6 +45,36 @@ const resolveDriverPayout = async (
   };
 };
 
+/**
+ * B-06: split the ride-level payout across the ride's payments in proportion
+ * to what each rider paid. The last payment takes the rounding remainder, so
+ * the per-payment sums equal the ride totals exactly.
+ */
+const distributeSplitPayoutToPayments = async (
+  paymentIds: any[],
+  totalCollectedAmount: number,
+  driverEarningAmount: number,
+  platformCommissionAmount: number,
+) => {
+  if (!paymentIds.length || totalCollectedAmount <= 0) return;
+  const payments = await Payment.find({ _id: { $in: paymentIds } });
+  let earningLeft = roundMoney(driverEarningAmount);
+  let commissionLeft = roundMoney(platformCommissionAmount);
+  for (let i = 0; i < payments.length; i++) {
+    const payment: any = payments[i];
+    const isLast = i === payments.length - 1;
+    const paid = Number(payment.amount || payment.amountToCapture || payment.authorizedAmount || 0);
+    const share = paid / totalCollectedAmount;
+    const earning = isLast ? earningLeft : roundMoney(driverEarningAmount * share);
+    const commission = isLast ? commissionLeft : roundMoney(platformCommissionAmount * share);
+    earningLeft = roundMoney(earningLeft - earning);
+    commissionLeft = roundMoney(commissionLeft - commission);
+    payment.providerEarning = earning;
+    payment.platformCommission = commission;
+    await payment.save();
+  }
+};
+
 export const driverCompleteTripHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const { rideId, passengerId } = data;
@@ -236,6 +266,9 @@ export const driverCompleteTripHandler = eventHandler<any>(
         const {
           driverEarningAmount,
           platformCommissionAmount,
+          driverGrossAmount,
+          driverPlatformFeeAmount,
+          driverVatAmount,
         } = await resolveDriverPayout(
           totalCollectedAmount,
           'split',
@@ -252,9 +285,25 @@ export const driverCompleteTripHandler = eventHandler<any>(
             driverEarningAmount,
             platformCommissionAmount,
             totalCollectedAmount,
+            driverGrossAmount,
+            driverPlatformFeeAmount,
+            driverVatAmount,
           },
           { returnDocument: 'after' },
         );
+
+        // B-06: split payments kept the per-rider estimate from authorization
+        // (often priced as an unmatched rider), so the per-payment numbers the
+        // app summed (€25.02) disagreed with what was actually credited
+        // (€21.18). Write the ride-level payout back pro rata to each payment.
+        if (creditedRide) {
+          await distributeSplitPayoutToPayments(
+            paidPayments.map((p: any) => p._id),
+            totalCollectedAmount,
+            driverEarningAmount,
+            platformCommissionAmount,
+          );
+        }
 
         if (creditedRide && driverEarningAmount > 0) {
           await User.findByIdAndUpdate(driverId, { $inc: { wallet: driverEarningAmount } });
@@ -298,6 +347,9 @@ export const driverCompleteTripHandler = eventHandler<any>(
         const {
           driverEarningAmount,
           platformCommissionAmount,
+          driverGrossAmount,
+          driverPlatformFeeAmount,
+          driverVatAmount,
         } = await resolveDriverPayout(totalCollectedAmount, 'private', false);
 
         const creditedRide = await Ride.findOneAndUpdate(
@@ -310,6 +362,9 @@ export const driverCompleteTripHandler = eventHandler<any>(
             driverEarningAmount,
             platformCommissionAmount,
             totalCollectedAmount,
+            driverGrossAmount,
+            driverPlatformFeeAmount,
+            driverVatAmount,
           },
           { returnDocument: 'after' },
         );

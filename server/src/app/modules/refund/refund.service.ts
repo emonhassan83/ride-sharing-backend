@@ -9,6 +9,8 @@ import { TRefund } from './refund.interface'
 import ApiError from '../../errors/ApiError'
 import { PaymentService } from '../payment/payment.service'
 
+const REFUND_ALREADY_PROCESSED = 'This refund request has already been processed.'
+
 const getAllRefundsFromDB = async (query: Record<string, unknown>) => {
   const refundQuery = new QueryBuilder(
     Refund.find().populate([
@@ -73,6 +75,7 @@ const updateRefundStatusFromDB = async (
 
   const session = await mongoose.startSession();
   session.startTransaction();
+  let committedRefund!: TRefund;
 
   try {
     const refund = await Refund.findById(id).session(session);
@@ -81,10 +84,8 @@ const updateRefundStatusFromDB = async (
     }
 
     if (refund.status !== REFUND_STATUS.pending) {
-      throw new ApiError(
-        httpStatus.FORBIDDEN,
-        `Refund request is already ${refund.status}. Cannot change again.`
-      );
+      // Fixed (translatable) text; the current status is visible on the refund itself.
+      throw new ApiError(httpStatus.CONFLICT, REFUND_ALREADY_PROCESSED);
     }
 
     let updatedRefund: TRefund | null = null;
@@ -130,30 +131,45 @@ const updateRefundStatusFromDB = async (
       throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update refund record');
     }
 
-    // Notify User
-    const notifiedUser = await User.findById(refund.user).session(session);
-    if (notifiedUser) {
-      await refundChangeStatusNotifyToUser(
-        'CHANGED_STATUS',
-        notifiedUser,
-        updatedRefund,
-        note || ''
-      );
-    }
-
     await session.commitTransaction();
     session.endSession();
-
-    return updatedRefund;
+    committedRefund = updatedRefund;
   } catch (error: any) {
-    await session.abortTransaction();
+    if (session.inTransaction()) await session.abortTransaction();
     session.endSession();
+
+    // Expected errors (404 not found, 409 already processed, 400 invalid status)
+    // keep their status and message; they used to be turned into a 500.
+    if (error instanceof ApiError) throw error;
+
+    // Two admins approving the same refund at once: the losing transaction gets
+    // a write conflict. It is the same situation as "already processed".
+    if (
+      error?.code === 112 ||
+      error?.codeName === 'WriteConflict' ||
+      error?.errorLabels?.includes?.('TransientTransactionError')
+    ) {
+      throw new ApiError(httpStatus.CONFLICT, REFUND_ALREADY_PROCESSED);
+    }
+
+    // Anything else is internal: log it, never send its raw message to the client.
     console.error('Refund Status Update Error:', error);
-    throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      error.message || 'Failed to update refund status'
-    );
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update refund status');
   }
+
+  // Notify only AFTER the commit. The push used to be sent inside the transaction:
+  // a failing notification rolled back the wallet credit, and a rider could be told
+  // about a refund that was never saved. A push failure must not undo the refund.
+  try {
+    const notifiedUser = await User.findById(committedRefund.user);
+    if (notifiedUser) {
+      await refundChangeStatusNotifyToUser('CHANGED_STATUS', notifiedUser, committedRefund, note || '');
+    }
+  } catch (error: any) {
+    console.error('Refund status notification failed:', error?.message || error);
+  }
+
+  return committedRefund;
 };
 
 const deleteARefundFromDB = async (id: string) => {

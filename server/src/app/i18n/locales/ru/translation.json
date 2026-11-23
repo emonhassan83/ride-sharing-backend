@@ -628,7 +628,29 @@
     "This payment does not belong to you": "Этот платёж вам не принадлежит",
     "Payment intent does not match this payment": "Платёжное намерение не соответствует этому платежу",
     "This payment has already been refunded or was never captured": "Этот платёж уже возвращён или не был списан",
-    "You do not have access to this payment": "У вас нет доступа к этому платежу"
+    "You do not have access to this payment": "У вас нет доступа к этому платежу",
+    "Insufficient wallet balance": "Недостаточно средств в кошельке",
+    "Your ride has been cancelled. The payment hold on your card has been released.": "Ваша поездка отменена. Блокировка суммы на вашей карте снята.",
+    "Your ride has been cancelled.": "Ваша поездка отменена.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled and the payment hold on your card has been released.": "Ни один водитель не принял вашу поездку до времени посадки. Ваше бронирование отменено, блокировка суммы на карте снята.",
+    "No driver accepted your ride before pickup time. Your booking has been cancelled.": "Ни один водитель не принял вашу поездку до времени посадки. Ваше бронирование отменено.",
+    "You cannot cancel a ride after a passenger has been picked up.": "Нельзя отменить поездку после того, как пассажир был забран.",
+    "It is too early to start this trip.": "Слишком рано начинать эту поездку.",
+    "Too many wrong OTP attempts. Please wait for the code to expire and request a new one.": "Слишком много неверных попыток ввода OTP. Дождитесь истечения срока кода и запросите новый.",
+    "You do not have access to this ride": "У вас нет доступа к этой поездке",
+    "You do not have access to this passenger": "У вас нет доступа к этому пассажиру",
+    "FCM token updated successfully": "Токен FCM успешно обновлён",
+    "FCM token is required": "Требуется токен FCM",
+    "Cancellation quote retrieved successfully": "Расчёт отмены успешно получен",
+    "Refund Approved": "Возврат одобрен",
+    "Refund Rejected": "Возврат отклонён",
+    "Refund Update": "Обновление по возврату",
+    "Your refund has been added to your wallet.": "Возврат зачислен на ваш кошелёк.",
+    "Your refund request was rejected.": "Ваш запрос на возврат отклонён.",
+    "Your refund request has been updated.": "Ваш запрос на возврат обновлён.",
+    "This refund request has already been processed.": "Этот запрос на возврат уже обработан.",
+    "Failed to update refund status": "Не удалось обновить статус возврата",
+    "Invalid ID format": "Неверный формат идентификатора"
   },
   "patterns": {
     "dropoff_fare": "Итоговая стоимость: €{{totalFare}} (Базовая: €{{baseFare}} + Ожидание: €{{waitingCharge}})",
@@ -685,6 +707,9 @@
     "validation_max_value": "Значение поля «{{field}}» должно быть не больше {{max}}.",
     "validation_greater_than": "Значение поля «{{field}}» должно быть больше {{min}}.",
     "validation_less_than": "Значение поля «{{field}}» должно быть меньше {{max}}.",
-    "validation_unexpected_field": "Неожиданное поле: {{field}}."
+    "validation_unexpected_field": "Неожиданное поле: {{field}}.",
+    "ride_confirmed_scheduled": "Ваша поездка подтверждена на {{date}} в {{time}}.",
+    "ride_cancelled_refunded_wallet": "Ваша поездка отменена. €{{amount}} возвращены на ваш кошелёк.",
+    "no_driver_cancelled_refunded": "Ни один водитель не принял вашу поездку до времени посадки. Ваше бронирование отменено, €{{amount}} возвращены на ваш кошелёк."
   }
 }

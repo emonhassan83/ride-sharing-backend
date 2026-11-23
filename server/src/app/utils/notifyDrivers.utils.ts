@@ -4,6 +4,8 @@ import { User } from '../modules/user/user.model';
 import { USER_STATUS } from '../modules/user/user.constant';
 import { ILatLng } from '../socket/interface/ride';
 import { Ride } from '../modules/ride/ride.model';
+import { Passenger } from '../modules/passenger/passenger.model';
+import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
 import { hasDriverRideAtDateTime } from './geo.utils';
 import { Vehicle } from '../modules/vehicle/vehicle.model';
 import { isVehicleType } from './luggage.utils';
@@ -60,12 +62,15 @@ export async function emitNewRideRequestToDriver(
     description: rawDescription,
     reference: rideId,
     modelType: modeType.Ride,
-    dedupeKey: `new-ride:${rideId}`,
+    // B-07: per passenger, so a second rider joining a split ride still pushes.
+    dedupeKey: `new-ride:${rideId}:${String(ridePayload?._id || '')}`,
     data: {
       type: 'NEW_RIDE_REQUEST',
       rideId: String(rideId),
       passengerId: String(ridePayload?._id || ''),
+      bookingId: String(ridePayload?.bookingId || ''),
       rideType,
+      screen: 'ride_request',
     },
   });
 
@@ -115,6 +120,21 @@ export async function notifyRiderDriversNotified(input: {
     rematchStage = 'initial',
   } = input;
   if (!userId || !rideId) return newlyNotified;
+
+  // B-11: a rider who cancelled (or was cancelled) while a matching/rematch run
+  // was in flight used to get "Still Searching for a Driver" afterwards. Only
+  // riders who are still waiting for a driver get this update.
+  if (passengerId) {
+    try {
+      const waiting = await Passenger.exists({
+        _id: passengerId,
+        status: { $in: [PASSENGER_STATUS.pending, PASSENGER_STATUS.split_matching] },
+      });
+      if (!waiting) return 0;
+    } catch {
+      /* fall through: never block the update on a lookup error */
+    }
+  }
 
   let total = newlyNotified;
   try {
@@ -578,7 +598,12 @@ export async function notifyNearbyDriversForSplitRide(
     const location = await getDriverCurrentLocation(redis, driverId, dbDriver);
     if (location && !isNearRoute(location.lat, location.lng)) return;
 
-    const shouldNotify = await markDriverNotifiedOnce(rideId, driverId);
+    // B-07: dedupe per passenger, not per ride. The old per-ride check skipped
+    // every driver who already had passenger A's card, so passenger B's
+    // request (a second card on the same split ride) never reached them.
+    const shouldNotify = passengerId
+      ? await markDriverNotifiedForPassengerOnce(redis, rideId, passengerId, driverId)
+      : await markDriverNotifiedOnce(rideId, driverId);
     if (!shouldNotify) return;
 
     const sent = await emitNewRideRequestToDriver(
@@ -594,6 +619,34 @@ export async function notifyNearbyDriversForSplitRide(
     }
   });
 
+  // B-07: drivers who already received this split ride (for an earlier
+  // passenger) must also get the new passenger's request, even if they are no
+  // longer inside the live radius right now.
+  if (passengerId) {
+    const ride = await Ride.findById(rideId).select('notifiedDriverIds driverId').lean();
+    const previous = new Set<string>(
+      ((ride as any)?.notifiedDriverIds || []).map((id: any) => String(id)),
+    );
+    if ((ride as any)?.driverId) previous.add(String((ride as any).driverId));
+
+    for (const driverId of previous) {
+      if (notifiedIds.includes(driverId)) continue;
+      try {
+        if (await redis.sismember(`ride:rejected:${rideId}`, driverId)) continue;
+        if (!(await markDriverNotifiedForPassengerOnce(redis, rideId, passengerId, driverId))) {
+          continue;
+        }
+        const sent = await emitNewRideRequestToDriver(io, redis, driverId, rideId, ridePayload);
+        if (sent) {
+          notifiedIds.push(driverId);
+          notifiedCount++;
+        }
+      } catch (err: any) {
+        console.warn(`Split re-notify failed for driver ${driverId}:`, err?.message || err);
+      }
+    }
+  }
+
   if (notifiedIds.length) {
     await Ride.findByIdAndUpdate(rideId, {
       $addToSet: { notifiedDriverIds: { $each: notifiedIds } },
@@ -601,4 +654,18 @@ export async function notifyNearbyDriversForSplitRide(
   }
 
   return notifiedCount;
+}
+
+/** Atomic per-(ride, passenger, driver) dedupe; true the first time only. */
+async function markDriverNotifiedForPassengerOnce(
+  redis: any,
+  rideId: string,
+  passengerId: string,
+  driverId: string,
+): Promise<boolean> {
+  if (!Types.ObjectId.isValid(driverId) || !Types.ObjectId.isValid(rideId)) return false;
+  const key = `ride:notified:${rideId}:passenger:${passengerId}`;
+  const added = await redis.sadd(key, driverId);
+  await redis.expire(key, 7 * 24 * 60 * 60);
+  return Number(added) === 1;
 }

@@ -15,6 +15,7 @@ import eventHandler from '../../utils/eventHandler';
 import { lockSplitRideFare } from '../../../utils/splitFare.utils';
 import { notifyUserPush } from '../../../utils/notifyUser.utils';
 import { modeType } from '../../../modules/notification/notification.interface';
+import { getEarliestTripStart } from '../../../utils/rideSchedule.utils';
 
 export const driverStartTripHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -38,6 +39,17 @@ export const driverStartTripHandler = eventHandler<any>(
         success: false,
         message: `Ride cannot be started. Current status: ${ride.status}`,
       });
+
+    // B-21: enforce the start window on the server, not only in the app.
+    const earliestStart = await getEarliestTripStart(ride.departureDate, ride.departureTime);
+    if (earliestStart) {
+      return callback?.({
+        success: false,
+        code: 'TRIP_START_TOO_EARLY',
+        message: 'It is too early to start this trip.',
+        data: { earliestStartAt: earliestStart.toISOString() },
+      });
+    }
 
     const io = getIO();
     const redis = getRedisClient();
@@ -151,13 +163,20 @@ export const driverStartTripHandler = eventHandler<any>(
       const tripStartedRooms = riderId
         ? [`ride:${rideId}`, `user:${riderId}`]
         : [`ride:${rideId}`];
-      io.to(tripStartedRooms).emit('ride:trip-started', {
+      // B-20: "heading to pickup" now has its own event and type. The legacy
+      // `ride:trip-started` emit stays for older app builds, tagged with a phase
+      // so the app can tell it apart from the real start at pickup.
+      const enRoutePayload = {
         rideId,
         passengerId: passenger._id,
         driverId,
         startTime: new Date(),
+        phase: 'driver_en_route',
+        title: 'Driver On The Way',
         message: tripMessage,
-      });
+      };
+      io.to(tripStartedRooms).emit('ride:driver-en-route', enRoutePayload);
+      io.to(tripStartedRooms).emit('ride:trip-started', enRoutePayload);
 
       if (riderId) {
         // "Driver On The Way": the driver has only STARTED towards the pickup.
@@ -171,9 +190,10 @@ export const driverStartTripHandler = eventHandler<any>(
           modelType: modeType.Ride,
           dedupeKey: `trip-started:${passenger._id.toString()}`,
           data: {
-            type: 'TRIP_STARTED',
+            type: 'DRIVER_EN_ROUTE',
             rideId: String(rideId),
             passengerId: String(passenger._id),
+            screen: 'ride_details',
           },
         });
       }

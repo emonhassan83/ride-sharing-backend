@@ -154,13 +154,14 @@ describe('buildStoredFareBreakdown - private passenger', () => {
     expect(b.totalFare).toBe(0);
   });
 
-  it('queries the seven expected settings keys', async () => {
+  it('queries the eight expected settings keys', async () => {
     await buildStoredFareBreakdown(privatePassenger());
     const filter = vi.mocked(Setting.find).mock.calls[0][0] as unknown as { key: { $in: string[] } };
     expect(filter.key.$in).toEqual([
       'platformVat',
       'platformCommissionPercent',
       'baseFare',
+      'splitRideMinimumFare',
       'fivePassengerExtraChargePercentage',
       'sixPassengerExtraChargePercentage',
       'splitRideMatchedSurchargePercent',

@@ -237,10 +237,11 @@ describe('driver:reject-ride - PRIVATE ride', () => {
       throw new Error('db down');
     });
     await run({ rideId });
-    expect(ack).toHaveBeenCalledWith({ success: false, message: 'db down' });
+    // B-22: internal error text (e.g. Mongo messages) is logged, not shown to users.
+    expect(ack).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'INTERNAL_ERROR', message: 'Something went wrong!' }));
     expect(driverSocket.emit).toHaveBeenCalledWith(
       'socketError',
-      expect.objectContaining({ status: 500, message: 'db down' }),
+      expect.objectContaining({ status: 500, code: 'INTERNAL_ERROR', message: 'Something went wrong!' }),
     );
   });
 });

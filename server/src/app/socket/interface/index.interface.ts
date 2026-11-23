@@ -22,7 +22,15 @@ export interface TSocketUser {
   avgRating?: number;
 }
 
-export type TAckRes = { success: boolean; message?: string; data?: any };
+export type TAckRes = {
+  success: boolean;
+  message?: string;
+  data?: any;
+  /** B-22: machine-readable error code, e.g. NOT_FOUND, CANNOT_CANCEL_AFTER_PICKUP. */
+  code?: string;
+  status?: number;
+  details?: Record<string, unknown>;
+};
 export type TAckFn = (response: TAckRes) => void;
 
 export type TSocketHandler<TData = any> = (

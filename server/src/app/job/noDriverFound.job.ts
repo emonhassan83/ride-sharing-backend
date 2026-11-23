@@ -5,6 +5,7 @@ import { Passenger } from '../modules/passenger/passenger.model';
 import { CANCELLED_BY, RIDE_STATUS } from '../modules/ride/ride.constant';
 import { Ride } from '../modules/ride/ride.model';
 import { User } from '../modules/user/user.model';
+import { revertDriverEarningIfCredited } from '../utils/driverEarning.utils';
 import { Setting } from '../modules/settings/settings.model';
 import { modeType } from '../modules/notification/notification.interface';
 import { notifyUserPush } from '../utils/notifyUser.utils';
@@ -19,6 +20,7 @@ import { Refund } from '../modules/refund/refund.model';
 import { BOOKING_STATUS, PAYMENT_STATUS } from '../modules/booking/booking.constant';
 import { REFUND_STATUS, REFUND_TYPE } from '../modules/refund/refund.constant';
 import { refundToWallet } from '../utils/splitFare.utils';
+import { PaymentService } from '../modules/payment/payment.service';
 import { formatRideLocalDate, getDepartureDateTime } from '../utils/rideSchedule.utils';
 import { toLuggageFyiView } from '../utils/luggage.utils';
 import Stripe from 'stripe';
@@ -57,10 +59,126 @@ const getMatchingSettings = async (): Promise<{
   };
 };
 
+/**
+ * B-13: a rider who joined a split ride the driver had ALREADY accepted stays
+ * "pending" until the driver accepts them too. The pass below only looks at
+ * unassigned pending rides, so if pickup passed without that, the rider was
+ * never cancelled or refunded and never appeared in History → Cancelled.
+ */
+const expireUnacceptedPassengersOnAssignedRides = async (io: any, now: Date) => {
+  const today = formatRideLocalDate(now);
+  const candidates = await Passenger.find({
+    status: PASSENGER_STATUS.pending,
+    rideId: { $ne: null },
+    departureDate: { $lte: today },
+  })
+    .select('_id userId rideId departureDate departureTime')
+    .sort({ departureDate: 1, departureTime: 1 })
+    .limit(BATCH_SIZE)
+    .lean();
+
+  for (const p of candidates) {
+    try {
+      if (getDepartureDateTime(p.departureDate as any, p.departureTime as any).getTime() > now.getTime()) {
+        continue;
+      }
+      const ride = await Ride.findById(p.rideId).select('status driverId').lean();
+      // Unassigned pending rides are handled by the main pass below. Everything
+      // else (accepted/started, or a ride already cancelled/completed that left
+      // this rider "pending") is expired here. The refund claim is atomic, so
+      // money already refunded by another path is never refunded twice.
+      if (ride && ride.status === RIDE_STATUS.pending && !ride.driverId) continue;
+
+      const claimed = await Passenger.findOneAndUpdate(
+        { _id: p._id, status: PASSENGER_STATUS.pending },
+        {
+          status: PASSENGER_STATUS.cancelled,
+          cancellationReason: 'no_driver_found',
+          cancelledBy: CANCELLED_BY.system,
+        },
+      );
+      if (!claimed) continue;
+
+      let refundAmount = 0;
+      let released = false;
+      const booking = await Booking.findOne({ passengerId: p._id });
+      if (booking) {
+        released = await PaymentService.cancelAuthorizedBookingPayment(booking._id.toString());
+        const claimedPayment = await Payment.findOneAndUpdate(
+          { booking: booking._id, status: PAYMENT_STATUS.paid, isPaid: true },
+          { $set: { status: PAYMENT_STATUS.refunded, isPaid: false } },
+          { returnDocument: 'after' },
+        );
+        if (claimedPayment) {
+          refundAmount = Math.round(Number(booking.amountPaid || claimedPayment.amount || 0) * 100) / 100;
+          await refundToWallet(booking.userId.toString(), refundAmount, 'no_driver_found', io);
+          await Refund.create({
+            user: booking.userId,
+            ride: p.rideId,
+            type: REFUND_TYPE.cancel_ride,
+            paymentIntentId: booking.transactionId || claimedPayment.transactionId || '',
+            amount: refundAmount,
+            reason: 'No driver found',
+            note: `Passenger ${String(p._id)} was not accepted before pickup`,
+            status: REFUND_STATUS.confirmed,
+          });
+        }
+        await Booking.updateOne(
+          { _id: booking._id },
+          {
+            $set: {
+              bookingStatus: BOOKING_STATUS.cancelled,
+              ...(refundAmount > 0 ? { paymentStatus: PAYMENT_STATUS.refunded, refundAmount } : {}),
+            },
+          },
+        );
+      }
+
+      const userId = String(p.userId || '');
+      if (!userId) continue;
+      const description =
+        refundAmount > 0
+          ? `No driver accepted your ride before pickup time. Your booking has been cancelled and €${refundAmount.toFixed(2)} has been refunded to your wallet.`
+          : released
+            ? 'No driver accepted your ride before pickup time. Your booking has been cancelled and the payment hold on your card has been released.'
+            : 'No driver accepted your ride before pickup time. Your booking has been cancelled.';
+      io.to(`user:${userId}`).emit('ride:no-driver-found', {
+        rideId: p.rideId,
+        passengerId: p._id,
+        refundAmount,
+        paymentReleased: released,
+        cancellationReason: 'no_driver_found',
+        message: description,
+      });
+      await notifyUserPush({
+        userId,
+        message: 'Ride Cancelled — No Driver Found',
+        description,
+        reference: String(p.rideId),
+        modelType: modeType.Ride,
+        dedupeKey: `no-driver-cancelled:${String(p.rideId)}:${String(p._id)}`,
+        data: {
+          type: 'RIDE_CANCELLED_NO_DRIVER',
+          rideId: String(p.rideId),
+          passengerId: String(p._id),
+          refundAmount: String(refundAmount),
+          screen: 'ride_details',
+        },
+      });
+    } catch (error: any) {
+      console.error(`Expiring unaccepted passenger ${String(p._id)} failed:`, error?.message || error);
+    }
+  }
+};
+
 export const checkNoDriverFound = async () => {
   const redis = getRedisClient();
   const io = getIO();
   const now = new Date();
+
+  await expireUnacceptedPassengersOnAssignedRides(io, now).catch((err: any) =>
+    console.error('expireUnacceptedPassengersOnAssignedRides failed:', err?.message || err),
+  );
 
   const { notifyHours, lastNotifyHours, renotifyIntervalMinutes } =
     await getMatchingSettings();
@@ -76,6 +194,9 @@ export const checkNoDriverFound = async () => {
     departureDate: { $lte: reNotifyBeforeLocal },
     createdAt: { $lte: gracePeriodCutoff },
   })
+    // B-12: rides closest to (or past) pickup first, so an expired ride is never
+    // pushed out of the batch by rides that are still days away.
+    .sort({ departureDate: 1, departureTime: 1 })
     .limit(BATCH_SIZE)
     .lean();
 
@@ -154,6 +275,9 @@ export const checkNoDriverFound = async () => {
       estimatedDurationMinutes: (passenger as any).estimatedDurationMinutes || 0,
       status: PASSENGER_STATUS.pending,
       bookingId: booking._id.toString(),
+      // B-15: same public references the rider sees.
+      bookingShortId: (booking as any).id || null,
+      rideShortId: (ride as any).id || null,
       createdAt: (passenger as any).createdAt,
       ...toLuggageFyiView(passenger),
     };
@@ -276,6 +400,10 @@ export const checkNoDriverFound = async () => {
     bookingStatus: { $nin: [BOOKING_STATUS.cancelled, BOOKING_STATUS.completed] },
   });
 
+  // B-12: remember what happened to each rider's money so the "no driver found"
+  // push can say it (refunded to wallet / card hold released). Keyed by ride + rider.
+  const outcomeByPassenger = new Map<string, { refundAmount: number; released: boolean }>();
+
   for (const booking of bookingsToRefund) {
     // Each booking is handled on its own: one failure must not stop the other riders' refunds.
     try {
@@ -301,6 +429,7 @@ export const checkNoDriverFound = async () => {
         booking.paymentStatus = PAYMENT_STATUS.cancelled_authorization as any;
         booking.amountPaid = 0;
         await booking.save();
+        outcomeByPassenger.set(`${String(booking.rideId)}:${String(booking.userId)}`, { refundAmount: 0, released: true });
         continue;
       }
 
@@ -319,11 +448,12 @@ export const checkNoDriverFound = async () => {
           payment.isPaid = false;
           await payment.save();
 
-          if (payment.providerEarning && payment.providerEarning > 0 && booking.driverId) {
-            await User.findByIdAndUpdate(booking.driverId, {
-              $inc: { wallet: -payment.providerEarning }
-            });
-          }
+          // Only reverses money the driver was actually credited (at completion).
+          await revertDriverEarningIfCredited({
+            rideId: booking.rideId,
+            driverId: booking.driverId,
+            amount: payment.providerEarning,
+          });
         }
 
         await Refund.create({
@@ -341,6 +471,7 @@ export const checkNoDriverFound = async () => {
         booking.paymentStatus = PAYMENT_STATUS.refunded as any;
         booking.refundAmount = paidAmount;
         await booking.save();
+        outcomeByPassenger.set(`${String(booking.rideId)}:${String(booking.userId)}`, { refundAmount: paidAmount, released: false });
       } else {
         booking.bookingStatus = BOOKING_STATUS.cancelled;
         await booking.save();
@@ -364,7 +495,7 @@ export const checkNoDriverFound = async () => {
 
   const cancelledPassengers = await Passenger.find(
     { rideId: { $in: finalCancelRideIds }, cancellationReason: 'no_driver_found' },
-    'userId rideId'
+    '_id userId rideId'
   ).lean();
 
   const ridesToRemove = pendingRides.filter((ride) =>
@@ -389,11 +520,21 @@ export const checkNoDriverFound = async () => {
     const userId = p.userId?.toString();
     if (!userId) continue;
 
+    const outcome = outcomeByPassenger.get(`${String(p.rideId)}:${String(p.userId)}`);
+    const refundAmount = outcome?.refundAmount || 0;
     const description =
-      'No driver accepted your ride before pickup time. Your booking has been cancelled.';
+      refundAmount > 0
+        ? `No driver accepted your ride before pickup time. Your booking has been cancelled and €${refundAmount.toFixed(2)} has been refunded to your wallet.`
+        : outcome?.released
+          ? 'No driver accepted your ride before pickup time. Your booking has been cancelled and the payment hold on your card has been released.'
+          : 'No driver accepted your ride before pickup time. Your booking has been cancelled.';
 
     io.to(`user:${userId}`).emit('ride:no-driver-found', {
       rideId: p.rideId,
+      passengerId: p._id,
+      refundAmount,
+      paymentReleased: !!outcome?.released,
+      cancellationReason: 'no_driver_found',
       message: description,
       retryAfter: 5,
     });
@@ -408,6 +549,9 @@ export const checkNoDriverFound = async () => {
       data: {
         type: 'RIDE_CANCELLED_NO_DRIVER',
         rideId: String(p.rideId || ''),
+        passengerId: String(p._id),
+        refundAmount: String(refundAmount),
+        screen: 'ride_details',
       },
     });
   }

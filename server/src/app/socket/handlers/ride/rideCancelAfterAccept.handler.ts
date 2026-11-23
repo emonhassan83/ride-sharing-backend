@@ -6,7 +6,7 @@ import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant'
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
-import { User } from '../../../modules/user/user.model';
+import { revertDriverEarningIfCredited } from '../../../utils/driverEarning.utils';
 import { Refund } from '../../../modules/refund/refund.model';
 import { Payment } from '../../../modules/payment/payment.model';
 import { PaymentService } from '../../../modules/payment/payment.service';
@@ -105,11 +105,12 @@ const cancelRemainingPassengers = async (
           payment.isPaid = false;
           await payment.save();
 
-          if (payment.providerEarning && payment.providerEarning > 0 && ride.driverId) {
-            await User.findByIdAndUpdate(ride.driverId, {
-              $inc: { wallet: -payment.providerEarning },
-            });
-          }
+          // Only reverses money the driver was actually credited (at completion).
+          await revertDriverEarningIfCredited({
+            rideId,
+            driverId: ride.driverId,
+            amount: payment.providerEarning,
+          });
         }
 
         await Refund.create({
@@ -240,6 +241,15 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       ride.type as any,
     );
 
+    // B-04: the app showed a hard-coded "20% fee" while the backend applied its own
+    // policy. Return the fee actually applied, so the app can display it.
+    const feeInfo = {
+      paidAmount,
+      feeAmount: platformAmount,
+      feePercent: paidAmount > 0 ? Math.round((platformAmount / paidAmount) * 10000) / 100 : 0,
+      refundDestination: refundAmount > 0 ? 'wallet' : null,
+    };
+
     // Credit the rider first. If this fails the passenger stays active, so the rider can retry.
     if (refundAmount > 0 && booking) {
       await refundToWallet(userId, refundAmount, `cancel_${refundReason}`, io);
@@ -271,13 +281,12 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         payment.isPaid = false;
         await payment.save();
 
-        // 2. Revert the driver's wallet credit for the booking
-        if (payment.providerEarning && payment.providerEarning > 0 && ride.driverId) {
-          await User.findByIdAndUpdate(ride.driverId, {
-            $inc: { wallet: -payment.providerEarning }
-          });
-          console.log(`💰 Deducted driver earning: €${payment.providerEarning} from driver: ${ride.driverId}`);
-        }
+        // 2. Revert the driver's wallet credit, only if one was actually made (at completion)
+        await revertDriverEarningIfCredited({
+          rideId,
+          driverId: ride.driverId,
+          amount: payment.providerEarning,
+        });
       }
 
       // 3. Create Refund record
@@ -342,7 +351,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       return callback?.({
         success: true,
         message: 'Ride cancelled.',
-        data:    { refundAmount, refundReason, rideCancelled: true },
+        data:    { refundAmount, refundReason, ...feeInfo, rideCancelled: true },
       });
     }
 
@@ -382,7 +391,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'Ride cancelled - only one passenger remaining.',
-          data:    { refundAmount, refundReason, rideCancelled: true },
+          data:    { refundAmount, refundReason, ...feeInfo, rideCancelled: true },
         });
       }
 
@@ -412,7 +421,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         return callback?.({
           success: true,
           message: 'Ride cancelled - no other passengers.',
-          data:    { refundAmount, refundReason, rideCancelled: true },
+          data:    { refundAmount, refundReason, ...feeInfo, rideCancelled: true },
         });
       }
     }
@@ -449,7 +458,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
       return callback?.({
         success: true,
         message: 'Ride cancelled - only one passenger remaining.',
-        data:    { refundAmount, refundReason, rideCancelled: true },
+        data:    { refundAmount, refundReason, ...feeInfo, rideCancelled: true },
       });
     }
 
@@ -506,6 +515,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         passengerId:         passenger._id,
         refundAmount,
         refundReason,
+        ...feeInfo,
         rideCancelled:       false,
         remainingPassengers: remainingCount,
       },

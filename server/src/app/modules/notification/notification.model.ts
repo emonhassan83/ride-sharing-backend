@@ -30,7 +30,18 @@ const notificationSchema = new Schema<TNotification>(
     read: {
       type: Boolean,
       default: false,
-    }
+    },
+    // B-14: deep-link info, the same string map that is sent in FCM `data`
+    // (type, rideId, passengerId, bookingId, chatId, screen, ...).
+    type: {
+      type: String,
+      default: null,
+    },
+    data: {
+      type: Map,
+      of: String,
+      default: {},
+    },
   },
   {
     timestamps: true,

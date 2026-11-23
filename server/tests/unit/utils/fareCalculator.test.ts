@@ -79,7 +79,7 @@ describe('loadFareSettings', () => {
     await loadFareSettings();
     const finder = vi.mocked(Setting.find).mock.calls[0][0] as unknown as { key: { $in: string[] } };
     expect(finder.key.$in).toEqual(expect.arrayContaining(['baseFare', 'platformVat', 'fareRoundingBracket']));
-    expect(finder.key.$in).toHaveLength(18);
+    expect(finder.key.$in).toHaveLength(19); // + splitRideMinimumFare
   });
 
   it('overrides defaults with stored values and coerces numeric strings', async () => {

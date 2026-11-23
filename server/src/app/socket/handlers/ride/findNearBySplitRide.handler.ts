@@ -11,6 +11,7 @@ import { TVehicle } from '../../../modules/vehicle/vehicle.interface';
 import { User } from '../../../modules/user/user.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
+import { maskPhone } from '../../../utils/contactPrivacy.utils';
 import { ISplitRideRequest } from '../../interface/ride';
 import {
   getCandidateDepartureDates,
@@ -202,7 +203,9 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
             ],
           },
         })
-          .populate('userId', 'name profileImage phone gender avgRating')
+          // B-18: this list goes to riders who have NOT joined (and to drivers' rivals);
+          // other riders' phone numbers must never be part of it.
+          .populate('userId', 'name profileImage gender avgRating')
           .lean();
 
         let driverLocation: { lat: number; lng: number } | null =
@@ -236,8 +239,8 @@ export const findNearbySplitRideHandler = eventHandler<ISplitRideRequest>(
           hasDriver,
           driverId: driver?._id ?? null,
           driverName: driver?.name ?? null,
-          driverEmail: driver?.email ?? null,
-          driverPhone: driver?.phone ?? null,
+          driverEmail: null, // B-18: contact is shared only after the booking is accepted
+          driverPhone: maskPhone(driver?.phone),
           driverPhoto: driver?.profileImage ?? null,
           driverRating: driver?.avgRating ?? null,
           vehicle: hasDriver ? {
