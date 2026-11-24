@@ -662,7 +662,8 @@
     "Passenger not found on this ride": "Пасажира не знайдено в цій поїздці",
     "passengerId is required for a ride with several passengers": "Для поїздки з кількома пасажирами потрібен passengerId",
     "You can rate a passenger only after the trip": "Оцінити пасажира можна лише після поїздки",
-    "You have already rated this passenger": "Ви вже оцінили цього пасажира"
+    "You have already rated this passenger": "Ви вже оцінили цього пасажира",
+    "Invalid role filter": "Недійсний фільтр ролі"
   },
   "patterns": {
     "dropoff_fare": "Загальна вартість: €{{totalFare}} (Базова: €{{baseFare}} + Очікування: €{{waitingCharge}})",

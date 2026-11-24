@@ -662,7 +662,8 @@
     "Passenger not found on this ride": "Ο επιβάτης δεν βρέθηκε σε αυτή τη διαδρομή",
     "passengerId is required for a ride with several passengers": "Το passengerId απαιτείται για διαδρομή με πολλούς επιβάτες",
     "You can rate a passenger only after the trip": "Μπορείτε να αξιολογήσετε έναν επιβάτη μόνο μετά τη διαδρομή",
-    "You have already rated this passenger": "Έχετε ήδη αξιολογήσει αυτόν τον επιβάτη"
+    "You have already rated this passenger": "Έχετε ήδη αξιολογήσει αυτόν τον επιβάτη",
+    "Invalid role filter": "Μη έγκυρο φίλτρο ρόλου"
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",

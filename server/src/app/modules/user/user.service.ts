@@ -34,8 +34,26 @@ import { getRedisClient } from '../../config/redis.config';
 import { getIO, onlineUsers } from '../../socket/socket.init';
 
 const getAllUsersFromDB = async (query: Record<string, unknown>) => {
+  // QueryBuilder.filter() drops `role` (elsewhere it is a related-user param),
+  // so ?role=provider / ?role=user was ignored here. Admins are never listed.
+  const rawRole = String(query.role ?? '').trim().toLowerCase();
+  const requestedRole =
+    rawRole === 'driver' ? USER_ROLE.provider : rawRole === 'rider' ? USER_ROLE.user : rawRole;
+  if (
+    requestedRole &&
+    requestedRole !== 'all' &&
+    requestedRole !== USER_ROLE.user &&
+    requestedRole !== USER_ROLE.provider
+  ) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid role filter');
+  }
+  const roleFilter =
+    requestedRole === USER_ROLE.user || requestedRole === USER_ROLE.provider
+      ? requestedRole
+      : { $ne: USER_ROLE.admin };
+
   const usersQuery = new QueryBuilder(
-    User.find({ isDeleted: false, role: { $ne: USER_ROLE.admin } }).select(
+    User.find({ isDeleted: false, role: roleFilter }).select(
       '_id id name email profileImage role type address status isOnline isKycVerified createdAt'
     ),
     query
@@ -126,17 +144,23 @@ const getAllUsersFromDB = async (query: Record<string, unknown>) => {
     if (u.role !== USER_ROLE.provider) return u;
 
     const uid = u._id.toString();
+    const totalEarning = Math.round((totalEarningMap[uid] ?? 0) * 100) / 100;
     return {
       ...u,
       completedRides: completedRidesMap[uid] ?? 0,
-      totalEarning: totalEarningMap[uid] ?? 0,
+      totalEarning,
+      // Same all-time figure under the name the driver's own earnings page uses.
+      lifetimeEarnings: totalEarning,
     };
   });
 
   return { meta, result };
 };
 
-const getSingleUser = async (userId: string): Promise<TUser | null> => {
+const getSingleUser = async (
+  userId: string,
+  requester?: { userId: string; role: string },
+): Promise<TUser | null> => {
   const result: any = await User.findById(userId)
     .select('-expireAt -updatedAt -__v')
     .lean();
@@ -190,7 +214,7 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
 
         // All vehicles for this provider
         Vehicle.find({ userId: userObjectId, isDeleted: false })
-          .select('name number year seats isDefault')
+          .select('name number year seats isDefault carPapers')
           .lean(),
 
         // Completed rides count
@@ -292,7 +316,12 @@ const getSingleUser = async (userId: string): Promise<TUser | null> => {
     providerData = provider;
     isKycSubmitted = !!provider;
     hasVehicle = vehicleList.length > 0;
-    vehicles = vehicleList;
+    // Car papers are documents: only the admin and the driver may see them.
+    const canSeeCarPapers =
+      requester?.role === USER_ROLE.admin || requester?.userId === String(userId);
+    vehicles = canSeeCarPapers
+      ? vehicleList
+      : vehicleList.map(({ carPapers: _papers, ...vehicle }: any) => vehicle);
     completedRides = completedRideCount;
     todayEarning = Math.round(((earningResult[0]?.total ?? 0) + (splitTodayEarningResult[0]?.total ?? 0)) * 100) / 100;
     totalEarning = Math.round(((totalEarningResult[0]?.total ?? 0) + (splitTotalEarningResult[0]?.total ?? 0)) * 100) / 100;

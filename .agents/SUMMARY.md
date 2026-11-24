@@ -1,3 +1,20 @@
+Date/Session: 2026-11-24 (admin dashboard list: sort, role filter, admin rides, KYC reject, meta)
+
+Completed Tasks:
+- `QueryBuilder.sort()`: appends an `_id` tie-breaker (same direction as the first field), so paging stops repeating or skipping rows that share a createdAt. Dashboard recent transactions too.
+- `GET /user?role=`: `filter()` drops `role`, so the filter was ignored on `main` (dev's older QueryBuilder still applied it). Now handled in `getAllUsersFromDB`: `user`/`provider` (aliases `rider`/`driver`), `all`, anything else → 400. Provider rows also get `lifetimeEarnings` (= `totalEarning`, rounded).
+- KYC (`PATCH /provider/:id`): reject/pending now set `User.isKycVerified=false` (and active → pending; blocked stays). Before, a rejected driver stayed verified and kept receiving ride requests, and `status: pending` was saved as rejected. Test: `tests/unit/modules/provider/provider.updateStatus.test.ts`.
+- Admin `GET /ride`: `status=cancelled` fell through to the default filter (which excludes cancelled), so the list was empty. Now: cancelled, rejected, pending, accepted, started, completed, ongoing, all, overdue; unknown → 400. `scheduled`/`upcoming` hides accepted rides past pickup + 120 min (`isPastUpcomingWindow`), and `overdue` lists them. Product decision pending: nothing auto-closes them. Rows add `rideShortId`, `bookingShortIds`, and `bookingShortId` (private rides).
+- `GET /user/:userId`: vehicles include `carPapers`, but only for the admin or the driver.
+- `GET /meta`: `cancelledBookings`, `completedBookings`, `cancellationRate` (real bookings only: paymentStatus not pending/failed), `totalRefunded`, `totalRefundCount`. `salesReport.refunded` came from `Payment.refundAmount`, a field Payment does not have (always 0). It now sums confirmed `Refund` docs for the selected year.
+
+Next Steps:
+- SECURITY (not changed): `GET /user/:userId` is open to any logged-in user and returns a driver's `providerData` (IBAN, ID and license image URLs) and earnings. Check what the rider app needs, then restrict.
+- Decide whether stale accepted rides should be auto-closed by a job (and the refund rule for that).
+- `/upload/signed` does not exist. Check whether upload URLs expire (storage config).
+
+---
+
 Date/Session: 2026-11-24 (app team 24 Nov list: other-booking auto-cancel, list sort, rate passenger, slow acks)
 
 Completed Tasks:

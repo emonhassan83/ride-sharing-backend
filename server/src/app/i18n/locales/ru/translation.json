@@ -662,7 +662,8 @@
     "Passenger not found on this ride": "Пассажир не найден в этой поездке",
     "passengerId is required for a ride with several passengers": "Для поездки с несколькими пассажирами требуется passengerId",
     "You can rate a passenger only after the trip": "Оценить пассажира можно только после поездки",
-    "You have already rated this passenger": "Вы уже оценили этого пассажира"
+    "You have already rated this passenger": "Вы уже оценили этого пассажира",
+    "Invalid role filter": "Недопустимый фильтр роли"
   },
   "patterns": {
     "dropoff_fare": "Итоговая стоимость: €{{totalFare}} (Базовая: €{{baseFare}} + Ожидание: €{{waitingCharge}})",

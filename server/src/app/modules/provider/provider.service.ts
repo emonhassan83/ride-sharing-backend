@@ -172,9 +172,28 @@ const updateStatusIntoDB = async (
         { returnDocument: 'after', session }
       );
     } else {
+      // Rejected or back to pending: the driver is no longer verified. Before,
+      // only Provider.status changed, so a rejected driver kept
+      // User.isKycVerified = true and still received ride requests, and
+      // status "pending" was saved as "rejected".
+      await User.updateOne(
+        { _id: provider.userId },
+        { $set: { isKycVerified: false } },
+        { session }
+      );
+      // Same rule as a role switch: an unverified provider is "pending". A
+      // blocked account stays blocked.
+      await User.updateOne(
+        { _id: provider.userId, status: USER_STATUS.active },
+        { $set: { status: USER_STATUS.pending } },
+        { session }
+      );
+
       updatedVerification = await Provider.findByIdAndUpdate(
         id,
-        { status: PROVIDER_STATUS.rejected, rejectionReason },
+        status === PROVIDER_STATUS.pending
+          ? { status: PROVIDER_STATUS.pending, rejectionReason: null, approvedAt: null }
+          : { status: PROVIDER_STATUS.rejected, rejectionReason, approvedAt: null },
         { returnDocument: 'after', session }
       );
     }

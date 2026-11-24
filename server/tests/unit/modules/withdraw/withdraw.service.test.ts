@@ -226,7 +226,7 @@ describe('WithdrawService.getAllWithdrawsFromDB (admin list)', () => {
     const res = await WithdrawService.getAllWithdrawsFromDB({});
 
     expect(Withdraw.find).toHaveBeenCalledWith({});
-    expect(q.sort).toHaveBeenCalledWith('-createdAt');
+    expect(q.sort).toHaveBeenCalledWith('-createdAt -_id');
     expect(q.skip).toHaveBeenCalledWith(0);
     expect(q.limit).toHaveBeenCalledWith(10);
     expect(res.result).toEqual([{ id: 'a' }]);

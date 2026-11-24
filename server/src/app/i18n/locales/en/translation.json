@@ -662,7 +662,8 @@
     "Passenger not found on this ride": "Passenger not found on this ride",
     "passengerId is required for a ride with several passengers": "passengerId is required for a ride with several passengers",
     "You can rate a passenger only after the trip": "You can rate a passenger only after the trip",
-    "You have already rated this passenger": "You have already rated this passenger"
+    "You have already rated this passenger": "You have already rated this passenger",
+    "Invalid role filter": "Invalid role filter"
   },
   "patterns": {
     "dropoff_fare": "Total fare: €{{totalFare}} (Base: €{{baseFare}} + Waiting: €{{waitingCharge}})",

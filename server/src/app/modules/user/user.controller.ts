@@ -16,7 +16,10 @@ const getAllUsers = catchAsync(async (req, res) => {
 });
 
 const getSingleUser = catchAsync(async (req, res) => {
-  const result = await UserService.getSingleUser(req.params.userId as string);
+  const result = await UserService.getSingleUser(req.params.userId as string, {
+    userId: req.user.userId,
+    role: req.user.role,
+  });
 
   sendResponse(res, {
     code: StatusCodes.OK,

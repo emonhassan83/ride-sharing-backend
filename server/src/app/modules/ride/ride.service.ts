@@ -171,20 +171,50 @@ const getDriverMonthlyInvoice = async (
 
 const getAllIntoDB = async (query: Record<string, unknown>) => {
   // ──────────────────────────────────────────────────────────
-  const status = query.status as string | undefined;
+  query = { ...query };
+  const status = String(query.status ?? '').trim().toLowerCase();
   delete query.status;
 
-  let statusFilter: any;
+  // Accepted rides whose pickup (+ UPCOMING_GRACE_MINUTES) has passed but the
+  // driver never started: no job closes them, so they sat in "scheduled"
+  // forever. They are hidden from scheduled and listed under status=overdue.
+  const findOverdueAcceptedRideIds = async () => {
+    const candidates = await Ride.find({
+      status: RIDE_STATUS.accepted,
+      departureDate: { $lte: formatRideLocalDate(new Date()) },
+    })
+      .select('_id departureDate departureTime')
+      .lean();
+    const now = new Date();
+    return candidates
+      .filter((r: any) => isPastUpcomingWindow(r.departureDate, r.departureTime, now))
+      .map((r: any) => r._id);
+  };
 
-  if (status === 'scheduled') {
+  let statusFilter: Record<string, unknown>;
+
+  if (status === 'scheduled' || status === 'upcoming') {
     statusFilter = {
       status: { $in: [RIDE_STATUS.accepted, RIDE_STATUS.started] },
+      _id: { $nin: await findOverdueAcceptedRideIds() },
     };
-  } else if (status === 'completed') {
-    statusFilter = {
-      status: RIDE_STATUS.completed,
-    };
-  } else {
+  } else if (status === 'overdue') {
+    statusFilter = { _id: { $in: await findOverdueAcceptedRideIds() } };
+  } else if (status === 'ongoing') {
+    statusFilter = { status: { $in: [RIDE_STATUS.arrived, RIDE_STATUS.started] } };
+  } else if (status === 'cancelled' || status === 'canceled') {
+    statusFilter = { status: RIDE_STATUS.cancelled };
+  } else if (
+    status === RIDE_STATUS.completed ||
+    status === RIDE_STATUS.rejected ||
+    status === RIDE_STATUS.pending ||
+    status === RIDE_STATUS.accepted ||
+    status === RIDE_STATUS.started
+  ) {
+    statusFilter = { status };
+  } else if (status === 'all') {
+    statusFilter = {};
+  } else if (!status) {
     // default - exclude pending, cancelled, rejected
     statusFilter = {
       status: {
@@ -195,6 +225,10 @@ const getAllIntoDB = async (query: Record<string, unknown>) => {
         ],
       },
     };
+  } else {
+    // `cancelled` used to fall through to the default above, which excludes
+    // cancelled rides, so the Cancelled tab was always empty.
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid ride status filter');
   }
 
   const rideQuery = new QueryBuilder(
@@ -218,7 +252,32 @@ const getAllIntoDB = async (query: Record<string, unknown>) => {
     rideQuery.countTotal(),
   ]);
 
-  return { meta, result };
+  // B-15 for admin: `id` is the trip reference (Ride SR); riders quote their
+  // booking reference, so return both, clearly labelled.
+  const bookings = await Booking.find({ rideId: { $in: result.map((r: any) => r._id) } })
+    .select('id rideId')
+    .sort({ createdAt: 1 })
+    .lean();
+  const bookingRefsByRide = new Map<string, string[]>();
+  for (const b of bookings as any[]) {
+    if (!b.id) continue;
+    const key = String(b.rideId);
+    if (!bookingRefsByRide.has(key)) bookingRefsByRide.set(key, []);
+    bookingRefsByRide.get(key)!.push(b.id);
+  }
+
+  const rows = result.map((ride: any) => {
+    const plain = ride.toObject ? ride.toObject() : ride;
+    const bookingShortIds = bookingRefsByRide.get(String(plain._id)) || [];
+    return {
+      ...plain,
+      rideShortId: plain.id || null,
+      bookingShortIds,
+      bookingShortId: plain.type === RIDE_TYPE.private ? bookingShortIds[0] || null : null,
+    };
+  });
+
+  return { meta, result: rows };
 };
 
 const PAID_PAYMENT_STATUSES = [

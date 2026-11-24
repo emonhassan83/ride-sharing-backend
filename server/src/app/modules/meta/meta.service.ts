@@ -5,6 +5,12 @@ import { User } from '../user/user.model';
 import { Booking } from '../booking/booking.model';
 import { PAYMENT_STATUS } from '../payment/payment.constant';
 import { USER_ROLE, USER_STATUS } from '../user/user.constant';
+import {
+  BOOKING_STATUS,
+  PAYMENT_STATUS as BOOKING_PAYMENT_STATUS,
+} from '../booking/booking.constant';
+import { Refund } from '../refund/refund.model';
+import { REFUND_STATUS } from '../refund/refund.constant';
 
 /**
  * Dashboard Meta Data Service
@@ -50,6 +56,36 @@ export const fetchDashboardMetaData = async (
       Booking.countDocuments({}),
     ]);
 
+  // ====================== CANCELLATIONS ======================
+  // Counted over real bookings only (the card was authorized or charged at some
+  // point); an abandoned unpaid booking is not a cancellation.
+  const realBooking = {
+    paymentStatus: { $nin: [BOOKING_PAYMENT_STATUS.pending, BOOKING_PAYMENT_STATUS.failed] },
+  };
+  const [cancelledBookings, completedBookings] = await Promise.all([
+    Booking.countDocuments({ ...realBooking, bookingStatus: BOOKING_STATUS.cancelled }),
+    Booking.countDocuments({ ...realBooking, bookingStatus: BOOKING_STATUS.completed }),
+  ]);
+  const finishedBookings = cancelledBookings + completedBookings;
+  const cancellationRate =
+    finishedBookings > 0
+      ? Math.round((cancelledBookings / finishedBookings) * 10000) / 100
+      : 0;
+
+  // ====================== REFUNDS ======================
+  // Payment has no refundAmount field, so the old `$sum: '$refundAmount'` on
+  // payments was always 0. Every refund creates a confirmed Refund document.
+  const sumRefunds = async (match: Record<string, unknown>) => {
+    const [row] = await Refund.aggregate([
+      { $match: { status: REFUND_STATUS.confirmed, ...match } },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+    ]);
+    return {
+      total: Math.round((row?.total || 0) * 100) / 100,
+      count: row?.count || 0,
+    };
+  };
+
   // ====================== FINANCIAL METRICS ======================
   const paymentPipeline = [
     {
@@ -65,7 +101,6 @@ export const fetchDashboardMetaData = async (
         totalEarning: { $sum: '$amount' },
         totalPlatformCommission: { $sum: '$platformCommission' },
         totalProviderEarning: { $sum: '$providerEarning' },
-        totalRefunded: { $sum: '$refundAmount' },
       },
     },
   ];
@@ -74,7 +109,7 @@ export const fetchDashboardMetaData = async (
 
   // ── Determine amount sorting direction: 'asc' vs 'desc' / 'dsc' ──
   // Issue 14: "recent" = most recently paid/refunded, not most recently booked.
-  let sortOption: Record<string, 1 | -1> = { updatedAt: -1 };
+  let sortOption: Record<string, 1 | -1> = { updatedAt: -1, _id: -1 };
 
   const rawAmountSort = String(
     amount_sort || sort_amount || (typeof amount === 'string' && isNaN(Number(amount)) ? amount : '') || ''
@@ -104,9 +139,9 @@ export const fetchDashboardMetaData = async (
     ((rawOrder === 'desc' || rawOrder === 'dsc') && (rawSort.includes('amount') || rawAmountSort === 'desc' || rawAmountSort === 'dsc'));
 
   if (isAsc) {
-    sortOption = { amount: 1, updatedAt: -1 };
+    sortOption = { amount: 1, updatedAt: -1, _id: -1 };
   } else if (isDesc) {
-    sortOption = { amount: -1, updatedAt: -1 };
+    sortOption = { amount: -1, updatedAt: -1, _id: -1 };
   }
 
   // ── Transaction Filter Criteria ──
@@ -158,7 +193,6 @@ export const fetchDashboardMetaData = async (
         _id: null,
         totalIncome: { $sum: '$amount' },
         totalPlatformCommission: { $sum: '$platformCommission' },
-        totalRefunded: { $sum: '$refundAmount' },
       },
     },
   ]);
@@ -166,8 +200,17 @@ export const fetchDashboardMetaData = async (
   const salesData = salesReport[0] || {
     totalIncome: 0,
     totalPlatformCommission: 0,
-    totalRefunded: 0,
   };
+
+  const [allTimeRefunds, yearRefunds] = await Promise.all([
+    sumRefunds({}),
+    sumRefunds({
+      createdAt: {
+        $gte: new Date(`${selectedYear}-01-01`),
+        $lte: new Date(`${selectedYear}-12-31T23:59:59.999Z`),
+      },
+    }),
+  ]);
 
   return {
     // Main Stats
@@ -180,12 +223,19 @@ export const fetchDashboardMetaData = async (
     totalEarning: financialData?.totalEarning || 0,
     totalPlatformCommission: financialData?.totalPlatformCommission || 0,
     totalProviderEarning: financialData?.totalProviderEarning || 0,
+    totalRefunded: allTimeRefunds.total,
+    totalRefundCount: allTimeRefunds.count,
+
+    // Cancellations (real bookings: paid or authorized at some point)
+    cancelledBookings,
+    completedBookings,
+    cancellationRate, // % of finished bookings (cancelled + completed) that were cancelled
 
     // Sales Report
     salesReport: {
       totalIncome: salesData.totalIncome,
       platformCommission: salesData.totalPlatformCommission,
-      refunded: salesData.totalRefunded,
+      refunded: yearRefunds.total,
       netIncome: Number(
         (
           (salesData.totalIncome || 0) -

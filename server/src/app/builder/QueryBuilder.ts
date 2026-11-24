@@ -107,7 +107,14 @@ class QueryBuilder<T> {
     if (['asc', 'ascending', '1'].includes(finalDir)) sort = 'createdAt'
     else if (['desc', 'descending', '-1'].includes(finalDir)) sort = '-createdAt'
 
-    this.modelQuery = this.modelQuery.sort(sort || '-createdAt')
+    // Tie-breaker: rows sharing the sort value (same createdAt) had no stable
+    // order, so pages repeated or skipped rows. _id follows the primary direction.
+    const sortFields = (sort || '-createdAt').split(/\s+/).filter(Boolean)
+    if (!sortFields.some((f) => f.replace(/^[-+]/, '') === '_id')) {
+      sortFields.push(sortFields[0].startsWith('-') ? '-_id' : '_id')
+    }
+
+    this.modelQuery = this.modelQuery.sort(sortFields.join(' '))
 
     return this
   }
