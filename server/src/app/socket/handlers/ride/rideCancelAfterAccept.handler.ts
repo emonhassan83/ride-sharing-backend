@@ -422,6 +422,10 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
           redis.del(`ride:active:${rideId}`),
           redis.zrem('ride:matching:queue', rideId),
         ]);
+        // The ride is cancelled, so anyone still on it (e.g. another passenger
+        // of the same rider, which the transfer skips) must be cancelled and
+        // refunded too. Before, they were left active on a cancelled ride.
+        await cancelRemainingPassengers(io, redis, ride, rideId, passenger._id);
 
         // ✅ Notify driver ──- only ride:cancelled-by-rider
         if (ride.driverId) {

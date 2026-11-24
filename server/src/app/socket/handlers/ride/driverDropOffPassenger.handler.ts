@@ -91,7 +91,7 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
       const transitioned = await Passenger.findOneAndUpdate(
         {
           _id: passenger._id,
-          status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
+          status: PASSENGER_STATUS.picked_up,
         },
         {
           $set: {
@@ -151,19 +151,43 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
       return { totalFare, distanceKm, durationSeconds };
     };
 
+    // Only a rider who was picked up (driver:pickup-ride, which enforces the
+    // start OTP) can be dropped off. `in_progress` only means the driver is on
+    // the way (driver:start-trip), so start-trip → drop-off → complete used to
+    // finish and charge a trip without the OTP ever being checked.
+    const NOT_YET_PICKED_UP = [
+      PASSENGER_STATUS.confirmed,
+      PASSENGER_STATUS.in_progress,
+      PASSENGER_STATUS.driver_arrived,
+    ];
+    const pickupRequired = (passenger: any) =>
+      callback?.({
+        success: false,
+        code: 'PICKUP_REQUIRED',
+        requiresOtp: true,
+        message: translateText('Pick up the passenger (with the ride start OTP) before drop-off'),
+        data: { rideId, passengerId: passenger._id },
+      });
+
     // PRIVATE RIDE
     if (ride.type === RIDE_TYPE.private) {
       const passenger = passengerId
         ? await Passenger.findOne({
             _id: passengerId,
             rideId,
-            status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
+            status: PASSENGER_STATUS.picked_up,
           })
         : await Passenger.findOne({
             rideId,
-            status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
+            status: PASSENGER_STATUS.picked_up,
           });
       if (!passenger) {
+        const waiting = await Passenger.findOne({
+          ...(passengerId ? { _id: passengerId } : {}),
+          rideId,
+          status: { $in: NOT_YET_PICKED_UP },
+        });
+        if (waiting) return pickupRequired(waiting);
         return callback?.({
           success: false,
           message: translateText('No picked up passenger found'),
@@ -191,9 +215,15 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
       const passenger = await Passenger.findOne({
         _id: passengerId,
         rideId,
-        status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
+        status: PASSENGER_STATUS.picked_up,
       });
       if (!passenger) {
+        const waiting = await Passenger.findOne({
+          _id: passengerId,
+          rideId,
+          status: { $in: NOT_YET_PICKED_UP },
+        });
+        if (waiting) return pickupRequired(waiting);
         return callback?.({
           success: false,
           message: translateText('Passenger not found or already dropped off'),
@@ -202,9 +232,10 @@ export const driverDropOffPassengerHandler = eventHandler<any>(
 
       const result = await dropOffPassenger(passenger);
 
+      // Riders still on this trip: on board, or not yet picked up.
       const remainingCount = await Passenger.countDocuments({
         rideId,
-        status: { $in: [PASSENGER_STATUS.picked_up, PASSENGER_STATUS.in_progress] },
+        status: { $in: [PASSENGER_STATUS.picked_up, ...NOT_YET_PICKED_UP] },
       });
 
       io.to(`driver:${driverId}`).emit('ride:passenger-dropped-off', {

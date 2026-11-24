@@ -663,7 +663,11 @@
     "passengerId is required for a ride with several passengers": "Для поїздки з кількома пасажирами потрібен passengerId",
     "You can rate a passenger only after the trip": "Оцінити пасажира можна лише після поїздки",
     "You have already rated this passenger": "Ви вже оцінили цього пасажира",
-    "Invalid role filter": "Недійсний фільтр ролі"
+    "Invalid role filter": "Недійсний фільтр ролі",
+    "Pick up the passenger (with the ride start OTP) before drop-off": "Спершу заберіть пасажира (з кодом OTP початку поїздки), потім висаджуйте",
+    "You have another ride at this time.": "У вас інша поїздка в цей час.",
+    "You can only change your own messages": "Ви можете змінювати лише власні повідомлення",
+    "You cannot send a message to yourself": "Не можна надіслати повідомлення самому собі"
   },
   "patterns": {
     "dropoff_fare": "Загальна вартість: €{{totalFare}} (Базова: €{{baseFare}} + Очікування: €{{waitingCharge}})",

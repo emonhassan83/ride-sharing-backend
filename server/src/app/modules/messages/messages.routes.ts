@@ -27,7 +27,12 @@ router.put(
   messagesController.updateMessages,
 )
 
-router.get('/my-messages/:chatId', messagesController.getMessagesByChatId)
+// Had no auth at all. Participants (and admins, for support) only.
+router.get(
+  '/my-messages/:chatId',
+  auth([USER_ROLE.provider, USER_ROLE.user, USER_ROLE.admin]),
+  messagesController.getMessagesByChatId,
+)
 
 router.delete(
   '/chat/:chatId',

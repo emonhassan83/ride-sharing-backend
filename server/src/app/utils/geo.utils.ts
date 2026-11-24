@@ -151,10 +151,12 @@ export async function hasDriverRideAtDateTime(
   requestedDate: string,
   requestedTime: string,
   rideType: string,
-  requestedSeats: number
+  requestedSeats: number,
+  excludeRideId?: string
 ): Promise<IDriverAvailability> {
   // Convert "HH:MM" to minutes since midnight
   const toMinutes = (t: string) => {
+    if (typeof t !== 'string') return NaN; // no comparison matches → treated as free
     const [h, m] = t.split(':').map(Number);
     return h * 60 + m;
   };
@@ -164,6 +166,7 @@ export async function hasDriverRideAtDateTime(
   // ── Find all active rides on same date ────────────────────────────────────
   const driverRides = await Ride.find({
     driverId,
+    ...(excludeRideId ? { _id: { $ne: excludeRideId } } : {}),
     departureDate: requestedDate,
     status: {
       $nin: [

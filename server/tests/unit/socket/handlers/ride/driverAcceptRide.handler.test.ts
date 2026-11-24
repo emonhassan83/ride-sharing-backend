@@ -47,6 +47,7 @@ vi.mock('@src/app/utils/splitFare.utils', () => ({
 import { Ride } from '@src/app/modules/ride/ride.model';
 import { User } from '@src/app/modules/user/user.model';
 import { Passenger } from '@src/app/modules/passenger/passenger.model';
+import { Vehicle } from '@src/app/modules/vehicle/vehicle.model';
 import { PaymentService } from '@src/app/modules/payment/payment.service';
 import { driverAcceptRideHandler } from '@src/app/socket/handlers/ride/driverAcceptRide.handler';
 import { getIO } from '@src/app/socket/socket.init';
@@ -112,5 +113,48 @@ describe('ISSUE 58: offline drivers cannot accept rides', () => {
     expect(ack).not.toHaveBeenCalledWith(
       expect.objectContaining({ message: 'You are offline. Go online to accept rides.' }),
     );
+  });
+});
+
+describe('busy rule (±60 min) at accept', () => {
+  const arrangeRide = (otherRideTime: string | null) => {
+    vi.mocked(Vehicle.findOne).mockReturnValue(
+      mockQuery({ _id: oidStr(), name: 'Car', number: 'ABC', seats: 4 }) as any,
+    );
+    vi.mocked(Ride.findById).mockReturnValue(
+      mockQuery({
+        _id: rideId,
+        type: 'private',
+        status: 'pending',
+        driverId: null,
+        departureDate: '2026-12-01',
+        departureTime: '10:00',
+      }) as any,
+    );
+    // hasDriverRideAtDateTime: the driver's other rides that day.
+    vi.mocked(Ride.find).mockReturnValue(
+      mockQuery(
+        otherRideTime
+          ? [{ _id: oidStr(), type: 'private', departureTime: otherRideTime, status: 'accepted' }]
+          : [],
+      ) as any,
+    );
+  };
+
+  it('refuses a ride 30 min after another accepted ride with DRIVER_BUSY', async () => {
+    arrangeRide('09:30');
+    const { ack } = await accept(true);
+
+    expect(ack).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false, code: 'DRIVER_BUSY' }),
+    );
+    expect(Ride.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not block when the other ride is 2 hours away', async () => {
+    arrangeRide('12:00');
+    const { ack } = await accept(true);
+
+    expect(ack).not.toHaveBeenCalledWith(expect.objectContaining({ code: 'DRIVER_BUSY' }));
   });
 });

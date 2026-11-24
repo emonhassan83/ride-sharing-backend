@@ -157,6 +157,62 @@ const getAllUsersFromDB = async (query: Record<string, unknown>) => {
   return { meta, result };
 };
 
+/** True when one of the two drove a ride the other was a passenger on. */
+const sharesRide = async (userA: string, userB: string): Promise<boolean> => {
+  const ids = [userA, userB].filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (ids.length !== 2) return false;
+  const [a, b] = ids.map((id) => new mongoose.Types.ObjectId(id));
+  const [drivenByA, drivenByB] = await Promise.all([
+    Ride.find({ driverId: a }).distinct('_id'),
+    Ride.find({ driverId: b }).distinct('_id'),
+  ]);
+  if (!drivenByA.length && !drivenByB.length) return false;
+  const shared = await Passenger.exists({
+    $or: [
+      { userId: b, rideId: { $in: drivenByA } },
+      { userId: a, rideId: { $in: drivenByB } },
+    ],
+  });
+  return !!shared;
+};
+
+/** What another user may see: identity, rating, vehicle, never documents/money. */
+const buildPublicProfile = async (user: any, requesterId: string) => {
+  const isProvider = user.role === USER_ROLE.provider;
+  const canSeePhone = await sharesRide(String(user._id), String(requesterId));
+
+  const profile: Record<string, unknown> = {
+    _id: user._id,
+    id: user.id,
+    name: user.name,
+    profileImage: user.profileImage,
+    role: user.role,
+    type: user.type,
+    gender: user.gender,
+    language: user.language,
+    avgRating: user.avgRating ?? 0,
+    totalRating: user.totalRating ?? 0,
+    isOnline: user.isOnline,
+    createdAt: user.createdAt,
+    ...(canSeePhone && { phone: user.phone, countryCode: user.countryCode }),
+  };
+
+  if (isProvider) {
+    const driverObjectId = new mongoose.Types.ObjectId(String(user._id));
+    const [vehicles, completedRides] = await Promise.all([
+      Vehicle.find({ userId: driverObjectId, isDeleted: false })
+        .select('name number year seats isDefault')
+        .lean(),
+      Ride.countDocuments({ driverId: driverObjectId, status: RIDE_STATUS.completed }),
+    ]);
+    profile.vehicles = vehicles;
+    profile.completedRides = completedRides;
+    profile.isKycVerified = !!user.isKycVerified;
+  }
+
+  return profile;
+};
+
 const getSingleUser = async (
   userId: string,
   requester?: { userId: string; role: string },
@@ -166,6 +222,18 @@ const getSingleUser = async (
     .lean();
   if (!result || result.isDeleted)
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+
+  // Any logged-in user can open any profile (a rider viewing their driver), but
+  // this used to return the whole user + provider documents to everyone: email,
+  // wallet, Stripe ids, FCM token, IBAN, ID card and licence images, earnings.
+  // Only the admin and the user themselves get the full profile.
+  const isPrivileged =
+    !requester ||
+    requester.role === USER_ROLE.admin ||
+    String(requester.userId) === String(userId);
+  if (!isPrivileged) {
+    return buildPublicProfile(result, requester!.userId) as any;
+  }
 
   // ── Unread notification count (Redis-backed) ──────────────────────────────
   let unreadCount = await getUnreadCount(userId);

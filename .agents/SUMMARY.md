@@ -1,3 +1,26 @@
+Date/Session: 2026-11-24 (website/admin report: OTP bypass, chat access, busy rule at accept)
+
+Completed Tasks:
+- OTP bypass: `driver:start-trip` is "driver on the way" (B-20), so it stays without OTP. The hole was `driver:drop-off-passenger` accepting `in_progress`: start-trip → drop-off → complete charged a trip with no OTP. Drop-off now needs `picked_up` (set only by `driver:pickup-ride`, which enforces the OTP). A not-yet-picked-up rider gets `code: PICKUP_REQUIRED, requiresOtp: true`. The split `remainingPassengers` now also counts confirmed/driver_arrived riders. Test: `driverDropOffPassenger.otp.test.ts`.
+- Messages module: `GET /message/my-messages/:chatId` had no auth. It is now participants plus admin. GET/PUT/DELETE `/message/:id`: participant read, sender-only edit (text only) and delete. `DELETE /message/chat/:chatId` and `PATCH /seen/:chatId`: participants only. `POST /send-messages` takes the sender from the token (it was `req.body.sender`), and sending to yourself → 400. `seen` emitted both chat lists with `io.emit` (to every socket); it now goes only to the two user rooms. Test: `tests/unit/modules/messages/message.access.test.ts`.
+- `driver:accept-ride`: the ±60 min busy rule (`hasDriverRideAtDateTime`, new optional `excludeRideId`) on first accept → `code: DRIVER_BUSY`. Not unit-tested in the accept handler.
+- `rideCancelAfterAccept`: creator cancels + transfer fails → `cancelRemainingPassengers` (riders left on a cancelled ride were not refunded).
+- 4 new messages in all 5 locales.
+- `GET /user/:userId`: other users (not admin, not self) now get a public profile only: name, photo, role, type, gender, language, rating, isOnline, createdAt; for drivers also vehicles (no carPapers), completedRides, isKycVerified. `phone`/`countryCode` only when the two share a ride (`sharesRide`). It used to return the full user + provider docs (email, wallet, Stripe ids, FCM token, IBAN, ID/licence images, earnings). Test: `user.publicProfile.test.ts`. The DRIVER_BUSY accept path is now tested too. 1205 unit tests pass.
+- Scripts (dry run by default, `--apply` to write): `server/scripts/releaseOrphanHolds.ts` and `server/scripts/backfillSplitProviderEarning.ts`. Dry runs against the dev DB (read-only, Stripe test key):
+  - SR-6707273707: its hold was already released by the no-driver job (Stripe `canceled`); only Passenger.paymentStatus still says authorized.
+  - 6 bookings cancelled by the old auto-cancel bug. 4 are `canceled` in Stripe (DB stale). **2 were CAPTURED (Stripe `succeeded`) while DB says authorized: SR-6833591637 €20 and SR-6802214855 €20.** The script never touches captured ones; they need a refund decision.
+  - Backfill: 25 completed split rides whose payments still show €0.
+
+Next Steps:
+- Run both scripts with `--apply` (user approval needed; dev and prod share the DB).
+- Decide on refunds for SR-6833591637 / SR-6802214855, and why the DB never recorded the capture.
+- Chat message list order (page 1 = oldest): waiting for the app developer.
+- Before vs after accept split rules differ (after accept, 1 remaining rider → ride cancelled): product call.
+- Infra: dev and prod share one MongoDB; servers run with NODE_ENV=development (stack traces); prod is old. Backfill providerEarning for split payments completed before B-06.
+
+---
+
 Date/Session: 2026-11-24 (admin dashboard list: sort, role filter, admin rides, KYC reject, meta)
 
 Completed Tasks:

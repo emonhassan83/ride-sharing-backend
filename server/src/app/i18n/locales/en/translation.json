@@ -663,7 +663,11 @@
     "passengerId is required for a ride with several passengers": "passengerId is required for a ride with several passengers",
     "You can rate a passenger only after the trip": "You can rate a passenger only after the trip",
     "You have already rated this passenger": "You have already rated this passenger",
-    "Invalid role filter": "Invalid role filter"
+    "Invalid role filter": "Invalid role filter",
+    "Pick up the passenger (with the ride start OTP) before drop-off": "Pick up the passenger (with the ride start OTP) before drop-off",
+    "You have another ride at this time.": "You have another ride at this time.",
+    "You can only change your own messages": "You can only change your own messages",
+    "You cannot send a message to yourself": "You cannot send a message to yourself"
   },
   "patterns": {
     "dropoff_fare": "Total fare: €{{totalFare}} (Base: €{{baseFare}} + Waiting: €{{waitingCharge}})",

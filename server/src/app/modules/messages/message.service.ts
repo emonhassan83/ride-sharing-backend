@@ -13,6 +13,61 @@ import {
   isUserActiveInChat,
 } from '../../queues/chatPush.queue'
 
+export type TMessageRequester = { userId: string; role?: string }
+
+const isAdmin = (requester: TMessageRequester) => requester.role === 'admin'
+
+/** The chat, if the requester is one of its participants (or an admin). */
+const getChatForParticipant = async (
+  chatId: string,
+  requester: TMessageRequester,
+  { allowAdmin = false } = {},
+) => {
+  if (!mongoose.Types.ObjectId.isValid(String(chatId))) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Chat not found')
+  }
+  const chat = await Chat.findById(chatId)
+  if (!chat) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Chat not found')
+  }
+  const isParticipant = (chat.participants || []).some(
+    (p: any) => String(p?._id ?? p) === String(requester.userId),
+  )
+  if (!isParticipant && !(allowAdmin && isAdmin(requester))) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'You are not a participant of this chat')
+  }
+  return chat
+}
+
+/** The message, if the requester sent it (or, with `participant`, is in its chat). */
+const getMessageForRequester = async (
+  id: string,
+  requester: TMessageRequester,
+  access: 'sender' | 'participant',
+) => {
+  if (!mongoose.Types.ObjectId.isValid(String(id))) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Oops! Message not found')
+  }
+  const message = await Message.findById(id)
+  if (!message) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Oops! Message not found')
+  }
+  const uid = String(requester.userId)
+  const isSender = String(message.sender) === uid
+  const isReceiver = String(message.receiver) === uid
+  const allowed =
+    access === 'sender' ? isSender : isSender || isReceiver || isAdmin(requester)
+  if (!allowed) {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      access === 'sender'
+        ? 'You can only change your own messages'
+        : 'You are not a participant of this chat',
+    )
+  }
+  return message
+}
+
 const createMessages = async (payload: TMessages) => {
   const alreadyExists = await Chat.findOne({
     participants: { $all: [payload.sender, payload.receiver] },
@@ -125,9 +180,22 @@ const getAllMessages = async (query: Record<string, any>) => {
   }
 }
 
-// Update messages
-const updateMessages = async (id: string, payload: Partial<TMessages>) => {
-  const result = await Message.findByIdAndUpdate(id, payload, { returnDocument: 'after' })
+// Update messages: only the sender, and only the text (the whole body used to
+// be written, so anyone could rewrite sender/receiver/chat of any message).
+const updateMessages = async (
+  id: string,
+  payload: Partial<TMessages>,
+  requester: TMessageRequester,
+) => {
+  await getMessageForRequester(id, requester, 'sender')
+  if (typeof payload.text !== 'string') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'text is required')
+  }
+  const result = await Message.findByIdAndUpdate(
+    id,
+    { $set: { text: payload.text, isEdited: true } },
+    { returnDocument: 'after' },
+  )
   if (!result) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Message update failed')
   }
@@ -138,11 +206,10 @@ const updateMessages = async (id: string, payload: Partial<TMessages>) => {
 const getMessagesByChatId = async (
   chatId: string,
   query: Record<string, any>,
+  requester: TMessageRequester,
 ) => {
-  const chat = await Chat.findById(chatId)
-  if (!chat) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Chat not found')
-  }
+  // This route had no auth at all: any chatId read the whole conversation.
+  const chat = await getChatForParticipant(chatId, requester, { allowAdmin: true })
 
   const messageQuery = new QueryBuilder(
     Message.find({ chat: chat._id })
@@ -165,7 +232,8 @@ const getMessagesByChatId = async (
 }
 
 // Get message by ID
-const getMessagesById = async (id: string) => {
+const getMessagesById = async (id: string, requester: TMessageRequester) => {
+  await getMessageForRequester(id, requester, 'participant')
   const result = await Message.findById(id).populate([
     { path: 'sender', select: 'name profileImage _id' },
   ])
@@ -175,11 +243,8 @@ const getMessagesById = async (id: string) => {
   return result
 }
 
-const deleteMessages = async (id: string) => {
-  const message = await Message.findById(id)
-  if (!message) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Oops! Message not found')
-  }
+const deleteMessages = async (id: string, requester: TMessageRequester) => {
+  await getMessageForRequester(id, requester, 'sender')
 
   const result = await Message.findByIdAndDelete(id)
   if (!result) {
@@ -218,7 +283,8 @@ const seenMessage = async (userId: string, chatId: string) => {
   return updateMessages
 }
 
-const deleteMessagesByChatId = async (chatId: string) => {
+const deleteMessagesByChatId = async (chatId: string, requester: TMessageRequester) => {
+  await getChatForParticipant(chatId, requester)
   const session = await mongoose.startSession()
   session.startTransaction()
 
@@ -253,4 +319,5 @@ export const messagesService = {
   deleteMessages,
   seenMessage,
   deleteMessagesByChatId,
+  getChatForParticipant,
 }

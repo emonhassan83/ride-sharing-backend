@@ -663,7 +663,11 @@
     "passengerId is required for a ride with several passengers": "נדרש passengerId לנסיעה עם כמה נוסעים",
     "You can rate a passenger only after the trip": "ניתן לדרג נוסע רק לאחר הנסיעה",
     "You have already rated this passenger": "כבר דירגת את הנוסע הזה",
-    "Invalid role filter": "מסנן תפקיד לא תקין"
+    "Invalid role filter": "מסנן תפקיד לא תקין",
+    "Pick up the passenger (with the ride start OTP) before drop-off": "יש לאסוף את הנוסע (עם קוד OTP לתחילת הנסיעה) לפני ההורדה",
+    "You have another ride at this time.": "יש לך נסיעה אחרת בשעה זו.",
+    "You can only change your own messages": "ניתן לשנות רק הודעות שלך",
+    "You cannot send a message to yourself": "לא ניתן לשלוח הודעה לעצמך"
   },
   "patterns": {
     "dropoff_fare": "סה\"כ תעריף: €{{totalFare}} (בסיס: €{{baseFare}} + המתנה: €{{waitingCharge}})",

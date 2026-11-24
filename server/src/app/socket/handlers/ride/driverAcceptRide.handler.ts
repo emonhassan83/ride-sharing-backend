@@ -11,6 +11,7 @@ import { Ride } from '../../../modules/ride/ride.model';
 import { Vehicle } from '../../../modules/vehicle/vehicle.model';
 import { User } from '../../../modules/user/user.model';
 import { getRealDistanceAndETA } from '../../../utils/maps.utils';
+import { hasDriverRideAtDateTime } from '../../../utils/geo.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import onlineUsers from '../../utils/onlineUsers';
@@ -263,6 +264,28 @@ export const driverAcceptRideHandler = eventHandler<any>(
         success: false,
         message: 'This ride has already been accepted by another driver.',
       });
+    }
+
+    // Busy rule (±60 min), first accept only. It was enforced when choosing
+    // which drivers to notify, but a driver who had already received the
+    // request (or re-notify) could still accept two overlapping rides.
+    if (!ride.driverId && ride.departureDate && ride.departureTime) {
+      const availability = await hasDriverRideAtDateTime(
+        driverId,
+        ride.departureDate,
+        ride.departureTime,
+        ride.type,
+        1,
+        ride._id.toString(),
+      );
+      if (!availability.available) {
+        return callback?.({
+          success: false,
+          code: 'DRIVER_BUSY',
+          message: 'You have another ride at this time.',
+          data: { reason: availability.reason },
+        });
+      }
     }
 
     socket.join(`ride:${rideId}`);

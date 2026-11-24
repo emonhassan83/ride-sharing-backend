@@ -4,13 +4,22 @@ import { messagesService } from './message.service'
 import sendResponse from '../../utils/sendResponse'
 import httpStatus from 'http-status'
 import { TChat } from '../chat/chat.interface'
-import { Chat } from '../chat/chat.models'
 import { chatService } from '../chat/chat.service'
 import { getIO } from '../../socket/socket.init'
 import ApiError from '../../errors/ApiError'
 
+const requesterOf = (req: Request) => ({ userId: req.user.userId, role: req.user.role })
+
 const createMessages = catchAsync(async (req: Request, res: Response) => {
-  const result = await messagesService.createMessages(req.body)
+  // The sender is the logged-in user, never a body field (anyone could post as
+  // anyone by sending another user's id as `sender`).
+  if (String(req.body?.receiver) === String(req.user.userId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'You cannot send a message to yourself')
+  }
+  const result = await messagesService.createMessages({
+    ...req.body,
+    sender: req.user.userId,
+  })
 
   sendResponse(res, {
     code: 200,
@@ -21,7 +30,11 @@ const createMessages = catchAsync(async (req: Request, res: Response) => {
 
 // Get messages by chat ID
 const getMessagesByChatId = catchAsync(async (req: Request, res: Response) => {
-  const result = await messagesService.getMessagesByChatId(req.params.chatId as string, req.query)
+  const result = await messagesService.getMessagesByChatId(
+    req.params.chatId as string,
+    req.query,
+    requesterOf(req),
+  )
 
   sendResponse(res, {
     code: 200,
@@ -33,7 +46,7 @@ const getMessagesByChatId = catchAsync(async (req: Request, res: Response) => {
 
 // Get message by ID
 const getMessagesById = catchAsync(async (req: Request, res: Response) => {
-  const result = await messagesService.getMessagesById(req.params.id as string)
+  const result = await messagesService.getMessagesById(req.params.id as string, requesterOf(req))
 
   sendResponse(res, {
     code: 200,
@@ -44,7 +57,7 @@ const getMessagesById = catchAsync(async (req: Request, res: Response) => {
 
 // Update message
 const updateMessages = catchAsync(async (req: Request, res: Response) => {
-  const result = await messagesService.updateMessages(req.params.id as string, req.body)
+  const result = await messagesService.updateMessages(req.params.id as string, req.body, requesterOf(req))
 
   sendResponse(res, {
     code: 200,
@@ -55,10 +68,10 @@ const updateMessages = catchAsync(async (req: Request, res: Response) => {
 
 //seen messages
 const seenMessage = catchAsync(async (req: Request, res: Response) => {
-  const chatList: TChat | null = await Chat.findById(req.params.chatId)
-  if (!chatList) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'chat id is not valid')
-  }
+  const chatList: TChat = await messagesService.getChatForParticipant(
+    req.params.chatId as string,
+    requesterOf(req),
+  )
 
   const result = await messagesService.seenMessage(
     req.user.userId,
@@ -76,9 +89,10 @@ const seenMessage = catchAsync(async (req: Request, res: Response) => {
 
   const user2Chat = 'chat-list::' + user2
 
+  // To the two users only: io.emit broadcast both chat lists to every socket.
   const io = getIO()
-  io.emit(user1Chat, ChatListUser1)
-  io.emit(user2Chat, ChatListUser2)
+  io.to(user1.toString()).emit(user1Chat, ChatListUser1)
+  io.to(user2.toString()).emit(user2Chat, ChatListUser2)
 
   sendResponse(res, {
     code: 200,
@@ -89,7 +103,7 @@ const seenMessage = catchAsync(async (req: Request, res: Response) => {
 
 // Delete message
 const deleteMessages = catchAsync(async (req: Request, res: Response) => {
-  const result = await messagesService.deleteMessages(req.params.id as string)
+  const result = await messagesService.deleteMessages(req.params.id as string, requesterOf(req))
   sendResponse(res, {
     code: 200,
     message: 'Message deleted successfully',
@@ -99,7 +113,7 @@ const deleteMessages = catchAsync(async (req: Request, res: Response) => {
 
 // delete messages by chat ID
 const deleteMessagesByChatId = catchAsync(async (req: Request, res: Response) => {
-  const result = await messagesService.deleteMessagesByChatId(req.params.chatId as string)
+  const result = await messagesService.deleteMessagesByChatId(req.params.chatId as string, requesterOf(req))
 
   sendResponse(res, {
     code: 200,

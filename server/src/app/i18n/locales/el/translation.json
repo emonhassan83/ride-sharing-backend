@@ -663,7 +663,11 @@
     "passengerId is required for a ride with several passengers": "Το passengerId απαιτείται για διαδρομή με πολλούς επιβάτες",
     "You can rate a passenger only after the trip": "Μπορείτε να αξιολογήσετε έναν επιβάτη μόνο μετά τη διαδρομή",
     "You have already rated this passenger": "Έχετε ήδη αξιολογήσει αυτόν τον επιβάτη",
-    "Invalid role filter": "Μη έγκυρο φίλτρο ρόλου"
+    "Invalid role filter": "Μη έγκυρο φίλτρο ρόλου",
+    "Pick up the passenger (with the ride start OTP) before drop-off": "Παραλάβετε τον επιβάτη (με τον κωδικό OTP έναρξης διαδρομής) πριν από την αποβίβαση",
+    "You have another ride at this time.": "Έχετε άλλη διαδρομή αυτή την ώρα.",
+    "You can only change your own messages": "Μπορείτε να αλλάξετε μόνο τα δικά σας μηνύματα",
+    "You cannot send a message to yourself": "Δεν μπορείτε να στείλετε μήνυμα στον εαυτό σας"
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",
