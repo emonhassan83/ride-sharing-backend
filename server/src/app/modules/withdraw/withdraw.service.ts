@@ -294,16 +294,21 @@ const getMyWithdrawsFromDB = async (
     .sort((a: any, b: any) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime());
 
   const earnings = allEarnings.filter((item: any) => {
-    const reportDate = item.reportDate;
+    if (!start && !end) return true;
+    if (!item.reportDate) return false;
+    const reportDate = new Date(item.reportDate);
     if (start && reportDate < start) return false;
     if (end && reportDate > end) return false;
     return true;
   });
 
+  const sumEarnings = (items: any[]) =>
+    Math.round(items.reduce((sum, item) => sum + (item.amountEarned || 0), 0) * 100) / 100;
+
   const total = earnings.length;
-  const totalEarnings = Math.round(
-    allEarnings.reduce((sum, item) => sum + (item.amountEarned || 0), 0) * 100
-  ) / 100;
+  // B-06: totalEarnings follows the selected filter (today/week/month/...), same as the list.
+  const totalEarnings = sumEarnings(earnings);
+  const lifetimeEarnings = sumEarnings(allEarnings);
   const completedRideCount = new Set(earnings.map((item) => item.rideId)).size;
   const earningsList = earnings
     .slice(skip, skip + limit)
@@ -319,6 +324,7 @@ const getMyWithdrawsFromDB = async (
     result: {
       walletBalance: user.wallet ?? 0,
       totalEarnings,
+      lifetimeEarnings,
       completedRideCount,
       earningsList,
     },
