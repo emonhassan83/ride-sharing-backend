@@ -165,3 +165,13 @@ export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
     await releaseNotificationSlot(slot);
   }
 }
+
+/**
+ * Fire-and-forget push for socket handlers: FCM retries can take seconds, so a
+ * handler must never hold its ack on them. Socket emits stay the caller's job.
+ */
+export function notifyUserPushInBackground(input: NotifyUserInput): void {
+  notifyUserPush(input).catch((error) =>
+    console.error(`notifyUserPush (background) failed for user ${input.userId}:`, error),
+  );
+}

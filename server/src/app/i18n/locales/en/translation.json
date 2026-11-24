@@ -656,7 +656,13 @@
     "Failed to update refund status": "Failed to update refund status",
     "Invalid ID format": "Invalid ID format",
     "Refresh token is required": "Refresh token is required",
-    "Invalid or expired refresh token. Please log in again.": "Invalid or expired refresh token. Please log in again."
+    "Invalid or expired refresh token. Please log in again.": "Invalid or expired refresh token. Please log in again.",
+    "Invalid ride status filter": "Invalid ride status filter",
+    "Invalid ride or passenger id": "Invalid ride or passenger id",
+    "Passenger not found on this ride": "Passenger not found on this ride",
+    "passengerId is required for a ride with several passengers": "passengerId is required for a ride with several passengers",
+    "You can rate a passenger only after the trip": "You can rate a passenger only after the trip",
+    "You have already rated this passenger": "You have already rated this passenger"
   },
   "patterns": {
     "dropoff_fare": "Total fare: €{{totalFare}} (Base: €{{baseFare}} + Waiting: €{{waitingCharge}})",

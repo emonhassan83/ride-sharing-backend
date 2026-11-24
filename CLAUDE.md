@@ -36,7 +36,7 @@ docker-compose --profile tools up -d redis-ui   # Redis Commander on :8081
 
 Redis from docker-compose is exposed on host port **6380** with password `myStrongRedisPassword`.
 
-There is no test suite (`npm test` is a stub), and neither package has an ESLint config file, so the lint scripts don't work. The server's `lint:fix` script also calls a nonexistent `lint` binary. Treat `npx tsc --noEmit` as the gate. For manual verification, `docs/TESTING_WORKFLOW.md` prescribes throwaway scripts such as `server/src/test_scratch.ts`, run with `npx ts-node`, then deleted before committing.
+The server has a vitest suite in `server/tests/` (`npm test` for unit tests, `npm run test:types`, and `npm run test:integration`). Unit tests mock modules with `vi.mock` factories, so a new export from a mocked module (such as `notifyUser.utils`) must be added to those factories. The worker has no tests. Neither package has an ESLint config file, so the lint scripts don't work. The server's `lint:fix` script also calls a nonexistent `lint` binary. Treat `npx tsc --noEmit` plus `npm test` as the gate. For manual verification, `docs/TESTING_WORKFLOW.md` prescribes throwaway scripts such as `server/src/test_scratch.ts`, run with `npx ts-node`, then deleted before committing.
 
 ## Server architecture
 

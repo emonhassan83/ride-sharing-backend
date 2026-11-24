@@ -656,7 +656,13 @@
     "Failed to update refund status": "Αποτυχία ενημέρωσης της κατάστασης επιστροφής χρημάτων",
     "Invalid ID format": "Μη έγκυρη μορφή αναγνωριστικού",
     "Refresh token is required": "Απαιτείται το refresh token",
-    "Invalid or expired refresh token. Please log in again.": "Μη έγκυρο ή ληγμένο refresh token. Συνδεθείτε ξανά."
+    "Invalid or expired refresh token. Please log in again.": "Μη έγκυρο ή ληγμένο refresh token. Συνδεθείτε ξανά.",
+    "Invalid ride status filter": "Μη έγκυρο φίλτρο κατάστασης διαδρομής",
+    "Invalid ride or passenger id": "Μη έγκυρο αναγνωριστικό διαδρομής ή επιβάτη",
+    "Passenger not found on this ride": "Ο επιβάτης δεν βρέθηκε σε αυτή τη διαδρομή",
+    "passengerId is required for a ride with several passengers": "Το passengerId απαιτείται για διαδρομή με πολλούς επιβάτες",
+    "You can rate a passenger only after the trip": "Μπορείτε να αξιολογήσετε έναν επιβάτη μόνο μετά τη διαδρομή",
+    "You have already rated this passenger": "Έχετε ήδη αξιολογήσει αυτόν τον επιβάτη"
   },
   "patterns": {
     "dropoff_fare": "Συνολικό κόμιστρο: €{{totalFare}} (Βασικό: €{{baseFare}} + Αναμονή: €{{waitingCharge}})",

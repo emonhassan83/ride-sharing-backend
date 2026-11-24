@@ -1,5 +1,27 @@
 import { Types, Query } from 'mongoose'
 
+// Special / range / pagination params: never document paths, never sort fields.
+const NON_FIELD_PARAMS = [
+  'searchTerm',
+  'sort',
+  'order',
+  'limit',
+  'page',
+  'fields',
+  'minAmount',
+  'maxAmount',
+  'dateFrom',
+  'dateTo',
+  'role', // often a related-user filter, not a document field
+]
+
+// `?amount=asc` style shorthand. Words only: `1` / `-1` are ordinary filter
+// values (`?page=1` used to sort by a nonexistent "page" field, and
+// `?rating=1` was silently dropped as a filter).
+const SHORTHAND_DIRECTIONS = ['asc', 'desc', 'ascending', 'descending']
+const isShorthandDirection = (value: unknown): value is string =>
+  typeof value === 'string' && SHORTHAND_DIRECTIONS.includes(value.toLowerCase())
+
 class QueryBuilder<T> {
   public modelQuery: Query<T[], T>
   public query: Record<string, unknown>
@@ -24,34 +46,16 @@ class QueryBuilder<T> {
   filter() {
     const queryObj = { ...this.query }
 
-    // Remove special / range / pagination fields (not direct document paths)
-    const excludeFields = [
-      'searchTerm',
-      'sort',
-      'order',
-      'limit',
-      'page',
-      'fields',
-      'minAmount',
-      'maxAmount',
-      'dateFrom',
-      'dateTo',
-      'role', // often a related-user filter, not a document field
-    ]
-    excludeFields.forEach((el) => delete queryObj[el])
+    NON_FIELD_PARAMS.forEach((el) => delete queryObj[el])
 
     // Drop empty values + sort shorthands like amount=asc / createdAt=desc
     Object.keys(queryObj).forEach((key) => {
       const value = queryObj[key]
-      if (value === '' || value === undefined || value === null) {
-        delete queryObj[key]
-        return
-      }
       if (
-        typeof value === 'string' &&
-        ['asc', 'desc', 'ascending', 'descending', '1', '-1'].includes(
-          value.toLowerCase(),
-        )
+        value === '' ||
+        value === undefined ||
+        value === null ||
+        isShorthandDirection(value)
       ) {
         delete queryObj[key]
       }
@@ -87,27 +91,15 @@ class QueryBuilder<T> {
     ) {
       const parts: string[] = []
       for (const [key, value] of Object.entries(this.query || {})) {
-        if (key === 'sort' || key === 'order') continue
-        if (
-          typeof value === 'string' &&
-          ['asc', 'desc', 'ascending', 'descending', '1', '-1'].includes(
-            value.toLowerCase(),
-          )
-        ) {
-          const dir = ['desc', 'descending', '-1'].includes(value.toLowerCase())
+        if (NON_FIELD_PARAMS.includes(key)) continue
+        if (isShorthandDirection(value)) {
+          const dir = ['desc', 'descending'].includes(value.toLowerCase())
             ? '-'
             : ''
           parts.push(`${dir}${key}`)
         }
       }
       if (parts.length) sort = parts.join(' ')
-      else if (
-        ['asc', 'desc', 'ascending', 'descending', '1', '-1'].includes(
-          String(sort).toLowerCase(),
-        )
-      ) {
-        // already mapped above; keep
-      }
     }
 
     // Final normalize if still direction-only

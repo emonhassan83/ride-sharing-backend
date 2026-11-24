@@ -29,18 +29,20 @@ export const pickUpRideHandler = eventHandler<any>(
     if (!driverId || !rideId) {
       return callback?.({
         success: false,
+        code: 'MISSING_FIELDS',
         message: 'Missing required fields: rideId',
       });
     }
 
     const ride = await Ride.findById(rideId);
     if (!ride) {
-      return callback?.({ success: false, message: 'Ride not found' });
+      return callback?.({ success: false, code: 'RIDE_NOT_FOUND', message: 'Ride not found' });
     }
 
     if (ride.driverId?.toString() !== driverId) {
       return callback?.({
         success: false,
+        code: 'NOT_ASSIGNED_DRIVER',
         message: 'You are not assigned to this ride',
       });
     }
@@ -51,7 +53,9 @@ export const pickUpRideHandler = eventHandler<any>(
     ) {
       return callback?.({
         success: false,
+        code: 'INVALID_RIDE_STATUS',
         message: `Cannot pick up passenger when ride status is ${ride.status}`,
+        data: { rideStatus: ride.status },
       });
     }
 
@@ -90,6 +94,7 @@ export const pickUpRideHandler = eventHandler<any>(
     if (!passengers.length) {
       return callback?.({
         success: false,
+        code: 'NO_ACTIVE_PASSENGER',
         message: 'No active passenger found to pick up',
       });
     }
@@ -107,6 +112,7 @@ export const pickUpRideHandler = eventHandler<any>(
       } catch (otpErr: any) {
         return callback?.({
           success: false,
+          code: 'INVALID_OTP',
           requiresOtp: true,
           message:
             otpErr?.message ||
@@ -135,6 +141,7 @@ export const pickUpRideHandler = eventHandler<any>(
 
         return callback?.({
           success: false,
+          code: 'OTP_REQUIRED',
           requiresOtp: true,
           message:
             'Passenger OTP authorization is required before pickup. An OTP has been sent to the passenger via notification and email.',

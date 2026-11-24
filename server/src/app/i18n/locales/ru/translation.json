@@ -656,7 +656,13 @@
     "Failed to update refund status": "Не удалось обновить статус возврата",
     "Invalid ID format": "Неверный формат идентификатора",
     "Refresh token is required": "Требуется токен обновления",
-    "Invalid or expired refresh token. Please log in again.": "Недействительный или просроченный токен обновления. Войдите снова."
+    "Invalid or expired refresh token. Please log in again.": "Недействительный или просроченный токен обновления. Войдите снова.",
+    "Invalid ride status filter": "Недопустимый фильтр статуса поездки",
+    "Invalid ride or passenger id": "Недопустимый идентификатор поездки или пассажира",
+    "Passenger not found on this ride": "Пассажир не найден в этой поездке",
+    "passengerId is required for a ride with several passengers": "Для поездки с несколькими пассажирами требуется passengerId",
+    "You can rate a passenger only after the trip": "Оценить пассажира можно только после поездки",
+    "You have already rated this passenger": "Вы уже оценили этого пассажира"
   },
   "patterns": {
     "dropoff_fare": "Итоговая стоимость: €{{totalFare}} (Базовая: €{{baseFare}} + Ожидание: €{{waitingCharge}})",

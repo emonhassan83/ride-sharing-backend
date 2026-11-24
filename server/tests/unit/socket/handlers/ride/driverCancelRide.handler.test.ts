@@ -36,7 +36,11 @@ vi.mock('@src/app/modules/user/user.model', async () => {
 vi.mock('@src/app/modules/payment/payment.service', () => ({
   PaymentService: { cancelAuthorizedBookingPayment: vi.fn() },
 }));
-vi.mock('@src/app/utils/notifyUser.utils', () => ({ notifyUserPush: vi.fn() }));
+vi.mock('@src/app/utils/notifyUser.utils', () => {
+  const notifyUserPush = vi.fn();
+  // Handlers push in the background; route it to the same spy.
+  return { notifyUserPush, notifyUserPushInBackground: (input: any) => notifyUserPush(input) };
+});
 vi.mock('@src/app/utils/splitFare.utils', () => ({ refundToWallet: vi.fn() }));
 vi.mock('@src/app/socket/socket.init', () => ({ getIO: vi.fn() }));
 

@@ -22,7 +22,7 @@ import { revertDriverEarningIfCredited } from '../../../utils/driverEarning.util
 import { Payment } from '../../../modules/payment/payment.model';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { modeType } from '../../../modules/notification/notification.interface';
-import { notifyUserPush } from '../../../utils/notifyUser.utils';
+import { notifyUserPushInBackground } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
@@ -131,7 +131,7 @@ const cancelBookingWithRefund = async (
       message: notifyMessage,
     });
 
-    await notifyUserPush({
+    notifyUserPushInBackground({
       userId,
       message: 'Ride Cancelled by Driver',
       description: notifyMessage,
@@ -426,7 +426,7 @@ export const driverCancelRideHandler = eventHandler<any>(
             message: 'A passenger has been removed by the driver.',
           });
 
-          await notifyUserPush({
+          notifyUserPushInBackground({
             userId,
             message: 'Passenger Removed',
             description:

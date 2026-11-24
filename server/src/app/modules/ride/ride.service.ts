@@ -415,7 +415,12 @@ const resolveRideStatusesFromQuery = (rawStatus: unknown): {
 
   const resolved = new Set<string>();
   for (const token of tokens) {
-    if (token === RIDE_STATUS.pending || token === 'request' || token === 'requests') {
+    if (
+      token === RIDE_STATUS.pending ||
+      token === 'request' ||
+      token === 'requests' ||
+      token === 'requested'
+    ) {
       resolved.add(RIDE_STATUS.pending);
     } else if (token === 'upcoming' || token === 'scheduled') {
       resolved.add(RIDE_STATUS.accepted);
@@ -438,12 +443,15 @@ const resolveRideStatusesFromQuery = (rawStatus: unknown): {
       resolved.add(RIDE_STATUS.rejected);
     } else if (token === RIDE_STATUS.completed) {
       resolved.add(RIDE_STATUS.completed);
-    } else if (token === RIDE_STATUS.accepted) {
+    } else if (token === RIDE_STATUS.accepted || token === 'confirmed') {
       resolved.add(RIDE_STATUS.accepted);
-    } else if (token === RIDE_STATUS.arrived) {
+    } else if (token === RIDE_STATUS.arrived || token === 'driver_arrived') {
       resolved.add(RIDE_STATUS.arrived);
-    } else if (token === RIDE_STATUS.started) {
+    } else if (token === RIDE_STATUS.started || token === 'picked_up') {
       resolved.add(RIDE_STATUS.started);
+    } else {
+      // Unknown tokens used to be ignored, which returned every ride.
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid ride status filter');
     }
   }
 

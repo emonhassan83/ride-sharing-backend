@@ -656,7 +656,13 @@
     "Failed to update refund status": "עדכון סטטוס ההחזר נכשל",
     "Invalid ID format": "פורמט מזהה לא תקין",
     "Refresh token is required": "נדרש אסימון רענון",
-    "Invalid or expired refresh token. Please log in again.": "אסימון הרענון אינו תקף או שפג תוקפו. יש להתחבר מחדש."
+    "Invalid or expired refresh token. Please log in again.": "אסימון הרענון אינו תקף או שפג תוקפו. יש להתחבר מחדש.",
+    "Invalid ride status filter": "מסנן סטטוס נסיעה לא תקין",
+    "Invalid ride or passenger id": "מזהה נסיעה או נוסע לא תקין",
+    "Passenger not found on this ride": "הנוסע לא נמצא בנסיעה זו",
+    "passengerId is required for a ride with several passengers": "נדרש passengerId לנסיעה עם כמה נוסעים",
+    "You can rate a passenger only after the trip": "ניתן לדרג נוסע רק לאחר הנסיעה",
+    "You have already rated this passenger": "כבר דירגת את הנוסע הזה"
   },
   "patterns": {
     "dropoff_fare": "סה\"כ תעריף: €{{totalFare}} (בסיס: €{{baseFare}} + המתנה: €{{waitingCharge}})",

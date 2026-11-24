@@ -7,7 +7,7 @@ import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { modeType } from '../../../modules/notification/notification.interface';
-import { notifyUserPush } from '../../../utils/notifyUser.utils';
+import { notifyUserPushInBackground } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
@@ -40,7 +40,7 @@ const notifyDriverCancelled = async (
   await Promise.all(
     [...driverIds].map(async (id) => {
       io.to(`driver:${id}`).to(`user:${id}`).emit('ride:cancelled-by-rider', payload);
-      await notifyUserPush({
+      notifyUserPushInBackground({
         userId: id,
         message: 'Ride Cancelled by Rider',
         description: message,
@@ -150,7 +150,7 @@ const notifyRiderOwnCancellation = async (
   });
 
   try {
-    await notifyUserPush({
+    notifyUserPushInBackground({
       userId,
       message: 'Ride Cancelled',
       description,
@@ -363,7 +363,7 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
         message: 'Another passenger cancelled.',
       });
 
-      await notifyUserPush({
+      notifyUserPushInBackground({
         userId: coUserId,
         message: 'Co-passenger Cancelled',
         description: 'Another passenger cancelled their booking.',

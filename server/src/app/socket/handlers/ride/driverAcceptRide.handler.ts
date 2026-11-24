@@ -136,44 +136,9 @@ const buildAcceptedPayload = (
   ...extra,
 });
 
-const cancelOtherPendingRequests = async (
-  userId: string,
-  acceptedRideId: string,
-  io: any
-) => {
-  const otherPending = await Passenger.find({
-    userId,
-    rideId: { $nin: [acceptedRideId, null] },
-    status: PASSENGER_STATUS.pending,
-  }).lean();
-
-  if (!otherPending.length) return;
-
-  for (const other of otherPending) {
-    await Passenger.findByIdAndUpdate(other._id, {
-      status: PASSENGER_STATUS.cancelled,
-      cancellationReason: 'accepted_another_ride',
-    });
-
-    if (!other.rideId) continue;
-    const otherRide = await Ride.findById(other.rideId)
-      .select('driverId')
-      .lean();
-    if (otherRide?.driverId) {
-      io.to(`driver:${otherRide.driverId}`).emit('ride:passenger-withdrew', {
-        rideId: other.rideId.toString(),
-        passengerId: other._id.toString(),
-        message: 'Passenger accepted another ride.',
-      });
-    }
-
-    io.to(`ride:${other.rideId}`).emit('ride:passenger-withdrew', {
-      rideId: other.rideId.toString(),
-      passengerId: other._id.toString(),
-      message: 'Passenger accepted another ride.',
-    });
-  }
-};
+// A rider may hold several independent bookings (different days/times). An
+// accept on one must never touch the others: the old auto-cancel here left the
+// card hold authorized, the Ride pending, and the rider uninformed.
 
 // ──────────────────────────────────────────────────────────
 const notifyOtherNotifiedDriversRideTaken = async (
@@ -505,7 +470,6 @@ export const driverAcceptRideHandler = eventHandler<any>(
       passenger.status = PASSENGER_STATUS.confirmed;
       await passenger.save();
 
-      await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
       await redis.hset(`ride:active:${rideId}`, {
         driverId,
         status: RIDE_STATUS.accepted,
@@ -718,7 +682,6 @@ export const driverAcceptRideHandler = eventHandler<any>(
         passenger.status = PASSENGER_STATUS.confirmed;
         await passenger.save();
 
-        await cancelOtherPendingRequests(passenger.userId.toString(), rideId, io);
         await recalculateSplitFares(rideId, 'passenger_joined', io);
 
         if (isLastPassenger) {

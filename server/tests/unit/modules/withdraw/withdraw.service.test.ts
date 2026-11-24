@@ -387,6 +387,7 @@ describe('WithdrawService.getMyWithdrawsFromDB (driver earnings report)', () => 
     expect(res.result).toEqual({
       walletBalance: 123.45,
       totalEarnings: 0,
+      lifetimeEarnings: 0,
       completedRideCount: 0,
       earningsList: [],
     });
@@ -635,12 +636,13 @@ describe('WithdrawService.getMyWithdrawsFromDB (driver earnings report)', () => 
       expect(await refsFor({})).toHaveLength(5);
     });
 
-    it('the date filter narrows the list and ride count but NOT totalEarnings (lifetime total)', async () => {
+    it('B-06: the date filter narrows the list, ride count and totalEarnings; lifetimeEarnings stays the all-time total', async () => {
       arrangeDated();
       const { result } = await WithdrawService.getMyWithdrawsFromDB({ filter: 'today' }, driverId);
       expect(result.earningsList).toHaveLength(1);
       expect(result.completedRideCount).toBe(1);
-      expect(result.totalEarnings).toBe(50); // all five rides, regardless of the filter
+      expect(result.totalEarnings).toBe(10); // today's ride only
+      expect(result.lifetimeEarnings).toBe(50); // all five rides, regardless of the filter
     });
 
     it('filter name is case-insensitive', async () => {

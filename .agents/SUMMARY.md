@@ -1,3 +1,22 @@
+Date/Session: 2026-11-24 (app team 24 Nov list: other-booking auto-cancel, list sort, rate passenger, slow acks)
+
+Completed Tasks:
+- `driver:accept-ride`: removed `cancelOtherPendingRequests`. Accepting one booking cancelled the rider's other pending bookings (`accepted_another_ride`) and changed only the Passenger status: the hold stayed authorized, the Ride stayed pending, and the rider got no message. In History, the ride did not match `status=cancelled`, so the row showed `rideId`/`rideType` null. This was SR-6707273707 (bookingId 6b054855c795e0b4dcac249a). Its hold still needs a manual release.
+- `QueryBuilder`: `1`/`-1` counted as field-sort shorthand, so `?page=1` sorted by a nonexistent `page` field (lists came back unordered). Only on `main`. Shorthand is now words only (`asc`/`desc`), and pagination/special params are never sort fields. `?rating=1` is no longer dropped as a filter. Test: `tests/unit/builder/QueryBuilder.sort.test.ts`.
+- `resolveRideStatusesFromQuery` (rider-rides/driver-rides): unknown status → 400 `Invalid ride status filter`. New aliases: `requested`, `confirmed`, `driver_arrived`, `picked_up`.
+- Slow acks: `notifyUserPushInBackground` (fire-and-forget). It's used in `driverCancelRide`, `rideCancelAfterAccept`, and `rideCancelBeforeAccept`, where an awaited push with FCM retries (3 × 700 ms) delayed the ack. In `driverCompleteTrip`, the location-history save now runs after the ack (pushes there were already non-blocking).
+- `driver:pickup-ride`: every failure ack has a `code` (MISSING_FIELDS, RIDE_NOT_FOUND, NOT_ASSIGNED_DRIVER, INVALID_RIDE_STATUS, TRIP_START_TOO_EARLY, NO_ACTIVE_PASSENGER, INVALID_OTP, OTP_REQUIRED).
+- New `driver:rate-passenger` {rideId, passengerId?, rating 1-5, comment?}: the ride's driver only, the passenger must be dropped_off/completed, one rating per ride. It updates the rider's `avgRating`/`totalRating`. `ratePassenger.handler.ts`.
+- 6 new messages in all 5 locales. Fixed 2 stale withdraw tests (they still expected the pre-B-06 totalEarnings). All 1190 unit tests pass.
+
+Next Steps:
+- Release the authorized hold for booking 6b054855c795e0b4dcac249a (Stripe), and check for other passengers with `cancellationReason: accepted_another_ride` and an authorized payment.
+- No unit tests yet for `driver:rate-passenger`.
+- Open product calls: list unpaid bookings? Refund after accept to card or wallet?
+- Redeploy dev/prod from `main`.
+
+---
+
 Date/Session: 2026-11-23 (app team final list: busy rule, re-match, auto-cancel, timeouts, hold, KYC/earnings push, notification data)
 
 Completed Tasks:

@@ -35,6 +35,7 @@ import { rideRequestHandler } from './handlers/ride/rideRequest.handler';
 import { rideCancelBeforeAcceptHandler } from './handlers/ride/rideCancelBeforeAccept.handler';
 import { rideCancelAfterAcceptHandler } from './handlers/ride/rideCancelAfterAccept.handler';
 import { submitRatingHandler } from './handlers/ride/submitRating.handler';
+import { ratePassengerHandler } from './handlers/ride/ratePassenger.handler';
 import { findNearbySplitRideHandler } from './handlers/ride/findNearBySplitRide.handler';
 import { joinSplitRideRequestHandler } from './handlers/ride/splitRideRequest.handler';
 
@@ -188,6 +189,9 @@ export const registerSocketEvents = (socket: Socket) => {
   );
   tSocket.on('driver:complete-trip', (data, callback) =>
     driverCompleteTripHandler.call(tSocket, data, callback)
+  );
+  tSocket.on('driver:rate-passenger', (data, callback) =>
+    ratePassengerHandler.call(tSocket, data, callback)
   );
 
   // ---------- PASSENGER/RIDER EVENTS ----------

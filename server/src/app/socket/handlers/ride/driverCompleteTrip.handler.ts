@@ -394,12 +394,8 @@ export const driverCompleteTripHandler = eventHandler<any>(
         }
       }
 
-      try { await saveLocationsToDatabase(rideId, parsedLocations, driverId); } catch (err) {
-        console.error(`âŒ Location history save failed:`, err);
-      }
 
       await Promise.all([
-        redis.del(locationKey),
         redis.del(`ride:active:${rideId}`),
         redis.del(`driver:${driverId}:activeRide`),
       ]);
@@ -409,11 +405,19 @@ export const driverCompleteTripHandler = eventHandler<any>(
       });
     }
 
-    return callback?.({
+    callback?.({
       success: true,
       message: allComplete ? 'Ride completed successfully' : 'Passenger(s) completed. Ride still in progress.',
       data: { rideId, totalFare: grandTotal, passengerCount: passengersToComplete.length, allComplete },
     });
+
+    // Housekeeping after the ack: the location history is not needed to answer
+    // the driver. The live list is deleted only once it has been saved.
+    if (allComplete) {
+      saveLocationsToDatabase(rideId, parsedLocations, driverId)
+        .catch((err) => console.error('Location history save failed:', err))
+        .finally(() => redis.del(locationKey).catch(() => {}));
+    }
   },
 );
 

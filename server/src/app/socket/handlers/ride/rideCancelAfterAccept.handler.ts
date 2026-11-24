@@ -12,7 +12,7 @@ import { Payment } from '../../../modules/payment/payment.model';
 import { PaymentService } from '../../../modules/payment/payment.service';
 import { REFUND_STATUS, REFUND_TYPE } from '../../../modules/refund/refund.constant';
 import { modeType } from '../../../modules/notification/notification.interface';
-import { notifyUserPush } from '../../../utils/notifyUser.utils';
+import { notifyUserPushInBackground } from '../../../utils/notifyUser.utils';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
@@ -38,7 +38,7 @@ const notifyDriver = async (
     ...extra,
   });
 
-  await notifyUserPush({
+  notifyUserPushInBackground({
     userId: driverId,
     message: 'Ride Cancelled by Rider',
     description: message,
@@ -149,7 +149,7 @@ const cancelRemainingPassengers = async (
       refundAmount: refunded,
     });
 
-    await notifyUserPush({
+    notifyUserPushInBackground({
       userId: riderId,
       message: 'Ride Cancelled',
       description: message,
@@ -509,7 +509,7 @@ export const rideCancelAfterAcceptHandler = eventHandler<any>(
         message:              'Another passenger cancelled their booking.',
       });
 
-      await notifyUserPush({
+      notifyUserPushInBackground({
         userId: coUserId,
         message: 'Co-passenger Cancelled',
         description: 'Another passenger has cancelled. Your fare may be updated.',
