@@ -11,9 +11,19 @@ const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
  * Distance Matrix API থেকে দুটি লোকেশনের মধ্যে প্রকৃত দূরত্ব (কিমি) ও সময় (মিনিট) বের করে
  * ফলাফল Redis-এ ৫ মিনিট ক্যাশ করে রাখে যাতে বারবার API কল না হয়
  */
+/**
+ * `coarse: true` is for DISPLAY-ONLY driver ETAs (nearby-driver lists). A moving
+ * driver's exact position is different on every ping, so the exact cache key
+ * never hits and every search paid one Maps call per driver (load test: ~64 calls
+ * per search). Coarse keys round to 3 decimals (~110 m) so searches and drivers
+ * in the same cell share one call. Fare / route callers must NOT pass it.
+ */
+export type MapsEtaOptions = { coarse?: boolean };
+
 export async function getRealDistanceAndETA(
   origin: ILatLng,
-  destination: ILatLng
+  destination: ILatLng,
+  options: MapsEtaOptions = {}
 ): Promise<IRealDistanceAndETA> {
   // API Key চেক
   if (!GOOGLE_MAPS_API_KEY) {
@@ -25,7 +35,8 @@ export async function getRealDistanceAndETA(
     return { distanceKm, durationMinutes };
   }
 
-  const cacheKey = `map:distance:${origin.lat.toFixed(6)},${origin.lng.toFixed(6)}:${destination.lat.toFixed(6)},${destination.lng.toFixed(6)}`;
+  const digits = options.coarse ? 3 : 6;
+  const cacheKey = `map:distance${options.coarse ? ':c' : ''}:${origin.lat.toFixed(digits)},${origin.lng.toFixed(digits)}:${destination.lat.toFixed(digits)},${destination.lng.toFixed(digits)}`;
   const redis = getRedisClient();
 
   // 1. ক্যাশে থাকলে রিটার্ন করুন

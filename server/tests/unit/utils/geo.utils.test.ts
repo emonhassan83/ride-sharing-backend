@@ -514,7 +514,7 @@ describe('fetchDriversWithinRadius', () => {
       distance: 3.46,
       eta: 9,
     });
-    expect(getRealDistanceAndETA).toHaveBeenCalledWith({ lat: 0, lng: 0.02 }, PICKUP);
+    expect(getRealDistanceAndETA).toHaveBeenCalledWith({ lat: 0, lng: 0.02 }, PICKUP, { coarse: true });
   });
 
   it('uses the Redis current location in preference to the hash location', async () => {
@@ -525,7 +525,7 @@ describe('fetchDriversWithinRadius', () => {
     const [card] = await run();
 
     expect(card.location).toEqual({ lat: 0.5, lng: 0.5 });
-    expect(getRealDistanceAndETA).toHaveBeenCalledWith({ lat: 0.5, lng: 0.5 }, PICKUP);
+    expect(getRealDistanceAndETA).toHaveBeenCalledWith({ lat: 0.5, lng: 0.5 }, PICKUP, { coarse: true });
   });
 
   it('ignores a corrupted current-location record and keeps the hash location', async () => {

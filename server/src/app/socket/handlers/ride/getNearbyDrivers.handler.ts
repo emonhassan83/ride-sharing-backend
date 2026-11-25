@@ -125,7 +125,8 @@ export const getNearbyDriversHandler = eventHandler<any>(
             try {
               const result = await getRealDistanceAndETA(
                 { lat: driverLat, lng: driverLng },
-                { lat: pickup.lat, lng: pickup.lng }
+                { lat: pickup.lat, lng: pickup.lng },
+                { coarse: true }
               );
               distanceKm = result.distanceKm;
               etaMinutes = result.durationMinutes;

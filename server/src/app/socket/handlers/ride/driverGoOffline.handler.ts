@@ -5,6 +5,7 @@ import { removeDriverLocation } from '../../../utils/geo.utils';
 import { getIO } from '../../socket.init';
 import { TSocket } from '../../interface/index.interface';
 import eventHandler from '../../utils/eventHandler';
+import { broadcastOnlineCount } from '../../utils/onlineCountBroadcast';
 
 // ── Core offline logic (reusable — called from socket + disconnect) ───────────
 export const driverGoOfflineHandler = async (
@@ -66,8 +67,7 @@ export const driverGoOfflineHandler = async (
 
     await User.findByIdAndUpdate(driverId, dbUpdate);
 
-    const onlineCount = await redis.scard('users:online');
-    io.emit('onlineUser', onlineCount);
+    broadcastOnlineCount(io, () => redis.scard('users:online'));
 
     return { success: true, message: 'Driver offline successfully' };
   } catch (error) {

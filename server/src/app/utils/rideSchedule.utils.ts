@@ -7,6 +7,23 @@ import {
 } from '../config/env.config';
 import { Setting } from '../modules/settings/settings.model';
 
+// Intl.DateTimeFormat construction is expensive and these helpers run per ride row
+// on list endpoints; the CPU profile put getDepartureDateTime at the top of the
+// application hot spots. Formatters are immutable, so cache one per locale+options.
+const dateTimeFormatCache = new Map<string, Intl.DateTimeFormat>();
+const cachedDateTimeFormat = (
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat => {
+  const key = locale + JSON.stringify(options);
+  let f = dateTimeFormatCache.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, options);
+    dateTimeFormatCache.set(key, f);
+  }
+  return f;
+};
+
 export type RideScheduleType = 'private' | 'split';
 
 export const DEFAULT_SPLIT_MIN_BOOKING_HOURS = 3;
@@ -34,7 +51,7 @@ export const getRideTimeZone = (): string => {
 /** YYYY-MM-DD in the ride timezone (Cyprus by default). */
 export const formatRideLocalDate = (date: Date = new Date()): string => {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-CA', {
+    cachedDateTimeFormat('en-CA', {
       timeZone: getRideTimeZone(),
       year: 'numeric',
       month: '2-digit',
@@ -53,7 +70,7 @@ export const getRideLocalTimeParts = (
   date: Date,
 ): { hour: number; minute: number; second: number } => {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
+    cachedDateTimeFormat('en-US', {
       timeZone: getRideTimeZone(),
       hour: '2-digit',
       minute: '2-digit',
@@ -131,7 +148,7 @@ export const getDepartureDateTime = (
   // Iteratively align UTC instant so that zoned wall-clock matches Y-M-D H:m.
   const targetAsUtcMs = Date.UTC(y, m - 1, d, hour, minute, 0);
   let guess = new Date(targetAsUtcMs);
-  const formatter = new Intl.DateTimeFormat('en-US', {
+  const formatter = cachedDateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
     month: '2-digit',

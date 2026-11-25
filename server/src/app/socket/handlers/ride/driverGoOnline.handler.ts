@@ -7,6 +7,7 @@ import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { syncDriverState } from '../../utils/driverSync';
+import { broadcastOnlineCount } from '../../utils/onlineCountBroadcast';
 
 export const driverGoOnlineHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -108,8 +109,7 @@ export const driverGoOnlineHandler = eventHandler<any>(
       socket.join(`driver:${driverId}`);
 
       // ── 6. Broadcast Online Count ─────────────────────────────────────
-      const onlineCount = await redis.scard('users:online');
-      io.emit('onlineUser', onlineCount);
+      broadcastOnlineCount(io, () => redis.scard('users:online'));
 
       callback?.({
         success: true,
