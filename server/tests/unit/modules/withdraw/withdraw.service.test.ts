@@ -49,7 +49,9 @@ import { Ride } from '@src/app/modules/ride/ride.model';
 import { User } from '@src/app/modules/user/user.model';
 import { Withdraw } from '@src/app/modules/withdraw/withdraw.model';
 import { sendWithdrawNotify } from '@src/app/modules/withdraw/withdraw.utils';
-import { WithdrawService } from '@src/app/modules/withdraw/withdraw.service';
+import { MY_WITHDRAW_REQUEST_FIELDS, WithdrawService } from '@src/app/modules/withdraw/withdraw.service';
+import { WithdrawValidation } from '@src/app/modules/withdraw/withdraw.validation';
+import { WithdrawRoutes } from '@src/app/modules/withdraw/withdraw.route';
 import { freezeTime } from '@tests/helpers/time';
 import {
   mockDoc,
@@ -850,5 +852,101 @@ describe('WithdrawService.updateWithdrawFromDB (admin approve / cancel)', () => 
       ).rejects.toMatchObject({ code: 500, message: 'Failed to update withdraw status' });
       expectRolledBack();
     });
+  });
+});
+
+describe('getMyWithdrawRequestsFromDB (GET /withdraw/my-requests)', () => {
+  const driverId = oid().toString();
+  const rows = [
+    { _id: oid(), id: 'W2', amount: 30, status: 'pending', createdAt: new Date('2026-11-02') },
+    { _id: oid(), id: 'W1', amount: 20, status: 'completed', createdAt: new Date('2026-11-01') },
+  ];
+
+  const arrange = (total = rows.length) => {
+    const q = mockQuery(rows, { total });
+    vi.mocked(Withdraw.find).mockReturnValue(q as any);
+    return q;
+  };
+
+  it('returns only the driver\'s own requests, newest first, with safe fields', async () => {
+    const q = arrange();
+
+    const { result, meta } = await WithdrawService.getMyWithdrawRequestsFromDB({}, driverId);
+
+    expect(Withdraw.find).toHaveBeenCalledWith({ user: driverId });
+    expect(q.select).toHaveBeenCalledWith(MY_WITHDRAW_REQUEST_FIELDS);
+    expect(q.sort).toHaveBeenCalledWith('-createdAt -_id');
+    expect(result).toEqual(rows);
+    expect(meta).toEqual({ page: 1, limit: 10, total: 2, totalPage: 1 });
+  });
+
+  it('never exposes user, payment or ibanNumber', () => {
+    const fields = MY_WITHDRAW_REQUEST_FIELDS.split(' ');
+    expect(fields).not.toContain('user');
+    expect(fields).not.toContain('payment');
+    expect(fields).not.toContain('ibanNumber');
+  });
+
+  it('paginates with page/limit and reports the QueryBuilder meta', async () => {
+    const q = arrange(25);
+
+    const { meta } = await WithdrawService.getMyWithdrawRequestsFromDB({ page: '3', limit: '5' }, driverId);
+
+    expect(q.skip).toHaveBeenCalledWith(10);
+    expect(q.limit).toHaveBeenCalledWith(5);
+    expect(meta).toEqual({ page: 3, limit: 5, total: 25, totalPage: 5 });
+  });
+
+  it.each(['pending', 'completed', 'cancelled'])('filters by status=%s', async (status) => {
+    arrange();
+
+    await WithdrawService.getMyWithdrawRequestsFromDB({ status }, driverId);
+
+    expect(Withdraw.find).toHaveBeenCalledWith({ user: driverId, status });
+  });
+
+  it('ignores an unknown status and any other query keys (no filter/sort/fields injection)', async () => {
+    const q = arrange();
+
+    await WithdrawService.getMyWithdrawRequestsFromDB(
+      { status: 'weird', user: oid().toString(), sort: 'amount', fields: 'ibanNumber' },
+      driverId,
+    );
+
+    expect(Withdraw.find).toHaveBeenCalledWith({ user: driverId });
+    expect(q.find).not.toHaveBeenCalled();
+    expect(q.sort).toHaveBeenCalledWith('-createdAt -_id');
+    expect(q.select).toHaveBeenCalledTimes(1);
+    expect(q.select).toHaveBeenCalledWith(MY_WITHDRAW_REQUEST_FIELDS);
+  });
+});
+
+describe('WithdrawValidation.myRequestsQuerySchema', () => {
+  const parse = (query: unknown) => WithdrawValidation.myRequestsQuerySchema.safeParse({ query });
+
+  it('accepts empty, numeric-string page/limit and each status', () => {
+    expect(parse({}).success).toBe(true);
+    expect(parse({ page: '2', limit: '20' }).success).toBe(true);
+    for (const status of ['pending', 'completed', 'cancelled']) {
+      expect(parse({ status }).success).toBe(true);
+    }
+  });
+
+  it('rejects bad page/limit and unknown statuses', () => {
+    expect(parse({ page: '0' }).success).toBe(false);
+    expect(parse({ limit: '101' }).success).toBe(false);
+    expect(parse({ limit: 'abc' }).success).toBe(false);
+    expect(parse({ status: 'approved' }).success).toBe(false);
+  });
+});
+
+describe('withdraw routes', () => {
+  it('registers GET /my-requests (provider only) before GET /:id', () => {
+    const paths = (WithdrawRoutes as any).stack
+      .filter((l: any) => l.route?.methods?.get)
+      .map((l: any) => l.route.path);
+
+    expect(paths).toContain('/my-requests');
+    expect(paths.indexOf('/my-requests')).toBeLessThan(paths.indexOf('/:id'));
   });
 });

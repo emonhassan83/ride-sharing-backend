@@ -27,6 +27,14 @@ router.get(
   WithdrawControllers.getMyWithdraws,
 )
 
+// Driver's own payout requests (Withdraw documents). Must stay before '/:id'.
+router.get(
+  '/my-requests',
+  auth(USER_ROLE.provider),
+  validateRequest(WithdrawValidation.myRequestsQuerySchema),
+  WithdrawControllers.getMyWithdrawRequests,
+)
+
 router.get('/', auth(USER_ROLE.admin), WithdrawControllers.getAllWithdraw)
 
 router.get('/:id', auth(USER_ROLE.admin), WithdrawControllers.getAWithdraw)

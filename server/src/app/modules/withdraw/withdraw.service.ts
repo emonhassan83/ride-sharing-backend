@@ -331,6 +331,45 @@ const getMyWithdrawsFromDB = async (
   };
 };
 
+// ── Get my withdrawal requests (provider) ──
+// The driver's own payout requests, newest first. Unlike /my-withdraws (an
+// earnings report), this lists the Withdraw documents themselves. The query is
+// rebuilt from whitelisted params so a driver cannot filter on other fields,
+// change the sort or project hidden fields (user, payment, ibanNumber).
+export const MY_WITHDRAW_REQUEST_FIELDS =
+  'id amount status note completedAt ride booking createdAt updatedAt';
+
+const getMyWithdrawRequestsFromDB = async (
+  query: Record<string, unknown>,
+  userId: string,
+) => {
+  const filter: Record<string, unknown> = { user: userId };
+  const status = typeof query.status === 'string' ? query.status : '';
+  if ((Object.values(WITHDRAW_STATUS) as string[]).includes(status)) {
+    filter.status = status;
+  }
+
+  const safeQuery: Record<string, unknown> = {
+    page: query.page,
+    limit: query.limit,
+    sort: '-createdAt',
+  };
+
+  const withdrawQuery = new QueryBuilder(
+    Withdraw.find(filter),
+    safeQuery,
+  )
+    .sort()
+    .paginate();
+
+  const [result, meta] = await Promise.all([
+    withdrawQuery.modelQuery.select(MY_WITHDRAW_REQUEST_FIELDS).lean(),
+    withdrawQuery.countTotal(),
+  ]);
+
+  return { meta, result };
+};
+
 // ── Get single withdrawal ──
 const getAWithdrawFromDB = async (id: string) => {
   const result = await Withdraw.findById(id).populate([
@@ -422,6 +461,7 @@ export const WithdrawService = {
   addWithdraw,
   getAllWithdrawsFromDB,
   getMyWithdrawsFromDB,
+  getMyWithdrawRequestsFromDB,
   getAWithdrawFromDB,
   updateWithdrawFromDB
 };

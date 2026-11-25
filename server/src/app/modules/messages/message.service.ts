@@ -211,11 +211,16 @@ const getMessagesByChatId = async (
   // This route had no auth at all: any chatId read the whole conversation.
   const chat = await getChatForParticipant(chatId, requester, { allowAdmin: true })
 
+  // Opt-in ?order=desc: page 1 = NEWEST messages, items newest first. The
+  // default (page 1 = oldest, items reversed within the page) is unchanged
+  // because the web app relies on it.
+  const newestFirst = String(query?.order || '').trim().toLowerCase() === 'desc'
+
   const messageQuery = new QueryBuilder(
     Message.find({ chat: chat._id })
       // .populate([{ path: 'sender', select: 'name profileImage _id' }])
       .select('text imageUrl seen isEdited sender createdAt')
-      .sort({ createdAt: 1 }),
+      .sort(newestFirst ? { createdAt: -1, _id: -1 } : { createdAt: 1 }),
     query,
   )
     .filter()
@@ -226,7 +231,7 @@ const getMessagesByChatId = async (
   const meta = await messageQuery.countTotal()
 
   // ✅ পুরনো থেকে নতুন order এ দাও
-  const orderedMessages = [...messages].reverse()
+  const orderedMessages = newestFirst ? messages : [...messages].reverse()
 
   return { meta, data: orderedMessages }
 }

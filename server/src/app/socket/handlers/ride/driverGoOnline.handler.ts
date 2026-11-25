@@ -8,6 +8,10 @@ import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
 import { syncDriverState } from '../../utils/driverSync';
 import { broadcastOnlineCount } from '../../utils/onlineCountBroadcast';
+import {
+  isDriverKycVerified,
+  KYC_NOT_VERIFIED_MESSAGE,
+} from '../../../utils/kycGuard.utils';
 
 export const driverGoOnlineHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
@@ -24,11 +28,18 @@ export const driverGoOnlineHandler = eventHandler<any>(
 
       // ── 1. Get Driver Info ─────────────────────────────────────────────
       const driver = await User.findById(driverId)
-        .select('name email phone avgRating profileImage isOnline')
+        .select('name email phone avgRating profileImage isOnline isKycVerified')
         .lean();
 
       if (!driver) {
         return callback?.({ success: false, message: 'Driver not found' });
+      }
+
+      // Same rule as dispatch: unverified drivers never receive requests, so
+      // they must not be able to go online either (going offline stays open).
+      if (!isDriverKycVerified(driver)) {
+        socket.emit('driver:status', { isOnline: false });
+        return callback?.({ success: false, message: KYC_NOT_VERIFIED_MESSAGE });
       }
 
       // ── 2. Validate Vehicle ───────────────────────────────────────────

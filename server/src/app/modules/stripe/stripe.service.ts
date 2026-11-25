@@ -109,6 +109,31 @@ const checkStripeConnected = async (userId: string) => {
   };
 };
 
+/**
+ * Whether the driver's connected account can actually be paid out. A linked
+ * account whose onboarding was abandoned has payouts disabled.
+ */
+const getStripeAccountStatus = async (userId: string) => {
+  const user = await User.findById(userId).select('stripeAccountId isDeleted');
+  if (!user || user.isDeleted) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+  }
+  if (!user.stripeAccountId) {
+    return { isConnected: false, stripeAccountId: null };
+  }
+
+  const account = await StripeService.getStripe().accounts.retrieve(
+    user.stripeAccountId
+  );
+  return {
+    isConnected: true,
+    stripeAccountId: user.stripeAccountId,
+    chargesEnabled: account.charges_enabled,
+    payoutsEnabled: account.payouts_enabled,
+    detailsSubmitted: account.details_submitted,
+  };
+};
+
 // Handle Stripe OAuth callback and save connected account ID
 const handleStripeOAuth = async (
   query: Record<string, any>,
@@ -211,6 +236,7 @@ export const stripeService = {
   stripLinkAccount,
   connectExistingStripeAccount,
   checkStripeConnected,
+  getStripeAccountStatus,
   handleStripeOAuth,
   refresh,
   returnUrl,

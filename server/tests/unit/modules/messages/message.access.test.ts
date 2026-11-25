@@ -76,3 +76,30 @@ describe('message access', () => {
     expect(Message.deleteMany).not.toHaveBeenCalled();
   });
 });
+
+describe('getMessagesByChatId order', () => {
+  const rows = [{ _id: 'm1' }, { _id: 'm2' }, { _id: 'm3' }];
+
+  it('default is unchanged: ascending query, page reversed', async () => {
+    wireChat();
+    const q = mockQuery(rows);
+    vi.mocked(Message.find).mockReturnValue(q as any);
+
+    const { data } = await messagesService.getMessagesByChatId(chatId, { page: '1' }, { userId: alice, role: 'user' });
+
+    expect(q.sort).toHaveBeenCalledWith({ createdAt: 1 });
+    expect(data.map((m: any) => m._id)).toEqual(['m3', 'm2', 'm1']);
+  });
+
+  it('opt-in ?order=desc: newest first, page 1 = newest, no reversal', async () => {
+    wireChat();
+    const q = mockQuery(rows);
+    vi.mocked(Message.find).mockReturnValue(q as any);
+
+    const { data } = await messagesService.getMessagesByChatId(chatId, { order: 'desc' }, { userId: alice, role: 'user' });
+
+    expect(q.sort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
+    expect(data.map((m: any) => m._id)).toEqual(['m1', 'm2', 'm3']);
+    expect(q.find).not.toHaveBeenCalled(); // `order` is not treated as a filter field
+  });
+});

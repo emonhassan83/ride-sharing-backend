@@ -91,7 +91,7 @@ describe('ISSUE 8: driver accepts a private ride', () => {
     io = createMockIo();
     vi.mocked(getIO).mockReturnValue(io);
     vi.mocked(User.findById).mockReturnValue(
-      mockQuery({ _id: driverId, name: 'D', isOnline: true, isDeleted: false }) as any,
+      mockQuery({ _id: driverId, name: 'D', isOnline: true, isDeleted: false, isKycVerified: true }) as any,
     );
     vi.mocked(Vehicle.findOne).mockReturnValue(mockQuery({ _id: oid(), seats: 4, name: 'Car', number: 'X' }) as any);
     vi.mocked(Ride.findById).mockReturnValue(

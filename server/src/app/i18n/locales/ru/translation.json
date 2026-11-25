@@ -305,6 +305,8 @@
     "My locations retrieved successfully": "Мои местоположения успешно получены",
     "My refund requests retrieved successfully!": "Мои запросы на возврат средств успешно получены!",
     "My withdraws retrieved successfully!": "Мои выводы средств успешно получены!",
+    "Your KYC verification is not complete. You can go online and accept rides once your documents are approved.": "Ваша проверка KYC не завершена. Вы сможете выйти на линию и принимать поездки после одобрения ваших документов.",
+    "My withdraw requests retrieved successfully!": "Мои запросы на вывод средств успешно получены!",
     "Name cannot be empty.": "Имя не может быть пустым.",
     "Name is required.": "Имя обязательно.",
     "Name is required": "Имя обязательно",

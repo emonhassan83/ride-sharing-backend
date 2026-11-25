@@ -54,6 +54,7 @@ import { getIO } from '@src/app/socket/socket.init';
 import { fakeRedis } from '@tests/helpers/fakeRedis';
 import { mockQuery, oidStr } from '@tests/helpers/mongoose';
 import { createMockIo, createMockSocket } from '@tests/helpers/socket';
+import { KYC_NOT_VERIFIED_MESSAGE } from '@src/app/utils/kycGuard.utils';
 
 const driverId = oidStr();
 const rideId = oidStr();
@@ -62,7 +63,7 @@ const accept = async (isOnline: boolean) => {
   const socket = createMockSocket({ userId: driverId, role: 'provider' });
   const ack = vi.fn();
   vi.mocked(User.findById).mockReturnValue(
-    mockQuery({ _id: driverId, name: 'Driver', isOnline, isDeleted: false, status: 'active' }) as any,
+    mockQuery({ _id: driverId, name: 'Driver', isOnline, isDeleted: false, status: 'active', isKycVerified: true }) as any,
   );
   await (driverAcceptRideHandler as any).call(socket, { rideId, passengerId: oidStr() }, ack);
   return { socket, ack };
@@ -156,5 +157,41 @@ describe('busy rule (±60 min) at accept', () => {
     const { ack } = await accept(true);
 
     expect(ack).not.toHaveBeenCalledWith(expect.objectContaining({ code: 'DRIVER_BUSY' }));
+  });
+});
+
+describe('KYC gate at accept', () => {
+  const acceptAs = async (fields: Record<string, unknown>) => {
+    const socket = createMockSocket({ userId: driverId, role: 'provider' });
+    const ack = vi.fn();
+    vi.mocked(User.findById).mockReturnValue(
+      mockQuery({ _id: driverId, name: 'Driver', isOnline: true, isDeleted: false, status: 'active', ...fields }) as any,
+    );
+    await (driverAcceptRideHandler as any).call(socket, { rideId, passengerId: oidStr() }, ack);
+    return ack;
+  };
+
+  it('refuses an unverified driver with the KYC message and touches nothing', async () => {
+    const ack = await acceptAs({ isKycVerified: false });
+
+    expect(ack).toHaveBeenCalledWith({ success: false, message: KYC_NOT_VERIFIED_MESSAGE });
+    expect(Ride.findById).not.toHaveBeenCalled();
+    expect(Ride.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(Passenger.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(PaymentService.captureAuthorizedBookingPayment).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing flag as unverified', async () => {
+    const ack = await acceptAs({});
+
+    expect(ack).toHaveBeenCalledWith({ success: false, message: KYC_NOT_VERIFIED_MESSAGE });
+  });
+
+  it('a verified driver gets past the KYC check', async () => {
+    vi.mocked(Ride.findById).mockReturnValue(mockQuery(null) as any);
+    const ack = await acceptAs({ isKycVerified: true });
+
+    expect(ack).toHaveBeenCalledTimes(1);
+    expect(ack).not.toHaveBeenCalledWith(expect.objectContaining({ message: KYC_NOT_VERIFIED_MESSAGE }));
   });
 });

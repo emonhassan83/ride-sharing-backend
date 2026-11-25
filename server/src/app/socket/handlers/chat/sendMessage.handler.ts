@@ -89,7 +89,7 @@ export const sendMessageHandler = eventHandler(
       });
 
       const populated = await Message.findById(message._id).select(
-        'text imageUrl seen isEdited sender createdAt'
+        'text imageUrl seen isEdited sender chat createdAt'
       );
 
       const io = getIO();

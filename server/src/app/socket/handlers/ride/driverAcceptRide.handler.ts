@@ -30,6 +30,10 @@ import { toLuggageFyiView } from '../../../utils/luggage.utils';
 import { buildWaitTimeNotice } from '../../../utils/waitTimeNotice.utils';
 import { getAcceptBlockReason } from '../../../utils/acceptGuard.utils';
 import { getDepartureDateTime } from '../../../utils/rideSchedule.utils';
+import {
+  isDriverKycVerified,
+  KYC_NOT_VERIFIED_MESSAGE,
+} from '../../../utils/kycGuard.utils';
 
 // B-19: "Your driver is on the way. ETA: 6 minutes" was sent even for rides
 // booked hours ahead. Rides more than 30 minutes out get a scheduled-ride text.
@@ -177,7 +181,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
     // ──────────────────────────────────────────────────────────
     // Check driver online status in DB first (offline drivers cannot accept rides)
     const driverUserCheck = await User.findById(driverId)
-      .select('name email phone avgRating profileImage status isDeleted isOnline')
+      .select('name email phone avgRating profileImage status isDeleted isOnline isKycVerified')
       .lean();
 
     if (!driverUserCheck || driverUserCheck.isDeleted) {
@@ -185,6 +189,11 @@ export const driverAcceptRideHandler = eventHandler<any>(
         success: false,
         message: 'Driver not found or unavailable.',
       });
+    }
+
+    // Dispatch never offers rides to unverified drivers; block a direct emit too.
+    if (!isDriverKycVerified(driverUserCheck)) {
+      return callback?.({ success: false, message: KYC_NOT_VERIFIED_MESSAGE });
     }
 
     if (!driverUserCheck.isOnline) {

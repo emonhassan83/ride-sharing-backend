@@ -1,12 +1,101 @@
 import { messaging } from '../config/firebase.config';
 import httpStatus from 'http-status';
 import { Notification } from '../modules/notification/notification.model';
+import { User } from '../modules/user/user.model';
+import { USER_ROLE } from '../modules/user/user.constant';
 import ApiError from '../errors/ApiError';
+import { config } from '../config/env.config';
 import {
   resolveUserLanguage,
   sanitizeText,
   translateText,
 } from '../i18n/i18n';
+
+/**
+ * Web push routing. The web app is one origin for passengers, drivers and
+ * admins, so a push must say whose it is: every push now carries
+ * `data.recipientRole` (user | provider | admin) and, where a page exists,
+ * `data.url` (a frontend path). Mirrors the web app's `inboxUrl`
+ * (public/firebase-messaging-sw.js) and `notificationHref`
+ * (src/lib/notification-href.ts); a `data.url` set by the caller wins.
+ */
+const RECIPIENT_ROLES = new Set<string>(Object.values(USER_ROLE));
+
+const NEW_REQUEST_PATTERN = /new[-_ ]?request|ride[-_ ]?request|^request$/;
+const MONEY_PATTERN = /wallet|refund|payment|earning|payout|withdraw/;
+
+export const buildNotificationUrl = (
+  data: Record<string, string>,
+  role?: string | null,
+): string | null => {
+  const type = String(data.type || '').toLowerCase();
+  const screen = String(data.screen || '').toLowerCase();
+  const chatId = data.chatId || data.chat;
+  const rideId = data.rideId || data.ride;
+  const bookingId = data.bookingId || data.booking;
+  const passengerId =
+    data.passengerId || (data.modelType === 'Passenger' ? data.reference : undefined);
+
+  if (chatId || type === 'chat_message' || screen === 'chat') {
+    return chatId ? `/message?chat=${encodeURIComponent(chatId)}` : '/message';
+  }
+
+  if (role === USER_ROLE.user) {
+    if (type === 'ride_start_otp' && passengerId) return `/my-rides/${passengerId}`;
+    if (/wallet|refund|payment/.test(type)) return '/my-rides';
+    if (passengerId) return `/my-rides/${passengerId}`;
+    // /my-rides/:id takes a PASSENGER id (GET /passenger/:id), so a bare ride
+    // id goes to the list instead of a broken detail page.
+    if (rideId || bookingId || /ride|booking|trip|passenger|driver|board/.test(type)) return '/my-rides';
+    return '/book';
+  }
+
+  if (role === USER_ROLE.provider) {
+    if (NEW_REQUEST_PATTERN.test(type) || NEW_REQUEST_PATTERN.test(screen)) return '/driver';
+    if (MONEY_PATTERN.test(type) || MONEY_PATTERN.test(screen)) return '/driver/my-payments';
+    if (/kyc|account/.test(type) || screen === 'home') return '/driver';
+    if (rideId) return `/driver/my-rides/${rideId}`;
+    if (bookingId) return '/driver/my-rides';
+    return '/driver';
+  }
+
+  if (role === USER_ROLE.admin) {
+    if (/withdraw/.test(type)) return '/admin/withdraw-request';
+    if (/refund/.test(type)) return '/admin/refunds';
+    if (/kyc/.test(type)) return '/admin/drivers';
+    if (bookingId || rideId || data.modelType === 'Booking') return '/admin/bookings';
+    return '/admin/dashboard';
+  }
+
+  return null;
+};
+
+/**
+ * Absolute link for `webpush.fcmOptions.link`, from the optional CLIENT_URL
+ * (the web app origin). FCM only accepts HTTPS links, and a rejected message
+ * would also drop the push on Android/iOS tokens, so anything else is skipped.
+ */
+export const buildWebPushLink = (url?: string | null): string | null => {
+  if (!url || !url.startsWith('/')) return null;
+  const base = String(config.client?.url || '').trim().replace(/\/+$/, '');
+  if (!/^https:\/\/[^/]+/i.test(base)) return null;
+  return `${base}${url}`;
+};
+
+const resolveRecipientRole = async (
+  receiverId?: string,
+  given?: unknown,
+): Promise<string | null> => {
+  if (typeof given === 'string' && RECIPIENT_ROLES.has(given)) return given;
+  if (!receiverId) return null;
+  try {
+    const user = await User.findById(receiverId).select('role').lean();
+    const role = (user as any)?.role;
+    return typeof role === 'string' && RECIPIENT_ROLES.has(role) ? role : null;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Issue 4 ("late notifications") / issue 9 ("same notification many times").
@@ -138,6 +227,14 @@ export const sendNotification = async (
 
     const dataPayload = buildNotificationRoutingData(localizedPayload);
 
+    const recipientRole = await resolveRecipientRole(receiverId, payload?.recipientRole);
+    if (recipientRole) dataPayload.recipientRole = recipientRole;
+    if (!dataPayload.url) {
+      const url = buildNotificationUrl(dataPayload, recipientRole);
+      if (url) dataPayload.url = url;
+    }
+    const webPushLink = buildWebPushLink(dataPayload.url);
+
     const delivery = buildPushDeliveryOptions(dataPayload, payload?.ttlSeconds);
 
     // Map your array of tokens into individual message objects for the new sendEach API
@@ -175,6 +272,9 @@ export const sendNotification = async (
           },
         },
       },
+      // Web tokens only (Android/iOS ignore it): FCM shows the notification
+      // itself and opens this link on click.
+      ...(webPushLink ? { webpush: { fcmOptions: { link: webPushLink } } } : {}),
     }));
 
     // Firebase Admin v14 uses messaging.sendEach() instead of admin.messaging().sendEachForMulticast()

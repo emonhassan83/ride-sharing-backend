@@ -307,7 +307,7 @@ export const initChatPushWorker = (): Worker => {
 
       // 3. Validate receiver & FCM token
       const receiver = await User.findById(receiverId)
-        .select('fcmToken isDeleted status')
+        .select('fcmToken isDeleted status role')
         .lean();
 
       if (
@@ -374,6 +374,7 @@ export const initChatPushWorker = (): Worker => {
         description,
         reference: bookingIdStr || chatId,
         modelType: modeType.Booking,
+        recipientRole: receiver.role,
         data: {
           type: 'CHAT_MESSAGE',
           screen: 'chat',

@@ -79,7 +79,7 @@ export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
 
   try {
     const user = await User.findById(userId)
-      .select('fcmToken language')
+      .select('fcmToken language role')
       .lean();
     const userLang = normalizeLanguage(user?.language);
     const localizedMessage = translateText(sanitizeText(message), userLang);
@@ -111,6 +111,7 @@ export async function notifyUserPush(input: NotifyUserInput): Promise<void> {
       const pushPayload = {
         ...inAppRow,
         language: userLang,
+        recipientRole: user.role,
         skipPersist: true,
         ...(data ? { data } : {}),
       };

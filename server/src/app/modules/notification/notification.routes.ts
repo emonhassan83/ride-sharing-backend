@@ -2,10 +2,20 @@ import { Router } from 'express';
 import auth from '../../middlewares/auth';
 import { NotificationControllers } from './notification.controllers';
 import { USER_ROLE } from '../user/user.constant';
+import validateRequest from '../../utils/validateRequest';
+import { NotificationValidation } from './notification.validation';
 
 const router = Router();
 
-router.post('/', NotificationControllers.createNotification);
+// Admin only: it was unauthenticated, so anyone could create (and socket-emit)
+// a notification for any user. No app or server code calls it; the server
+// creates notifications internally via NotificationService / notifyUser.utils.
+router.post(
+  '/',
+  auth([USER_ROLE.admin]),
+  validateRequest(NotificationValidation.createValidationSchema),
+  NotificationControllers.createNotification,
+);
 
 router.delete(
   '/my-notifications',

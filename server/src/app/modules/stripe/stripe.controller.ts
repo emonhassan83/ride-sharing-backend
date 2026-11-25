@@ -39,6 +39,18 @@ const checkStripeConnected = catchAsync(async (req: Request, res: Response) => {
   })
 })
 
+const getStripeAccountStatus = catchAsync(async (req: Request, res: Response) => {
+  const result = await stripeService.getStripeAccountStatus(req?.user?.userId)
+
+  sendResponse(res, {
+    code: httpStatus.OK,
+    message: result.isConnected
+      ? 'Stripe account is connected.'
+      : 'Stripe account is not connected.',
+    data: result,
+  })
+})
+
 const handleStripeOAuth = catchAsync(async (req: Request, res: Response) => {
   await stripeService.handleStripeOAuth(req.query, req.user?.userId)
 
@@ -77,6 +89,7 @@ export const stripeController = {
   stripLinkAccount,
   connectExistingStripeAccount,
   checkStripeConnected,
+  getStripeAccountStatus,
   handleStripeOAuth,
   refresh,
   returnUrl,
