@@ -1,0 +1,13 @@
+[
+  {
+    _id: {
+      ns: 'splitride_load.passengers',
+      op: 'query',
+      plan: 'IXSCAN { rideId: 1, status: 1 }'
+    },
+    n: 2,
+    avgMs: 114.5,
+    maxMs: 116,
+    docs: 0
+  }
+]

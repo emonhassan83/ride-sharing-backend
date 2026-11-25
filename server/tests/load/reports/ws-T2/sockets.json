@@ -1,0 +1,403 @@
+{
+ "label": "ws-T2",
+ "config": {
+  "N_D": 1000,
+  "N_R": 3000,
+  "PING": 4000,
+  "SPM": 0.25,
+  "DUR": 150000,
+  "RAMP": 40000
+ },
+ "counts": {
+  "connected": 4000,
+  "connectErr": 0,
+  "disconnects": 0,
+  "timeouts": {
+   "go-online": 0,
+   "location-update": 0,
+   "get-nearby": 2038
+  },
+  "ackFail": {
+   "go-online": 0,
+   "location-update": 0,
+   "get-nearby": 0
+  },
+  "nearbyDrivers": 911,
+  "nearbyCalls": 26,
+  "pushesIn": 2073945
+ },
+ "latencyMs": {
+  "connect": {
+   "n": 4000,
+   "p50": 126.7,
+   "p95": 1924,
+   "p99": 2483.1,
+   "max": 3317.6
+  },
+  "go-online": {
+   "n": 1000,
+   "p50": 320.9,
+   "p95": 3952.2,
+   "p99": 5317.2,
+   "max": 5977.6
+  },
+  "location-update": {
+   "n": 42313,
+   "p50": 60.5,
+   "p95": 1053.4,
+   "p99": 3261.2,
+   "max": 5020.3
+  },
+  "get-nearby": {
+   "n": 26,
+   "p50": 3822.6,
+   "p95": 9614.6,
+   "p99": 9717.1,
+   "max": 9717.1
+  }
+ },
+ "timeline": [
+  {
+   "t": 10,
+   "connected": 1002,
+   "ping": {
+    "n": 311,
+    "p50": 6.2,
+    "p95": 20.7,
+    "p99": 24.8,
+    "max": 28.1
+   },
+   "nearby": {
+    "n": 8,
+    "p50": 1777.7,
+    "p95": 2791.7,
+    "p99": 2791.7,
+    "max": 2791.7
+   },
+   "timeouts": 0
+  },
+  {
+   "t": 20,
+   "connected": 1992,
+   "ping": {
+    "n": 917,
+    "p50": 33.5,
+    "p95": 153.6,
+    "p99": 193,
+    "max": 214.4
+   },
+   "nearby": {
+    "n": 14,
+    "p50": 4265.4,
+    "p95": 7430.5,
+    "p99": 7430.5,
+    "max": 7430.5
+   },
+   "timeouts": 0
+  },
+  {
+   "t": 30,
+   "connected": 2944,
+   "ping": {
+    "n": 1451,
+    "p50": 391.9,
+    "p95": 738.5,
+    "p99": 906.8,
+    "max": 961
+   },
+   "nearby": {
+    "n": 4,
+    "p50": 9614.6,
+    "p95": 9717.1,
+    "p99": 9717.1,
+    "max": 9717.1
+   },
+   "timeouts": 30
+  },
+  {
+   "t": 40,
+   "connected": 3928,
+   "ping": {
+    "n": 2021,
+    "p50": 920.9,
+    "p95": 2279.6,
+    "p99": 2465.7,
+    "max": 3282.1
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 70
+  },
+  {
+   "t": 50,
+   "connected": 4000,
+   "ping": {
+    "n": 2653,
+    "p50": 988.8,
+    "p95": 3967.1,
+    "p99": 4420.3,
+    "max": 5020.3
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 136
+  },
+  {
+   "t": 60,
+   "connected": 4000,
+   "ping": {
+    "n": 2508,
+    "p50": 60.9,
+    "p95": 109.6,
+    "p99": 152,
+    "max": 169.7
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 132
+  },
+  {
+   "t": 70,
+   "connected": 4000,
+   "ping": {
+    "n": 2477,
+    "p50": 100.2,
+    "p95": 163.4,
+    "p99": 183.9,
+    "max": 198.4
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 134
+  },
+  {
+   "t": 80,
+   "connected": 4000,
+   "ping": {
+    "n": 2523,
+    "p50": 59.4,
+    "p95": 124.6,
+    "p99": 144.9,
+    "max": 164.5
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 124
+  },
+  {
+   "t": 90,
+   "connected": 4000,
+   "ping": {
+    "n": 2495,
+    "p50": 69.2,
+    "p95": 178.4,
+    "p99": 256,
+    "max": 297.1
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 133
+  },
+  {
+   "t": 100,
+   "connected": 4000,
+   "ping": {
+    "n": 2471,
+    "p50": 55,
+    "p95": 132.1,
+    "p99": 174.8,
+    "max": 178.1
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 109
+  },
+  {
+   "t": 110,
+   "connected": 4000,
+   "ping": {
+    "n": 2512,
+    "p50": 39.1,
+    "p95": 95.6,
+    "p99": 130.6,
+    "max": 174.8
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 119
+  },
+  {
+   "t": 120,
+   "connected": 4000,
+   "ping": {
+    "n": 2506,
+    "p50": 36.3,
+    "p95": 88.9,
+    "p99": 120.9,
+    "max": 130.1
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 113
+  },
+  {
+   "t": 130,
+   "connected": 4000,
+   "ping": {
+    "n": 2504,
+    "p50": 32.9,
+    "p95": 86.9,
+    "p99": 100.7,
+    "max": 115.6
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 118
+  },
+  {
+   "t": 140,
+   "connected": 4000,
+   "ping": {
+    "n": 2478,
+    "p50": 37.7,
+    "p95": 86.5,
+    "p99": 103,
+    "max": 112.6
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 126
+  },
+  {
+   "t": 150,
+   "connected": 4000,
+   "ping": {
+    "n": 2495,
+    "p50": 49,
+    "p95": 116.1,
+    "p99": 172.5,
+    "max": 209.8
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 119
+  },
+  {
+   "t": 160,
+   "connected": 4000,
+   "ping": {
+    "n": 2468,
+    "p50": 50.5,
+    "p95": 114.8,
+    "p99": 155.2,
+    "max": 171.5
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 139
+  },
+  {
+   "t": 170,
+   "connected": 4000,
+   "ping": {
+    "n": 2532,
+    "p50": 119.6,
+    "p95": 209.1,
+    "p99": 271.2,
+    "max": 295.2
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 134
+  },
+  {
+   "t": 180,
+   "connected": 4000,
+   "ping": {
+    "n": 2505,
+    "p50": 51.9,
+    "p95": 107.7,
+    "p99": 152.1,
+    "max": 187.6
+   },
+   "nearby": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "max": null
+   },
+   "timeouts": 120
+  }
+ ]
+}

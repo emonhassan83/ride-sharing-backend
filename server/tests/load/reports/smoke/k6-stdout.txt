@@ -1,0 +1,155 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: scripts/rest.js
+        output: json (/work/reports/smoke/k6-points.json)
+
+     scenarios: (100.00%) 1 scenario, 100 max VUs, 1m0s max duration (incl. graceful stop):
+              * mix: 20.00 iterations/s for 30s (maxVUs: 20-100, exec: mixed, gracefulStop: 30s)
+
+
+running (0m00.9s), 000/020 VUs, 19 complete and 0 interrupted iterations
+mix    [   3% ] 000/020 VUs  00.9s/30s  20.00 iters/s
+
+running (0m01.9s), 000/020 VUs, 39 complete and 0 interrupted iterations
+mix    [   6% ] 000/020 VUs  01.9s/30s  20.00 iters/s
+
+running (0m02.9s), 000/020 VUs, 59 complete and 0 interrupted iterations
+mix    [  10% ] 000/020 VUs  02.9s/30s  20.00 iters/s
+
+running (0m03.9s), 000/020 VUs, 79 complete and 0 interrupted iterations
+mix    [  13% ] 000/020 VUs  03.9s/30s  20.00 iters/s
+
+running (0m04.9s), 000/020 VUs, 99 complete and 0 interrupted iterations
+mix    [  16% ] 000/020 VUs  04.9s/30s  20.00 iters/s
+
+running (0m05.9s), 000/020 VUs, 119 complete and 0 interrupted iterations
+mix    [  20% ] 000/020 VUs  05.9s/30s  20.00 iters/s
+
+running (0m06.9s), 000/020 VUs, 139 complete and 0 interrupted iterations
+mix    [  23% ] 000/020 VUs  06.9s/30s  20.00 iters/s
+
+running (0m07.9s), 000/020 VUs, 159 complete and 0 interrupted iterations
+mix    [  26% ] 000/020 VUs  07.9s/30s  20.00 iters/s
+
+running (0m08.9s), 000/020 VUs, 179 complete and 0 interrupted iterations
+mix    [  30% ] 000/020 VUs  08.9s/30s  20.00 iters/s
+
+running (0m09.9s), 000/020 VUs, 199 complete and 0 interrupted iterations
+mix    [  33% ] 000/020 VUs  09.9s/30s  20.00 iters/s
+
+running (0m10.9s), 000/020 VUs, 219 complete and 0 interrupted iterations
+mix    [  36% ] 000/020 VUs  10.9s/30s  20.00 iters/s
+
+running (0m11.9s), 000/020 VUs, 239 complete and 0 interrupted iterations
+mix    [  40% ] 000/020 VUs  11.9s/30s  20.00 iters/s
+
+running (0m12.9s), 000/020 VUs, 259 complete and 0 interrupted iterations
+mix    [  43% ] 000/020 VUs  12.9s/30s  20.00 iters/s
+
+running (0m13.9s), 000/020 VUs, 279 complete and 0 interrupted iterations
+mix    [  46% ] 000/020 VUs  13.9s/30s  20.00 iters/s
+
+running (0m14.9s), 000/020 VUs, 299 complete and 0 interrupted iterations
+mix    [  50% ] 000/020 VUs  14.9s/30s  20.00 iters/s
+
+running (0m15.9s), 000/020 VUs, 319 complete and 0 interrupted iterations
+mix    [  53% ] 000/020 VUs  15.9s/30s  20.00 iters/s
+
+running (0m16.9s), 000/020 VUs, 339 complete and 0 interrupted iterations
+mix    [  56% ] 000/020 VUs  16.9s/30s  20.00 iters/s
+
+running (0m17.9s), 000/020 VUs, 359 complete and 0 interrupted iterations
+mix    [  60% ] 000/020 VUs  17.9s/30s  20.00 iters/s
+
+running (0m18.9s), 000/020 VUs, 379 complete and 0 interrupted iterations
+mix    [  63% ] 000/020 VUs  18.9s/30s  20.00 iters/s
+
+running (0m19.9s), 000/020 VUs, 399 complete and 0 interrupted iterations
+mix    [  66% ] 000/020 VUs  19.9s/30s  20.00 iters/s
+
+running (0m20.9s), 000/020 VUs, 419 complete and 0 interrupted iterations
+mix    [  70% ] 000/020 VUs  20.9s/30s  20.00 iters/s
+
+running (0m21.9s), 000/020 VUs, 439 complete and 0 interrupted iterations
+mix    [  73% ] 000/020 VUs  21.9s/30s  20.00 iters/s
+
+running (0m22.9s), 000/020 VUs, 459 complete and 0 interrupted iterations
+mix    [  76% ] 000/020 VUs  22.9s/30s  20.00 iters/s
+
+running (0m23.9s), 000/020 VUs, 479 complete and 0 interrupted iterations
+mix    [  80% ] 000/020 VUs  23.9s/30s  20.00 iters/s
+
+running (0m24.9s), 000/020 VUs, 499 complete and 0 interrupted iterations
+mix    [  83% ] 000/020 VUs  24.9s/30s  20.00 iters/s
+
+running (0m25.9s), 000/020 VUs, 519 complete and 0 interrupted iterations
+mix    [  86% ] 000/020 VUs  25.9s/30s  20.00 iters/s
+
+running (0m26.9s), 000/020 VUs, 539 complete and 0 interrupted iterations
+mix    [  90% ] 000/020 VUs  26.9s/30s  20.00 iters/s
+
+running (0m27.9s), 000/020 VUs, 559 complete and 0 interrupted iterations
+mix    [  93% ] 000/020 VUs  27.9s/30s  20.00 iters/s
+
+running (0m28.9s), 000/020 VUs, 579 complete and 0 interrupted iterations
+mix    [  96% ] 000/020 VUs  28.9s/30s  20.00 iters/s
+
+running (0m29.9s), 000/020 VUs, 599 complete and 0 interrupted iterations
+mix    [ 100% ] 000/020 VUs  29.9s/30s  20.00 iters/s
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✓ 'p(95)<800' p(95)=39.69ms
+    ✓ 'p(99)<1500' p(99)=50.28ms
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 600     20.001165/s
+    checks_succeeded...: 100.00% 600 out of 600
+    checks_failed......: 0.00%   0 out of 600
+
+    ✓ GET notification 2xx
+    ✓ GET user/me 2xx
+    ✓ GET bookings/my-bookings 2xx
+    ✓ GET ride/rider-rides 2xx
+    ✓ GET notification (driver) 2xx
+    ✓ GET ride/driver-rides 2xx
+    ✓ GET user/me (driver) 2xx
+    ✓ GET passenger/ride-requests 2xx
+    ✓ GET setting/generals 2xx
+    ✓ GET chats/my-chat-list 2xx
+
+    HTTP
+    http_req_duration..............: avg=17.12ms min=3.43ms med=12.11ms p(90)=35.85ms p(95)=39.69ms p(99)=50.28ms max=72.82ms
+      { expected_response:true }...: avg=17.12ms min=3.43ms med=12.11ms p(90)=35.85ms p(95)=39.69ms p(99)=50.28ms max=72.82ms
+    http_req_failed................: 0.00%  0 out of 600
+    http_reqs......................: 600    20.001165/s
+
+    EXECUTION
+    iteration_duration.............: avg=17.58ms min=3.62ms med=12.82ms p(90)=36.5ms  p(95)=40.14ms p(99)=50.56ms max=73.55ms
+    iterations.....................: 600    20.001165/s
+    vus............................: 0      min=0        max=0 
+    vus_max........................: 20     min=20       max=20
+
+    NETWORK
+    data_received..................: 2.7 MB 89 kB/s
+    data_sent......................: 254 kB 8.5 kB/s
+
+
+
+
+running (0m30.0s), 000/020 VUs, 600 complete and 0 interrupted iterations
+mix  ✓ [ 100% ] 000/020 VUs  30s  20.00 iters/s

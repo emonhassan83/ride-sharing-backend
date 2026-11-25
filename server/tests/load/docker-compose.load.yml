@@ -1,0 +1,14 @@
+# Isolated data stores for load testing. NEVER point the load-test server at the
+# shared Atlas cluster. Ports are chosen to avoid the dev (6380) and
+# integration-test (6399 / 27099) containers.
+name: splitride-load
+services:
+  mongo:
+    image: mongo:latest
+    container_name: splitride-load-mongo
+    ports: ["27199:27017"]
+  redis:
+    image: redis:7-alpine
+    container_name: splitride-load-redis
+    command: ["redis-server", "--requirepass", "loadtestredis", "--appendonly", "no"]
+    ports: ["6499:6379"]

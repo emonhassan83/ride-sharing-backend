@@ -1,0 +1,6 @@
+{
+  "name": "splitride-load-tests",
+  "private": true,
+  "description": "Load-test tooling. Separate from the server package so no production dependency changes.",
+  "dependencies": { "socket.io-client": "4.8.1", "ioredis": "5.4.1", "mongodb": "6.10.0" }
+}

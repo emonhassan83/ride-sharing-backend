@@ -1,0 +1,51 @@
+[ws-sanity] drivers=20 riders=20 ping=4000ms search/min/rider=6 dur=30s ramp=5s
+{
+ "counts": {
+  "connected": 40,
+  "connectErr": 0,
+  "disconnects": 0,
+  "timeouts": {
+   "go-online": 0,
+   "location-update": 0,
+   "get-nearby": 0
+  },
+  "ackFail": {
+   "go-online": 0,
+   "location-update": 0,
+   "get-nearby": 0
+  },
+  "nearbyDrivers": 150,
+  "nearbyCalls": 63,
+  "pushesIn": 480
+ },
+ "latencyMs": {
+  "connect": {
+   "n": 40,
+   "p50": 6,
+   "p95": 16.5,
+   "p99": 24.3,
+   "max": 24.3
+  },
+  "go-online": {
+   "n": 20,
+   "p50": 7.9,
+   "p95": 20.8,
+   "p99": 20.8,
+   "max": 20.8
+  },
+  "location-update": {
+   "n": 166,
+   "p50": 9.3,
+   "p95": 21.4,
+   "p99": 36.1,
+   "max": 36.6
+  },
+  "get-nearby": {
+   "n": 63,
+   "p50": 116.7,
+   "p95": 670.6,
+   "p99": 775.9,
+   "max": 775.9
+  }
+ }
+}

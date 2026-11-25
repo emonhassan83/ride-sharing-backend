@@ -59,4 +59,6 @@ For detailed guidelines on specific areas of the system, refer to the following 
 * **Docker Infrastructure & Compose**: [DEPLOYMENT.md](file:///c:/bdcalling/explore/ride-sharing-backend/docs/DEPLOYMENT.md)
 * **Monorepo Directory Layout**: [FOLDER_STRUCTURE.md](file:///c:/bdcalling/explore/ride-sharing-backend/docs/FOLDER_STRUCTURE.md)
 * **Test Suites & Linting Processes**: [TESTING_WORKFLOW.md](file:///c:/bdcalling/explore/ride-sharing-backend/docs/TESTING_WORKFLOW.md)
+* **Load Testing Strategy (risks, traffic model, plan)**: [LOAD_TESTING_STRATEGY.md](file:///c:/bdcalling/explore/ride-sharing-backend/docs/LOAD_TESTING_STRATEGY.md)
+* **Load Test Results (before/after, harness usage)**: [LOAD_TEST_RESULTS.md](file:///c:/bdcalling/explore/ride-sharing-backend/docs/LOAD_TEST_RESULTS.md)
 * **AI Agent Instruction Rules**: [AI_SYSTEM_PROMPT.md](file:///c:/bdcalling/explore/ride-sharing-backend/docs/AI_SYSTEM_PROMPT.md)

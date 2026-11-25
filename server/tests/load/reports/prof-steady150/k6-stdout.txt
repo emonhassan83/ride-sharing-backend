@@ -1,0 +1,47 @@
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✓ 'p(95)<800' p(95)=292.04ms
+    ✓ 'p(99)<1500' p(99)=584.51ms
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 11251   150.011408/s
+    checks_succeeded...: 100.00% 11251 out of 11251
+    checks_failed......: 0.00%   0 out of 11251
+
+    ✓ GET chats/my-chat-list 2xx
+    ✓ GET bookings/my-bookings 2xx
+    ✓ GET ride/rider-rides 2xx
+    ✓ GET notification 2xx
+    ✓ GET passenger/ride-requests 2xx
+    ✓ GET setting/generals 2xx
+    ✓ GET user/me 2xx
+    ✓ GET user/me (driver) 2xx
+    ✓ GET ride/driver-rides 2xx
+    ✓ GET notification (driver) 2xx
+
+    HTTP
+    http_req_duration..............: avg=54.46ms min=2.6ms  med=13.55ms p(90)=152.18ms p(95)=292.04ms p(99)=584.51ms max=1.35s
+      { expected_response:true }...: avg=54.46ms min=2.6ms  med=13.55ms p(90)=152.18ms p(95)=292.04ms p(99)=584.51ms max=1.35s
+    http_req_failed................: 0.00%  0 out of 11251
+    http_reqs......................: 11251  150.011408/s
+
+    EXECUTION
+    iteration_duration.............: avg=54.77ms min=2.82ms med=13.81ms p(90)=152.62ms p(95)=292.79ms p(99)=585.01ms max=1.35s
+    iterations.....................: 11251  150.011408/s
+    vus............................: 9      min=0          max=78 
+    vus_max........................: 100    min=100        max=100
+
+    NETWORK
+    data_received..................: 47 MB  626 kB/s
+    data_sent......................: 4.8 MB 63 kB/s
+
+
+

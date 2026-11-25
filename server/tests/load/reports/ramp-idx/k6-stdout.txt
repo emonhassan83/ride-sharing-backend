@@ -1,0 +1,49 @@
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✗ 'p(95)<800' p(95)=840.75ms
+    ✗ 'p(99)<1500' p(99)=1.89s
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 41024   128.20346/s
+    checks_succeeded...: 100.00% 41024 out of 41024
+    checks_failed......: 0.00%   0 out of 41024
+
+    ✓ GET bookings/my-bookings 2xx
+    ✓ GET notification 2xx
+    ✓ GET passenger/ride-requests 2xx
+    ✓ GET user/me 2xx
+    ✓ GET chats/my-chat-list 2xx
+    ✓ GET ride/driver-rides 2xx
+    ✓ GET ride/rider-rides 2xx
+    ✓ GET notification (driver) 2xx
+    ✓ GET setting/generals 2xx
+    ✓ GET user/me (driver) 2xx
+
+    HTTP
+    http_req_duration..............: avg=191.99ms min=1.54ms med=24.18ms p(90)=568.27ms p(95)=840.75ms p(99)=1.89s max=3.13s
+      { expected_response:true }...: avg=191.99ms min=1.54ms med=24.18ms p(90)=568.27ms p(95)=840.75ms p(99)=1.89s max=3.13s
+    http_req_failed................: 0.00%  0 out of 41024
+    http_reqs......................: 41024  128.20346/s
+
+    EXECUTION
+    dropped_iterations.............: 276    0.862523/s
+    iteration_duration.............: avg=192.34ms min=2.28ms med=24.45ms p(90)=568.66ms p(95)=841.44ms p(99)=1.9s  max=3.13s
+    iterations.....................: 41024  128.20346/s
+    vus............................: 0      min=0          max=191
+    vus_max........................: 205    min=50         max=205
+
+    NETWORK
+    data_received..................: 172 MB 536 kB/s
+    data_sent......................: 17 MB  54 kB/s
+
+
+
+time="2026-11-24T16:40:30Z" level=error msg="thresholds on metrics 'http_req_duration' have been crossed"

@@ -1,0 +1,206 @@
+{
+    "metrics": {
+        "http_req_sending": {
+            "min": 0.010603,
+            "med": 0.030985,
+            "p(90)": 0.041527,
+            "p(95)": 0.05278029999999995,
+            "p(99)": 0.08861939999999978,
+            "max": 0.731558,
+            "avg": 0.03347854492844888
+        },
+        "vus_max": {
+            "value": 50,
+            "min": 50,
+            "max": 50
+        },
+        "http_req_duration": {
+            "p(99)": 75.29302659999999,
+            "max": 245.832796,
+            "avg": 14.066120721930226,
+            "min": 1.121349,
+            "med": 8.912877,
+            "p(90)": 30.3161136,
+            "p(95)": 41.362142999999996,
+            "thresholds": {
+                "p(95)<800": false,
+                "p(99)<1500": false
+            }
+        },
+        "http_req_receiving": {
+            "p(95)": 0.47354409999999986,
+            "p(99)": 0.6675237399999993,
+            "max": 6.650843,
+            "avg": 0.14464524087750374,
+            "min": 0.014916,
+            "med": 0.091724,
+            "p(90)": 0.2926920000000002
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 41299,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "iteration_duration": {
+            "min": 2.276737,
+            "med": 9.141113,
+            "p(90)": 30.542173800000022,
+            "p(95)": 41.582160599999995,
+            "p(99)": 75.52369789999985,
+            "max": 246.043599,
+            "avg": 14.290364973074386
+        },
+        "http_reqs": {
+            "count": 41299,
+            "rate": 129.06794810976092
+        },
+        "http_req_connecting": {
+            "avg": 0.0031806830431729575,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 12.40017
+        },
+        "data_received": {
+            "rate": 543070.7975154715,
+            "count": 173771112
+        },
+        "iterations": {
+            "count": 41299,
+            "rate": 129.06794810976092
+        },
+        "http_req_waiting": {
+            "max": 245.729189,
+            "avg": 13.88799693612442,
+            "min": 1.021939,
+            "med": 8.714907,
+            "p(90)": 30.059182400000005,
+            "p(95)": 41.1319826,
+            "p(99)": 75.06776795999991
+        },
+        "checks": {
+            "passes": 41299,
+            "fails": 0,
+            "value": 1
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 14.066120721930226,
+            "min": 1.121349,
+            "med": 8.912877,
+            "p(90)": 30.3161136,
+            "p(95)": 41.362142999999996,
+            "p(99)": 75.29302659999999,
+            "max": 245.832796
+        },
+        "vus": {
+            "value": 0,
+            "min": 0,
+            "max": 25
+        },
+        "http_req_blocked": {
+            "p(99)": 0.016155459999999927,
+            "max": 12.757002,
+            "avg": 0.009718265163805358,
+            "min": 0.003364,
+            "med": 0.005773,
+            "p(90)": 0.007889,
+            "p(95)": 0.009356
+        },
+        "data_sent": {
+            "rate": 54576.43451796024,
+            "count": 17463299
+        },
+        "http_req_tls_handshaking": {
+            "p(99)": 0,
+            "max": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        }
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+            "GET ride/driver-rides 2xx": {
+                "fails": 0,
+                "name": "GET ride/driver-rides 2xx",
+                "path": "::GET ride/driver-rides 2xx",
+                "id": "19075c940171f89964f5eb5165a55f26",
+                "passes": 3766
+            },
+            "GET user/me 2xx": {
+                "path": "::GET user/me 2xx",
+                "id": "352fe59720a8f1948a38e1074f5be8da",
+                "passes": 7212,
+                "fails": 0,
+                "name": "GET user/me 2xx"
+            },
+            "GET ride/rider-rides 2xx": {
+                "name": "GET ride/rider-rides 2xx",
+                "path": "::GET ride/rider-rides 2xx",
+                "id": "7b20f6c767b3c71e474adf99b96049a7",
+                "passes": 7283,
+                "fails": 0
+            },
+            "GET passenger/ride-requests 2xx": {
+                "name": "GET passenger/ride-requests 2xx",
+                "path": "::GET passenger/ride-requests 2xx",
+                "id": "e7d995f7fa078255defb39a2af9d2d18",
+                "passes": 3051,
+                "fails": 0
+            },
+            "GET chats/my-chat-list 2xx": {
+                "path": "::GET chats/my-chat-list 2xx",
+                "id": "da3844a8d16341a4383b5054fb67e487",
+                "passes": 1523,
+                "fails": 0,
+                "name": "GET chats/my-chat-list 2xx"
+            },
+            "GET notification (driver) 2xx": {
+                "id": "09ae70fa9010e8745a913d8e26234896",
+                "passes": 1806,
+                "fails": 0,
+                "name": "GET notification (driver) 2xx",
+                "path": "::GET notification (driver) 2xx"
+            },
+            "GET notification 2xx": {
+                "name": "GET notification 2xx",
+                "path": "::GET notification 2xx",
+                "id": "854bd4c1c89bf8a18ae7361b8631bc1d",
+                "passes": 5737,
+                "fails": 0
+            },
+            "GET setting/generals 2xx": {
+                "name": "GET setting/generals 2xx",
+                "path": "::GET setting/generals 2xx",
+                "id": "87b2c410cadbb8bbb72efecf1d185666",
+                "passes": 2891,
+                "fails": 0
+            },
+            "GET user/me (driver) 2xx": {
+                "name": "GET user/me (driver) 2xx",
+                "path": "::GET user/me (driver) 2xx",
+                "id": "ee0f79354602ad47b925b3e0148343e7",
+                "passes": 3637,
+                "fails": 0
+            },
+            "GET bookings/my-bookings 2xx": {
+                "path": "::GET bookings/my-bookings 2xx",
+                "id": "816c66584bc646cc37f3fbd6f50d7dae",
+                "passes": 4393,
+                "fails": 0,
+                "name": "GET bookings/my-bookings 2xx"
+            }
+        }
+    }
+}

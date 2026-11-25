@@ -1,0 +1,79 @@
+[
+  {
+    _id: {
+      ns: 'splitride_load.notifications',
+      op: 'command',
+      plan: 'COLLSCAN'
+    },
+    n: 294,
+    avgMs: 4142.693877551021,
+    maxMs: 5053,
+    docs: 96000
+  },
+  {
+    _id: {
+      ns: 'splitride_load.notifications',
+      op: 'query',
+      plan: 'COLLSCAN'
+    },
+    n: 253,
+    avgMs: 12120.209486166008,
+    maxMs: 13019,
+    docs: 96000
+  },
+  {
+    _id: {
+      ns: 'splitride_load.rides',
+      op: 'command',
+      plan: 'IXSCAN { _id: 1 }'
+    },
+    n: 9,
+    avgMs: 106.77777777777777,
+    maxMs: 112,
+    docs: 0
+  },
+  {
+    _id: {
+      ns: 'splitride_load.rides',
+      op: 'query',
+      plan: 'IXSCAN { _id: 1 }'
+    },
+    n: 7,
+    avgMs: 124.85714285714286,
+    maxMs: 139,
+    docs: 128.42857142857142
+  },
+  {
+    _id: {
+      ns: 'splitride_load.passengers',
+      op: 'query',
+      plan: 'IXSCAN { rideId: 1, status: 1 }'
+    },
+    n: 3,
+    avgMs: 8701,
+    maxMs: 11641,
+    docs: 0
+  },
+  {
+    _id: {
+      ns: 'splitride_load.bookings',
+      op: 'query',
+      plan: 'IXSCAN { passengerId: 1 }'
+    },
+    n: 2,
+    avgMs: 114,
+    maxMs: 118,
+    docs: 101
+  },
+  {
+    _id: {
+      ns: 'splitride_load.passengers',
+      op: 'command',
+      plan: 'IXSCAN { rideId: 1, status: 1 }'
+    },
+    n: 1,
+    avgMs: 104,
+    maxMs: 104,
+    docs: 0
+  }
+]

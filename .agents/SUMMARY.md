@@ -1,3 +1,31 @@
+Date/Session: 2026-11-24 (load tests executed, first optimisations, before/after comparison)
+
+Completed Tasks:
+- Built an isolated load-test harness in `server/tests/load/` (own Mongo/Redis containers on ports 27199/6499, stubbed Maps/Stripe/Twilio/FCM, k6 via Docker, Socket.io client generator, telemetry, analyzer, comparison script). Seeder refuses non-local DBs.
+- Measured and fixed: missing `notifications` index (31 -> 129 req/s on the ramp, p95 47.9 s -> 41 ms), nearby-driver search done sequentially (T1 p50 4.1 s -> 0.62 s; T2 timeouts 98.7% -> 0), `onlineUser` broadcast fan-out (events -89% / -96%), cached `Intl.DateTimeFormat`, coarse (about 110 m) Maps cache for display ETAs only.
+- Files: notification.model.ts, geo.utils.ts, maps.utils.ts, getNearbyDrivers.handler.ts, driverGoOnline/GoOffline handlers, new socket/utils/onlineCountBroadcast.ts, rideSchedule.utils.ts, one unit test updated. tsc and unit tests clean; integration suite passed on two reruns (one earlier run showed an unreproduced "1 error").
+- Full results and limits: `docs/LOAD_TEST_RESULTS.md`.
+
+Next Steps:
+- Build the notification index on production off-peak before deploy.
+- Remaining bottlenecks: single Node core ceiling about 200 req/s with no load shedding, Maps calls per nearby search (about 51-193), bcrypt login about 18/s.
+- Not yet tested: money-concurrency (MC-1..11), ride request/accept flows, cron, soak, outage, multi-instance.
+
+---
+
+Date/Session: 2026-11-24 (performance audit + load testing strategy, analysis only)
+
+Completed Tasks:
+- Read-only performance and concurrency audit of server and worker. No production code changed. Output: `docs/LOAD_TESTING_STRATEGY.md` (risks with file refs, traffic model, prioritized tests, SLOs, money invariants).
+- Measured: the `User.email` regex (`user.model.ts:21`) takes about 8 s on a crafted 33-character address (ReDoS via `POST /auth/register`).
+- Found: the location-ping arrival check (`driverLocationUpdate.handler.ts` steps 7-9) is unreachable, because the ride is kept only when `started` but the check needs `accepted`.
+
+Next Steps:
+- Load tests need an isolated stack (dev and prod share MongoDB). Run P0-a (money concurrency, MC-1..11) first.
+- Fix candidates are listed in §6 of the strategy doc. Highest priority: compare-and-set cancels/refunds, the email regex, upload auth/limits, rate limiting, the Maps ETA cache key, and the dispatch `users:online` scan.
+
+---
+
 Date/Session: 2026-11-24 (website/admin report: OTP bypass, chat access, busy rule at accept)
 
 Completed Tasks:

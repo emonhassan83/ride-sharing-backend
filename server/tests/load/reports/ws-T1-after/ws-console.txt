@@ -1,0 +1,51 @@
+[ws-T1-after] drivers=300 riders=1000 ping=4000ms search/min/rider=0.15 dur=180s ramp=30s
+{
+ "counts": {
+  "connected": 1300,
+  "connectErr": 0,
+  "disconnects": 0,
+  "timeouts": {
+   "go-online": 0,
+   "location-update": 0,
+   "get-nearby": 0
+  },
+  "ackFail": {
+   "go-online": 0,
+   "location-update": 0,
+   "get-nearby": 0
+  },
+  "nearbyDrivers": 24654,
+  "nearbyCalls": 508,
+  "pushesIn": 20895
+ },
+ "latencyMs": {
+  "connect": {
+   "n": 1300,
+   "p50": 4.1,
+   "p95": 11.7,
+   "p99": 20.7,
+   "max": 29.2
+  },
+  "go-online": {
+   "n": 300,
+   "p50": 5.6,
+   "p95": 14.9,
+   "p99": 26.4,
+   "max": 34
+  },
+  "location-update": {
+   "n": 14596,
+   "p50": 10.4,
+   "p95": 28.8,
+   "p99": 42.1,
+   "max": 126.2
+  },
+  "get-nearby": {
+   "n": 508,
+   "p50": 623.9,
+   "p95": 724.9,
+   "p99": 749.1,
+   "max": 810.9
+  }
+ }
+}

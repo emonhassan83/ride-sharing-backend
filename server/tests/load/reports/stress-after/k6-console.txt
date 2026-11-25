@@ -1,0 +1,50 @@
+time="2026-11-24T17:21:21Z" level=warning msg="Insufficient VUs, reached 2500 active VUs and cannot initialize more" executor=ramping-arrival-rate scenario=mix
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✗ 'p(95)<800' p(95)=34.35s
+    ✗ 'p(99)<1500' p(99)=35.53s
+
+    http_req_failed
+    ✓ 'rate<0.30' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 61200   207.556671/s
+    checks_succeeded...: 100.00% 61200 out of 61200
+    checks_failed......: 0.00%   0 out of 61200
+
+    ✓ GET setting/generals 2xx
+    ✓ GET user/me (driver) 2xx
+    ✓ GET passenger/ride-requests 2xx
+    ✓ GET notification 2xx
+    ✓ GET ride/rider-rides 2xx
+    ✓ GET ride/driver-rides 2xx
+    ✓ GET notification (driver) 2xx
+    ✓ GET user/me 2xx
+    ✓ GET chats/my-chat-list 2xx
+    ✓ GET bookings/my-bookings 2xx
+
+    HTTP
+    http_req_duration..............: avg=8.23s min=2.21ms med=5.66s p(90)=13.69s p(95)=34.35s p(99)=35.53s max=36.08s
+      { expected_response:true }...: avg=8.23s min=2.21ms med=5.66s p(90)=13.69s p(95)=34.35s p(99)=35.53s max=36.08s
+    http_req_failed................: 0.00%  0 out of 61200
+    http_reqs......................: 61200  207.556671/s
+
+    EXECUTION
+    dropped_iterations.............: 170924 579.680007/s
+    iteration_duration.............: avg=8.23s min=2.37ms med=5.66s p(90)=13.69s p(95)=34.36s p(99)=35.53s max=36.08s
+    iterations.....................: 61200  207.556671/s
+    vus............................: 102    min=0          max=2500
+    vus_max........................: 2500   min=200        max=2500
+
+    NETWORK
+    data_received..................: 255 MB 864 kB/s
+    data_sent......................: 26 MB  88 kB/s
+
+
+
+time="2026-11-24T17:26:44Z" level=error msg="thresholds on metrics 'http_req_duration' have been crossed"
