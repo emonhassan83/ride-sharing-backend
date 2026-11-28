@@ -104,6 +104,8 @@ describe('ISSUE 8: driver accepts a private ride', () => {
     vi.mocked(Booking.findOne).mockReturnValue(mockQuery(booking) as any);
     vi.mocked(Booking.findById).mockReturnValue(mockQuery(booking) as any);
     vi.mocked(Ride.findOneAndUpdate).mockReturnValue(mockQuery({ _id: rideId, status: 'accepted' }) as any);
+    // Accept race fix: the passenger is claimed pending -> confirmed atomically first.
+    vi.mocked(Passenger.findOneAndUpdate).mockReturnValue(mockQuery({ _id: oid() }) as any);
     vi.mocked(getRealDistanceAndETA).mockResolvedValue({ distanceKm: 2, durationMinutes: 6 } as any);
     await fakeRedis.set(`driver:${driverId}:current`, JSON.stringify({ lat: 35.01, lng: 33.01 }));
   });
@@ -136,6 +138,21 @@ describe('ISSUE 8: driver accepts a private ride', () => {
     expect(pushes().map((p) => p.message)).toEqual(['Payment Needs Attention']);
     expect(io.emittedTo(`driver:${otherDriver}`, 'ride:already-taken')).toHaveLength(0);
     expect(io.emittedEvents('ride:driver-accepted')).toHaveLength(0);
+    // The passenger claim is handed back (confirmed -> pending).
+    expect(vi.mocked(Passenger.updateOne).mock.calls[0]?.[1]).toEqual({ $set: { status: 'pending' } });
+  });
+
+  it('the passenger was cancelled meanwhile (claim lost): no ride claim, no capture, card removed', async () => {
+    vi.mocked(Passenger.findOneAndUpdate).mockReturnValue(mockQuery(null) as any);
+    vi.mocked(Passenger.findById).mockReturnValue(mockQuery({ status: 'cancelled' }) as any);
+
+    const ack = await accept();
+
+    expect(ack).toMatchObject({ success: false, code: 'RIDE_NOT_AVAILABLE' });
+    expect(Ride.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(PaymentService.captureAuthorizedBookingPayment).not.toHaveBeenCalled();
+    expect(io.emittedTo(`driver:${driverId}`, 'ride:request-removed')).toHaveLength(1);
+    expect(pushes()).toEqual([]);
   });
 
   it('capture fails AFTER money moved (or unknown): claim is kept so the same driver can retry safely', async () => {
@@ -162,6 +179,8 @@ describe('ISSUE 9: start trip + pickup', () => {
   beforeEach(() => {
     io = createMockIo();
     vi.mocked(getIO).mockReturnValue(io);
+    // Start trip re-reads the driver's status (a blocked driver cannot start).
+    vi.mocked(User.findById).mockReturnValue(mockQuery({ _id: driverId, status: 'active', isDeleted: false }) as any);
   });
 
   const start = async () => {
@@ -218,5 +237,16 @@ describe('ISSUE 9: start trip + pickup', () => {
     expect(second.data?.alreadyStarted ?? first.data?.alreadyStarted).toBe(true);
     expect(pushes()).toHaveLength(1);
     expect(io.emittedEvents('ride:trip-started')).toHaveLength(1);
+  });
+
+  it('a blocked driver cannot start the trip (status re-read from the DB, not the socket)', async () => {
+    vi.mocked(User.findById).mockReturnValue(mockQuery({ _id: driverId, status: 'blocked', isDeleted: false }) as any);
+    vi.mocked(Ride.findById).mockReturnValue(mockQuery({ _id: rideId, type: 'private', status: 'accepted', driverId }) as any);
+
+    const ack = await start();
+
+    expect(ack).toMatchObject({ success: false, code: 'ACCOUNT_BLOCKED' });
+    expect(Ride.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(pushes()).toEqual([]);
   });
 });

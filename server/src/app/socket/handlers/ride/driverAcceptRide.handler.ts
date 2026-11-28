@@ -28,7 +28,12 @@ import { buildStoredFareBreakdown } from '../../../utils/fareBreakdownResponse.u
 import { toRiderPriceView } from '../../../utils/riderPriceResponse.utils';
 import { toLuggageFyiView } from '../../../utils/luggage.utils';
 import { buildWaitTimeNotice } from '../../../utils/waitTimeNotice.utils';
-import { getAcceptBlockReason } from '../../../utils/acceptGuard.utils';
+import {
+  ACCEPT_BLOCKED_MESSAGE,
+  claimPassengerForAccept,
+  getAcceptBlockReason,
+  releasePassengerAcceptClaim,
+} from '../../../utils/acceptGuard.utils';
 import { getDepartureDateTime } from '../../../utils/rideSchedule.utils';
 import {
   isDriverKycVerified,
@@ -387,6 +392,20 @@ export const driverAcceptRideHandler = eventHandler<any>(
       const privateBlock = getAcceptBlockReason(passenger, booking);
       if (privateBlock) return callback?.({ success: false, message: privateBlock });
 
+      // Claim the rider before claiming the ride and capturing the card, so a
+      // rider cancel in flight either wins (we stop here) or sees no pending
+      // booking (it stops) — never both.
+      const claim = await claimPassengerForAccept(passenger._id);
+      if (!claim.claimed) {
+        return callback?.(
+          rideUnavailableAck(io, driverId, rideId, ride.status, ACCEPT_BLOCKED_MESSAGE),
+        );
+      }
+      const firstAccept = claim.firstAccept;
+      const undoClaim = async () => {
+        if (firstAccept) await releasePassengerAcceptClaim(passenger._id);
+      };
+
       const pickupLat = passenger.pickup.coordinates[1];
       const pickupLng = passenger.pickup.coordinates[0];
       const estimatedArrival = await calcEstimatedArrival(
@@ -439,6 +458,7 @@ export const driverAcceptRideHandler = eventHandler<any>(
 
       if (!assignedRide) {
         // Lost a race: another driver took it, or the rider cancelled meanwhile.
+        await undoClaim();
         const current = await Ride.findById(rideId).select('driverId status').lean();
         if (current?.driverId && current.driverId.toString() !== driverId) {
           return callback?.(
@@ -472,6 +492,11 @@ export const driverAcceptRideHandler = eventHandler<any>(
           `Private accept capture failed | rideId=${rideId} driverId=${driverId}:`,
           captureErr?.message || captureErr,
         );
+
+        // Hand the rider back to `pending`: a retry then counts as the first
+        // accept again (rider push), and the ride claim alone keeps a rider
+        // cancel out ("driver already accepted") while the driver retries.
+        await undoClaim();
 
         // Issue 8: the ride used to stay "accepted" by this driver while the rider
         // got nothing, and the no-driver job no longer looked at it. If no money
@@ -549,22 +574,13 @@ export const driverAcceptRideHandler = eventHandler<any>(
         booking.bookingStatus = BOOKING_STATUS.accepted;
       }
 
-      const alreadyAccepted = [
-        PASSENGER_STATUS.confirmed,
-        PASSENGER_STATUS.driver_arrived,
-        PASSENGER_STATUS.in_progress,
-        PASSENGER_STATUS.picked_up,
-        PASSENGER_STATUS.dropped_off,
-        PASSENGER_STATUS.completed,
-      ].includes(passenger.status as any);
-      const firstAccept = !alreadyAccepted;
-
       if (firstAccept) {
         notifyAdminForNewPendingBooking(booking).catch(() => { });
       }
 
+      // Status is already `confirmed` (claimed above); the in-memory passenger is
+      // stale, so it is not saved. Keep the local copy in step for the payload.
       passenger.status = PASSENGER_STATUS.confirmed;
-      await passenger.save();
 
       await redis.hset(`ride:active:${rideId}`, {
         driverId,
@@ -649,6 +665,21 @@ export const driverAcceptRideHandler = eventHandler<any>(
         const splitBlock = getAcceptBlockReason(passenger, booking);
         if (splitBlock) return { success: false, message: splitBlock };
 
+        if (ride.driverId && ride.driverId.toString() !== driverId)
+          return {
+            success: false,
+            message: 'This ride has already been assigned to another driver.',
+          };
+
+        // Claim the rider BEFORE any side effect, so a cancel that lands while
+        // this accept runs cannot be overwritten (see claimPassengerForAccept).
+        const claim = await claimPassengerForAccept(passenger._id);
+        if (!claim.claimed) return { success: false, message: ACCEPT_BLOCKED_MESSAGE };
+        const firstAccept = claim.firstAccept;
+        const undoClaim = async () => {
+          if (firstAccept) await releasePassengerAcceptClaim(passenger._id);
+        };
+
         const pickupLat = passenger.pickup.coordinates[1];
         const pickupLng = passenger.pickup.coordinates[0];
         const estimatedArrival = await calcEstimatedArrival(
@@ -670,12 +701,6 @@ export const driverAcceptRideHandler = eventHandler<any>(
           ).length;
         const isLastPassenger = remainingCount === 0;
 
-        if (ride.driverId && ride.driverId.toString() !== driverId)
-          return {
-            success: false,
-            message: 'This ride has already been assigned to another driver.',
-          };
-
         const rideUpdate: Record<string, any> = {};
         let assignedThisRide = false;
         if (!ride.driverId) {
@@ -693,6 +718,9 @@ export const driverAcceptRideHandler = eventHandler<any>(
           const assignedRide = await Ride.findOneAndUpdate(
             {
               _id: rideId,
+              // Without a status condition a ride the no-driver job (or the
+              // last rider) cancelled meanwhile was flipped back to accepted.
+              status: { $in: [RIDE_STATUS.pending, RIDE_STATUS.accepted] },
               $or: [
                 { driverId: driverId },
                 { driverId: { $exists: false } },
@@ -703,11 +731,17 @@ export const driverAcceptRideHandler = eventHandler<any>(
             { returnDocument: 'after' }
           );
 
-          if (!assignedRide)
-            return {
-              success: false,
-              message: 'This ride has already been assigned to another driver.',
-            };
+          if (!assignedRide) {
+            await undoClaim();
+            const current = await Ride.findById(rideId).select('driverId status').lean();
+            if (current?.driverId && current.driverId.toString() !== driverId) {
+              return {
+                success: false,
+                message: 'This ride has already been assigned to another driver.',
+              };
+            }
+            return { success: false, message: rideUnavailableMessage(current?.status) };
+          }
 
           if (assignedThisRide) {
             // Whole-ride accept: the other drivers drop the whole card, so no passengerId.
@@ -761,22 +795,12 @@ export const driverAcceptRideHandler = eventHandler<any>(
           });
         }
 
-        const alreadyAccepted = [
-          PASSENGER_STATUS.confirmed,
-          PASSENGER_STATUS.driver_arrived,
-          PASSENGER_STATUS.in_progress,
-          PASSENGER_STATUS.picked_up,
-          PASSENGER_STATUS.dropped_off,
-          PASSENGER_STATUS.completed,
-        ].includes(passenger.status as any);
-        const firstAccept = !alreadyAccepted;
-
         if (firstAccept) {
           notifyAdminForNewPendingBooking(booking).catch(() => { });
         }
 
-        passenger.status = PASSENGER_STATUS.confirmed;
-        await passenger.save();
+        // Status is already `confirmed` (claimed above). No passenger.save():
+        // the in-memory document is stale and would overwrite newer fields.
 
         await recalculateSplitFares(rideId, 'passenger_joined', io);
 

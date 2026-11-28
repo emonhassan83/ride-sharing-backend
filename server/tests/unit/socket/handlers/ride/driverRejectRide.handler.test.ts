@@ -266,85 +266,52 @@ describe('driver:reject-ride - SPLIT ride', () => {
     expect(io.emittedEvents('ride:driver-rejected')).toHaveLength(0);
   });
 
-  it('reports an unknown passenger', async () => {
-    arrange(splitRide(), null);
-    await run({ rideId, passengerId });
-    expect(ack).toHaveBeenCalledWith({
-      success: false,
-      message: 'Passenger not found or already processed',
-    });
-  });
-
-  it('rejects the passenger, recalculates the remaining riders\' fares and keeps the ride alive', async () => {
+  // "Accept Failed: already accepted or cancelled" (Bugs V4): a decline WITH a
+  // passengerId (the request card row `_id` is a passenger id) used to mark that
+  // rider `rejected` and, for the last rider, cancel the whole ride without telling
+  // the other notified drivers. A pending ride has no driver yet, so a decline is
+  // now always "not for me", exactly like the whole-card decline above.
+  it('a decline WITH a passengerId is also a per-driver decline: the rider is not touched', async () => {
     const passenger = makePassenger();
     arrange(splitRide(), passenger);
-    vi.mocked(Passenger.countDocuments).mockReturnValue(mockQuery(2) as any);
+    vi.mocked(Ride.findByIdAndUpdate).mockReturnValue(mockQuery(null) as any);
 
     await run({ rideId, passengerId, reason: 'Too far' });
 
-    expect(passenger.status).toBe('rejected');
-    expect(passenger.rejectionReason).toBe('Too far');
-    expect(passenger.save).toHaveBeenCalledTimes(1);
-    expect(io.payloadTo(`user:${riderUserId}`, 'ride:driver-rejected')).toMatchObject({
-      reason: 'Too far',
-      searchingAgain: true,
-      rideCancelled: false,
-    });
-    expect(await fakeRedis.smembers(`ride:rejected:${rideId}`)).toEqual([driverId]);
-    expect(recalculateSplitFares).toHaveBeenCalledWith(rideId, 'passenger_rejected', io);
-    expect(Passenger.countDocuments).toHaveBeenCalledWith({ rideId, status: 'pending' });
-    expect(Ride.findByIdAndUpdate).not.toHaveBeenCalled(); // 2 riders still waiting
     expect(ack).toHaveBeenCalledWith({
       success: true,
-      message: 'Passenger rejected successfully',
-      data: { passengerId, remainingPassengers: 2, rideCancelled: false },
+      message: 'Ride declined. It stays available to other drivers.',
+      data: { rideCancelled: false, passengerId },
     });
+    expect(passenger.status).toBe('pending');
+    expect(passenger.save).not.toHaveBeenCalled();
+    expect(io.emittedEvents('ride:driver-rejected')).toHaveLength(0);
+    expect(recalculateSplitFares).not.toHaveBeenCalled();
+    expect(await fakeRedis.smembers(`ride:rejected:${rideId}`)).toEqual([driverId]);
+    expect(Ride.findByIdAndUpdate).toHaveBeenCalledWith(rideId, { $pull: { notifiedDriverIds: driverId } });
   });
 
-  it('uses default reasons when none is given', async () => {
-    const passenger = makePassenger();
-    arrange(splitRide(), passenger);
-    vi.mocked(Passenger.countDocuments).mockReturnValue(mockQuery(1) as any);
-    await run({ rideId, passengerId });
-    expect(passenger.rejectionReason).toBe('Driver rejected');
-    expect(io.payloadTo(`user:${riderUserId}`, 'ride:driver-rejected').reason).toBe(
-      'Driver rejected your request',
-    );
-  });
-
-  it('cancels the ride and cleans the matching queue when the LAST waiting passenger is rejected', async () => {
+  it('declining the LAST waiting rider no longer cancels the ride (queue + request survive)', async () => {
     arrange(splitRide(), makePassenger());
-    vi.mocked(Passenger.countDocuments).mockReturnValue(mockQuery(0) as any);
+    vi.mocked(Ride.findByIdAndUpdate).mockReturnValue(mockQuery(null) as any);
     await fakeRedis.zadd('ride:matching:queue', 1, rideId);
     await fakeRedis.hset(`ride:request:${rideId}`, { matchingStatus: 'x' });
 
     await run({ rideId, passengerId });
 
-    expect(Ride.findByIdAndUpdate).toHaveBeenCalledWith(rideId, {
-      status: 'cancelled',
-      cancellationReason: 'No passengers left after driver rejection',
-      cancelledBy: 'system',
-      cancelledAt: new Date(NOW),
-    });
-    expect(await fakeRedis.zscore('ride:matching:queue', rideId)).toBeNull();
-    expect(await fakeRedis.exists(`ride:request:${rideId}`)).toBe(0);
-    expect(ack).toHaveBeenCalledWith(
-      expect.objectContaining({
-        success: true,
-        data: { passengerId, remainingPassengers: 0, rideCancelled: true },
-      }),
-    );
+    expect(Ride.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+    expect(Ride.findByIdAndUpdate).not.toHaveBeenCalledWith(rideId, expect.objectContaining({ status: 'cancelled' }));
+    expect(await fakeRedis.zscore('ride:matching:queue', rideId)).toBe('1');
+    expect(await fakeRedis.exists(`ride:request:${rideId}`)).toBe(1);
+    expect(ack).toHaveBeenCalledWith(expect.objectContaining({ success: true, data: expect.objectContaining({ rideCancelled: false }) }));
   });
 
-  it('does not touch the ride when it was NOT the last passenger (queue entry survives)', async () => {
-    arrange(splitRide(), makePassenger());
-    vi.mocked(Passenger.countDocuments).mockReturnValue(mockQuery(1) as any);
-    await fakeRedis.zadd('ride:matching:queue', 1, rideId);
-
-    await run({ rideId, passengerId });
-
-    expect(await fakeRedis.zscore('ride:matching:queue', rideId)).toBe('1');
-    expect(Ride.findByIdAndUpdate).not.toHaveBeenCalled();
+  it('an unknown passengerId does not matter: the decline is about the ride', async () => {
+    arrange(splitRide(), null);
+    vi.mocked(Ride.findByIdAndUpdate).mockReturnValue(mockQuery(null) as any);
+    await run({ rideId, passengerId: oidStr() });
+    expect(ack).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(Passenger.findOne).not.toHaveBeenCalled();
   });
 });
 

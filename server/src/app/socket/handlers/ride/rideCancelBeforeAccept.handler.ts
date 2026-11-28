@@ -207,17 +207,11 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
     const redis = getRedisClient();
     const io    = getIO();
 
-    // Release the card hold before recording the cancellation, so a failure stays retryable.
-    const releaseResult = await releaseAuthorizedHold(passenger._id);
-    // B-04: cancelling before acceptance is free; say so explicitly in every ack.
-    const cancelInfo = {
-      refundAmount: releaseResult.refundAmount,
-      feeAmount: 0,
-      feePercent: 0,
-      refundDestination: releaseResult.refundAmount > 0 ? 'wallet' : releaseResult.holdReleased ? 'card_release' : null,
-    };
-
-    // Atomic: on a double tap only one request goes on to cancel the ride and notify.
+    // Claim the passenger FIRST (atomic pending → cancelled). A driver accept
+    // claims the same passenger pending → confirmed, so exactly one of the two
+    // wins. Releasing the hold first (the old order) let an accept that landed
+    // in between capture/confirm a rider whose hold was already being released.
+    // A double tap is also stopped here: only one request gets past the claim.
     const claimed = await Passenger.findOneAndUpdate(
       { _id: passenger._id, status: PASSENGER_STATUS.pending },
       {
@@ -226,8 +220,38 @@ export const rideCancelBeforeAcceptHandler = eventHandler<any>(
         cancelledBy:        CANCELLED_BY.user,
       },
     );
-    if (!claimed)
-      return callback?.({ success: false, message: 'No pending booking found' });
+    if (!claimed) {
+      const current = await Passenger.findById(passenger._id).select('status').lean();
+      return callback?.({
+        success: false,
+        message:
+          current?.status === PASSENGER_STATUS.confirmed
+            ? 'Cannot cancel: driver already accepted'
+            : 'No pending booking found',
+      });
+    }
+
+    let releaseResult: TReleaseResult;
+    try {
+      releaseResult = await releaseAuthorizedHold(passenger._id);
+    } catch (error) {
+      // Money did not move: put the booking back to pending so the cancel can be retried.
+      await Passenger.updateOne(
+        { _id: passenger._id, status: PASSENGER_STATUS.cancelled, cancelledBy: CANCELLED_BY.user },
+        {
+          $set: { status: PASSENGER_STATUS.pending },
+          $unset: { cancellationReason: '', cancelledBy: '' },
+        },
+      );
+      throw error;
+    }
+    // B-04: cancelling before acceptance is free; say so explicitly in every ack.
+    const cancelInfo = {
+      refundAmount: releaseResult.refundAmount,
+      feeAmount: 0,
+      feePercent: 0,
+      refundDestination: releaseResult.refundAmount > 0 ? 'wallet' : releaseResult.holdReleased ? 'card_release' : null,
+    };
 
     try {
       await redis.del(`ride:request:${rideId}:${passenger._id}`);

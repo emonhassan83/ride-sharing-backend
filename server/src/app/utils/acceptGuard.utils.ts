@@ -1,5 +1,7 @@
 import { BOOKING_STATUS } from '../modules/booking/booking.constant';
 import { PASSENGER_STATUS } from '../modules/passenger/passenger.constant';
+import { Types } from 'mongoose';
+import { Passenger } from '../modules/passenger/passenger.model';
 
 // Issue 14: a passenger that was cancelled or refunded (rider cancel, no-driver
 // job, split pending-match job) must not be revived by a late driver accept.
@@ -49,4 +51,55 @@ export const getAcceptBlockReason = (
     return ACCEPT_BLOCKED_MESSAGE;
   }
   return null;
+};
+
+// ── Accept vs. rider-cancel race ──────────────────────────────────────────────
+// Driver accept and rider cancel-before-accept both start from a `pending`
+// passenger. The accept used to read the passenger, do its work and only then
+// `passenger.save()` with `confirmed`, overwriting a `cancelled` written in the
+// meantime: a rider whose hold was already released was revived as confirmed.
+// Both sides now flip the status atomically from `pending`, so exactly one wins.
+
+const ACCEPTED_PASSENGER_STATUSES: string[] = [
+  PASSENGER_STATUS.confirmed,
+  PASSENGER_STATUS.driver_arrived,
+  PASSENGER_STATUS.in_progress,
+  PASSENGER_STATUS.picked_up,
+  PASSENGER_STATUS.dropped_off,
+  PASSENGER_STATUS.completed,
+];
+
+export type TPassengerAcceptClaim =
+  | { claimed: true; firstAccept: boolean }
+  | { claimed: false; status: string | null };
+
+/**
+ * Atomically moves the passenger pending → confirmed. A passenger already
+ * accepted (a retry by the driver) counts as claimed, with `firstAccept: false`.
+ */
+export const claimPassengerForAccept = async (
+  passengerId: Types.ObjectId | string,
+): Promise<TPassengerAcceptClaim> => {
+  const flipped = await Passenger.findOneAndUpdate(
+    { _id: passengerId, status: PASSENGER_STATUS.pending },
+    { $set: { status: PASSENGER_STATUS.confirmed } },
+    { projection: { _id: 1 } },
+  ).lean();
+  if (flipped) return { claimed: true, firstAccept: true };
+
+  const current = await Passenger.findById(passengerId).select('status').lean();
+  const status = current?.status ? String(current.status) : null;
+  if (status && ACCEPTED_PASSENGER_STATUSES.includes(status)) {
+    return { claimed: true, firstAccept: false };
+  }
+  return { claimed: false, status };
+};
+
+/** Undo claimPassengerForAccept when the accept fails afterwards. */
+export const releasePassengerAcceptClaim = async (passengerId: Types.ObjectId | string): Promise<void> => {
+  // Only if it is still our `confirmed`: a job may have cancelled it since.
+  await Passenger.updateOne(
+    { _id: passengerId, status: PASSENGER_STATUS.confirmed },
+    { $set: { status: PASSENGER_STATUS.pending } },
+  );
 };
