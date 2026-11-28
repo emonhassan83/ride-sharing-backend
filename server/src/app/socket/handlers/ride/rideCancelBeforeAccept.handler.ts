@@ -40,6 +40,15 @@ const notifyDriverCancelled = async (
   await Promise.all(
     [...driverIds].map(async (id) => {
       io.to(`driver:${id}`).to(`user:${id}`).emit('ride:cancelled-by-rider', payload);
+      // Same removal event the expiry job and the accept guard use, so an app
+      // that only listens for `ride:request-removed` still drops the card.
+      if (extra?.rideCancelled) {
+        io.to(`driver:${id}`).emit('ride:request-removed', {
+          rideId,
+          reason: 'cancelled_by_rider',
+          message,
+        });
+      }
       notifyUserPushInBackground({
         userId: id,
         message: 'Ride Cancelled by Rider',

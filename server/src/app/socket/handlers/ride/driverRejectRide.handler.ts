@@ -1,17 +1,12 @@
 // handlers/driver/driverRejectRide.handler.ts
 import { getRedisClient } from '../../../config/redis.config';
-import {
-  RIDE_STATUS,
-  RIDE_TYPE,
-  CANCELLED_BY,
-} from '../../../modules/ride/ride.constant';
+import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { Ride } from '../../../modules/ride/ride.model';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { TSocket } from '../../interface/index.interface';
 import { getIO } from '../../socket.init';
 import eventHandler from '../../utils/eventHandler';
-import { recalculateSplitFares } from '../../../utils/splitFare.utils';
 import { getDepartureDateTime } from '../../../utils/rideSchedule.utils';
 
 export const driverRejectRideHandler = eventHandler<any>(
@@ -48,14 +43,6 @@ export const driverRejectRideHandler = eventHandler<any>(
         Math.floor((departureMs - Date.now()) / 1000) + 7200
       );
       await redis.expire(`ride:rejected:${rideId}`, ttlSeconds);
-    };
-
-    // ── Helper: redis cleanup ─────────────────────────────────────────────────
-    const redisCleanup = async () => {
-      await Promise.all([
-        redis.zrem('ride:matching:queue', rideId),
-        redis.del(`ride:request:${rideId}`),
-      ]);
     };
 
     // ── PRIVATE RIDE ──────────────────────────────────────────────────────────
@@ -109,75 +96,22 @@ export const driverRejectRideHandler = eventHandler<any>(
 
     // ── SPLIT RIDE ────────────────────────────────────────────────────────────
     if (ride.type === RIDE_TYPE.split) {
-      // No passengerId: the driver declines the whole ride card (one card per
-      // ride). Only this driver stops seeing it; the riders keep their bookings
-      // and the ride stays pending for the other drivers, as for a private ride.
-      if (!passengerId) {
-        await markRejected();
-        await Ride.findByIdAndUpdate(rideId, { $pull: { notifiedDriverIds: driverId } });
-        return callback?.({
-          success: true,
-          message: 'Ride declined. It stays available to other drivers.',
-          data: { rideCancelled: false },
-        });
-      }
-
-      const passenger = await Passenger.findOne({
-        _id: passengerId,
-        rideId,
-        // status: PASSENGER_STATUS.pending,
-      });
-      if (!passenger)
-        return callback?.({
-          success: false,
-          message: 'Passenger not found or already processed',
-        });
-
-      // Reject this passenger
-      passenger.status = PASSENGER_STATUS.rejected;
-      passenger.rejectionReason = reason || 'Driver rejected';
-      await passenger.save();
-
-      io.to(`user:${passenger.userId}`).emit('ride:driver-rejected', {
-        rideId,
-        passengerId: passenger._id,
-        reason: reason || 'Driver rejected your request',
-        searchingAgain: true,
-        rideCancelled: false,
-      });
-
+      // The ride is still pending here, so no driver owns it yet. A decline only
+      // means "not for me": this driver stops seeing the card and the riders
+      // keep their bookings for the other drivers, as for a private ride.
+      //
+      // Accept-failed bug: a decline that carried a passengerId (the request card
+      // row `_id` IS a passenger id) used to mark that rider `rejected` and, when
+      // they were the only rider, cancel the whole ride. No other notified driver
+      // was told, so their still-visible card failed with "already accepted or
+      // cancelled". The rider was told "searching again" while the ride was dead
+      // and their card hold was never released.
       await markRejected();
-
-      // ✅ Case 6: Recalculate remaining passengers' fares
-      if (ride.type === RIDE_TYPE.split) {
-        await recalculateSplitFares(rideId, 'passenger_rejected', io);
-      }
-
-      // Check remaining pending passengers
-      const remainingCount = await Passenger.countDocuments({
-        rideId,
-        status: PASSENGER_STATUS.pending,
-      });
-
-      if (remainingCount === 0) {
-        await Ride.findByIdAndUpdate(rideId, {
-          status: RIDE_STATUS.cancelled,
-          cancellationReason: 'No passengers left after driver rejection',
-          cancelledBy: CANCELLED_BY.system,
-          cancelledAt: new Date(),
-        });
-        await redisCleanup();
-        console.log(`Ride ${rideId} cancelled — no passengers left`);
-      }
-
+      await Ride.findByIdAndUpdate(rideId, { $pull: { notifiedDriverIds: driverId } });
       return callback?.({
         success: true,
-        message: 'Passenger rejected successfully',
-        data: {
-          passengerId: passenger._id,
-          remainingPassengers: remainingCount,
-          rideCancelled: remainingCount === 0,
-        },
+        message: 'Ride declined. It stays available to other drivers.',
+        data: { rideCancelled: false, ...(passengerId ? { passengerId } : {}) },
       });
     }
 

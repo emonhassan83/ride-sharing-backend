@@ -167,6 +167,60 @@ const notifyOtherNotifiedDriversRideTaken = async (
     });
   }
 };
+// The driver tapped Accept on a card for a ride that can no longer be taken
+// (the app missed the removal event, e.g. its socket was down). Besides the
+// failed ack, tell that driver to drop the stale card so it is not retried.
+const RIDE_UNAVAILABLE_CODE = 'RIDE_NOT_AVAILABLE';
+
+const rideUnavailableMessage = (status?: string | null): string => {
+  if (status === RIDE_STATUS.cancelled) {
+    return 'This ride request was cancelled and is no longer available.';
+  }
+  if (
+    status === RIDE_STATUS.arrived ||
+    status === RIDE_STATUS.started ||
+    status === RIDE_STATUS.completed
+  ) {
+    return 'This ride has already been accepted by another driver.';
+  }
+  return 'This ride is no longer available to accept.';
+};
+
+const removeStaleRequestCard = (
+  io: any,
+  driverId: string,
+  rideId: string,
+  rideStatus: string | null | undefined,
+  message: string,
+) => {
+  try {
+    io.to(`driver:${driverId}`).emit('ride:request-removed', {
+      rideId,
+      reason: RIDE_UNAVAILABLE_CODE,
+      rideStatus: rideStatus ?? null,
+      message,
+    });
+  } catch {
+    /* best effort */
+  }
+};
+
+const rideUnavailableAck = (
+  io: any,
+  driverId: string,
+  rideId: string,
+  rideStatus: string | null | undefined,
+  message: string = rideUnavailableMessage(rideStatus),
+) => {
+  removeStaleRequestCard(io, driverId, rideId, rideStatus, message);
+  return {
+    success: false,
+    code: RIDE_UNAVAILABLE_CODE,
+    message,
+    data: { rideId: String(rideId), rideStatus: rideStatus ?? null },
+  };
+};
+
 export const driverAcceptRideHandler = eventHandler<any>(
   async (socket: TSocket, data: any, callback?: any) => {
     const { rideId, passengerId } = data;
@@ -257,22 +311,29 @@ export const driverAcceptRideHandler = eventHandler<any>(
 
     // ──────────────────────────────────────────────────────────
     const ride = await Ride.findById(rideId);
-    if (!ride) return callback?.({ success: false, message: 'Ride not found' });
+    if (!ride) {
+      return callback?.(
+        rideUnavailableAck(io, driverId, rideId, null, 'This ride is no longer available to accept.'),
+      );
+    }
 
     if (
       ride.status !== RIDE_STATUS.pending &&
       ride.status !== RIDE_STATUS.accepted
-    )
-      return callback?.({
-        success: false,
-        message: 'This ride has already been accepted or cancelled.',
-      });
+    ) {
+      return callback?.(rideUnavailableAck(io, driverId, rideId, ride.status));
+    }
 
     if (ride.driverId && ride.driverId.toString() !== driverId) {
-      return callback?.({
-        success: false,
-        message: 'This ride has already been accepted by another driver.',
-      });
+      return callback?.(
+        rideUnavailableAck(
+          io,
+          driverId,
+          rideId,
+          ride.status,
+          'This ride has already been accepted by another driver.',
+        ),
+      );
     }
 
     // Busy rule (±60 min), first accept only. It was enforced when choosing
@@ -377,17 +438,20 @@ export const driverAcceptRideHandler = eventHandler<any>(
       }
 
       if (!assignedRide) {
+        // Lost a race: another driver took it, or the rider cancelled meanwhile.
         const current = await Ride.findById(rideId).select('driverId status').lean();
         if (current?.driverId && current.driverId.toString() !== driverId) {
-          return callback?.({
-            success: false,
-            message: 'This ride has already been accepted by another driver.',
-          });
+          return callback?.(
+            rideUnavailableAck(
+              io,
+              driverId,
+              rideId,
+              current.status,
+              'This ride has already been accepted by another driver.',
+            ),
+          );
         }
-        return callback?.({
-          success: false,
-          message: 'This ride is no longer available to accept.',
-        });
+        return callback?.(rideUnavailableAck(io, driverId, rideId, current?.status));
       }
 
       // Do NOT save booking before capture — that + long Stripe txn caused Mongo write conflicts.
@@ -825,11 +889,24 @@ export const driverAcceptRideHandler = eventHandler<any>(
         .filter((p: any) => p.status === PASSENGER_STATUS.pending)
         .map((p: any) => String(p._id));
 
-      if (!pendingIds.length)
+      if (!pendingIds.length) {
+        // Nothing left to take (riders cancelled / matched elsewhere): the card is stale.
+        if (!ride.driverId) {
+          return callback?.(
+            rideUnavailableAck(
+              io,
+              driverId,
+              rideId,
+              ride.status,
+              'No pending passengers to accept on this ride.',
+            ),
+          );
+        }
         return callback?.({
           success: false,
           message: 'No pending passengers to accept on this ride.',
         });
+      }
 
       const accepted: any[] = [];
       const skipped: Array<{ passengerId: string; message: string }> = [];
@@ -847,6 +924,9 @@ export const driverAcceptRideHandler = eventHandler<any>(
       }
 
       if (!accepted.length) {
+        if (skipped[0]?.message === 'This ride has already been assigned to another driver.') {
+          removeStaleRequestCard(io, driverId, rideId, ride.status, skipped[0].message);
+        }
         // Same shape as a single-rider failure, with the per-rider reasons attached.
         return callback?.({
           success: false,
