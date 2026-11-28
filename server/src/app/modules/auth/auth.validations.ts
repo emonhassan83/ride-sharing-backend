@@ -14,6 +14,7 @@ const loginValidationSchema = z.object({
       })
       .min(8, { message: 'Password must be at least 8 characters long.' }),
     fcmToken: z.string().optional(),
+    role: z.enum(['user', 'provider']).optional(),
   }),
 });
 
@@ -27,6 +28,7 @@ const loginWithPhoneValidationSchema = z.object({
       .string({ message: 'Country code is required!' })
       .min(1, { message: 'Country code cannot be empty.' }),
     fcmToken: z.string().optional(),
+    role: z.enum(['user', 'provider']).optional(),
   }),
 });
 

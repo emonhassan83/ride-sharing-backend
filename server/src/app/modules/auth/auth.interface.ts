@@ -4,11 +4,15 @@ export interface TLoginWithEmail {
   email: string
   password: string
   fcmToken?: string
+  /** Role chosen on the app's login screen. When sent, it must match the account. */
+  role?: 'user' | 'provider'
 }
 
 export interface TLoginWithPhone {
   phone: string
   fcmToken?: string
+  /** Role chosen on the app's login screen. When sent, it must match the account. */
+  role?: 'user' | 'provider'
 }
 
 export interface TGoogleLoginPayload {

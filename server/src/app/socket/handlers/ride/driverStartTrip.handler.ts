@@ -4,6 +4,8 @@ import { RIDE_STATUS, RIDE_TYPE } from '../../../modules/ride/ride.constant';
 import { PASSENGER_STATUS } from '../../../modules/passenger/passenger.constant';
 import { BOOKING_STATUS } from '../../../modules/booking/booking.constant';
 import { Ride } from '../../../modules/ride/ride.model';
+import { User } from '../../../modules/user/user.model';
+import { USER_STATUS } from '../../../modules/user/user.constant';
 import { Passenger } from '../../../modules/passenger/passenger.model';
 import { Booking } from '../../../modules/booking/booking.model';
 import { Payment } from '../../../modules/payment/payment.model';
@@ -24,6 +26,17 @@ export const driverStartTripHandler = eventHandler<any>(
 
     if (!driverId || !rideId)
       return callback?.({ success: false, message: 'Missing required fields' });
+
+    // The socket may have connected before the admin blocked this driver, so
+    // re-read the status from the DB instead of trusting the connection.
+    const driver = await User.findById(driverId).select('status isDeleted').lean();
+    if (!driver || driver.isDeleted || driver.status === USER_STATUS.blocked) {
+      return callback?.({
+        success: false,
+        code: 'ACCOUNT_BLOCKED',
+        message: 'Your account has been blocked. Please contact support.',
+      });
+    }
 
     const ride = await Ride.findById(rideId);
     if (!ride) return callback?.({ success: false, message: 'Ride not found' });

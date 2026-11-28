@@ -5,7 +5,7 @@ import { User } from '../modules/user/user.model';
 import ApiError from '../errors/ApiError';
 import catchAsync from '../utils/catchAsync';
 import { config } from '../config/env.config';
-import { TUserRole, USER_ROLE } from '../modules/user/user.constant';
+import { TUserRole, USER_ROLE, USER_STATUS } from '../modules/user/user.constant';
 import { isTokenRevoked, SESSION_ENDED_MESSAGE } from '../modules/auth/auth.utils';
 import {
   hasExplicitRequestLanguage,
@@ -55,6 +55,14 @@ const auth = (allowedRoles: string | TUserRole[] = 'common') =>
 
     if (user.isDeleted) {
       throw new ApiError(StatusCodes.FORBIDDEN, 'Your account has been deleted');
+    }
+
+    // A blocked account loses access immediately, even with a still-valid token.
+    if (user.status === USER_STATUS.blocked) {
+      throw new ApiError(
+        StatusCodes.FORBIDDEN,
+        'Your account has been blocked. Please contact support.'
+      );
     }
 
     // Sync language between request header and user DB profile

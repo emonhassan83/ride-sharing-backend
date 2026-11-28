@@ -46,6 +46,35 @@ const clearFcmTokenFromOtherUsers = async (fcmToken?: string | null, excludeUser
   await User.updateMany(filter, { $set: { fcmToken: null } });
 };
 
+/** A blocked account must not get a session, whichever login method it uses. */
+const assertAccountNotBlocked = (user: { status?: string | null }) => {
+  if (user?.status === USER_STATUS.blocked) {
+    throw new ApiError(
+      StatusCodes.FORBIDDEN,
+      'Your account has been blocked. Please contact support.'
+    );
+  }
+};
+
+/**
+ * The login screen asks "Passenger or Driver". If the app sends that choice, it
+ * has to match the account, so driver credentials cannot open a passenger session.
+ */
+const assertLoginRoleMatches = (
+  user: { role?: string | null },
+  requestedRole?: string
+) => {
+  if (!requestedRole || user.role === USER_ROLE.admin) return;
+  if (user.role !== requestedRole) {
+    throw new ApiError(
+      StatusCodes.FORBIDDEN,
+      requestedRole === USER_ROLE.provider
+        ? 'This account is not registered as a driver. Please log in as a passenger.'
+        : 'This account is registered as a driver. Please log in as a driver.'
+    );
+  }
+};
+
 const archivedIdentity = (userId: any) => {
   const uid = String(userId);
   const stamp = Date.now();
@@ -213,6 +242,7 @@ const registerWithGoogle = async (payload: TGoogleLoginPayload) => {
     await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
     await releaseDeletedAccount(user);
   } else if (user) {
+    assertAccountNotBlocked(user);
     if (user.registerWith !== REGISTER_WITH.google) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
@@ -269,6 +299,7 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
     await clearFcmTokenFromOtherUsers(payload.fcmToken, user._id);
     await releaseDeletedAccount(user);
   } else if (user) {
+    assertAccountNotBlocked(user);
     if (user.registerWith !== REGISTER_WITH.apple) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
@@ -305,7 +336,7 @@ const registerWithApple = async (payload: TAppleLoginPayload) => {
 };
 
 const loginWithEmail = async (payload: TLoginWithEmail) => {
-  const { email, password, fcmToken } = payload as TLoginWithEmail;
+  const { email, password, fcmToken, role } = payload as TLoginWithEmail;
 
   //* checking if the user is exist
   const user = await User.findOne({ email }).select('+password');
@@ -316,6 +347,10 @@ const loginWithEmail = async (payload: TLoginWithEmail) => {
   //* checking if the password is correct
   if (!(await User.isMatchPassword(password, user?.password)))
     throw new ApiError(StatusCodes.FORBIDDEN, 'Password do not matched');
+
+  // Checked after the password so account state is not leaked to guessers.
+  assertLoginRoleMatches(user, role);
+  assertAccountNotBlocked(user);
 
   // if user is not verify yet throw error
   if (!user?.isSignUpOtpVerified) {
@@ -377,13 +412,16 @@ const loginWithEmail = async (payload: TLoginWithEmail) => {
 };
 
 const loginWithPhone = async (payload: TLoginWithPhone) => {
-  const { phone, fcmToken } = payload as TLoginWithPhone;
+  const { phone, fcmToken, role } = payload as TLoginWithPhone;
 
   //* checking if the user is exist
   const user = await User.findOne({ phone });
   if (!user || user?.isDeleted) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'This user is not found ! Please check your phone and country code');
   }
+
+  assertLoginRoleMatches(user, role);
+  assertAccountNotBlocked(user);
 
   // if user is not verify yet throw error
   if (!user?.isSignUpOtpVerified) {
@@ -711,6 +749,8 @@ const refreshToken = async (token: string | undefined) => {
   if (!user || user?.isDeleted) {
     throw new ApiError(StatusCodes.UNAUTHORIZED, 'This user is not found !');
   }
+
+  assertAccountNotBlocked(user);
 
   // A token from before the last logout cannot mint a new session (issue 15).
   if (isTokenRevoked(decoded, user.tokensValidAfter)) {

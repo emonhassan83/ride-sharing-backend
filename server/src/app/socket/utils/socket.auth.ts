@@ -5,7 +5,7 @@ import { config } from '../../config/env.config';
 import ApiError from '../../errors/ApiError';
 import { User } from '../../modules/user/user.model';
 import { Vehicle } from '../../modules/vehicle/vehicle.model';
-import { USER_ROLE } from '../../modules/user/user.constant';
+import { USER_ROLE, USER_STATUS } from '../../modules/user/user.constant';
 import { normalizeLanguage } from '../../i18n/i18n';
 import { isTokenRevoked, SESSION_ENDED_MESSAGE } from '../../modules/auth/auth.utils';
 
@@ -33,11 +33,17 @@ export const socketAuth = async (socket: Socket, next: (err?: Error) => void) =>
 
     // 2. Fetch user from DB (without password)
     const user = await User.findById(decoded.userId)
-      .select('_id email role name phone profileImage location avgRating language tokensValidAfter')
+      .select('_id email role name phone profileImage location avgRating language tokensValidAfter status')
       .lean();
 
     if (!user) {
       return next(new ApiError(httpStatus.NOT_FOUND, 'User not found'));
+    }
+
+    if (user.status === USER_STATUS.blocked) {
+      return next(
+        new ApiError(httpStatus.FORBIDDEN, 'Your account has been blocked. Please contact support.')
+      );
     }
 
     // Issue 15: a token from before the last logout cannot reconnect.
