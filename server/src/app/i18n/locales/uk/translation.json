@@ -8,6 +8,7 @@
     "Invalid token payload": "Недійсні дані токена",
     "User not found": "Користувача не знайдено",
     "User not found!": "Користувача не знайдено!",
+    "This account has an ongoing ride and cannot be blocked until the ride is finished.": "Цей обліковий запис має поточну поїздку, його не можна заблокувати до її завершення.",
     "Your account has been blocked. Please contact support.": "Ваш обліковий запис заблоковано. Зверніться до служби підтримки.",
     "This account is not registered as a driver. Please log in as a passenger.": "Цей обліковий запис не зареєстровано як водій. Увійдіть як пасажир.",
     "This account is registered as a driver. Please log in as a driver.": "Цей обліковий запис зареєстровано як водій. Увійдіть як водій.",

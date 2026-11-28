@@ -180,14 +180,19 @@ const getAllIntoDB = async (query: Record<string, unknown>) => {
   // forever. They are hidden from scheduled and listed under status=overdue.
   const findOverdueAcceptedRideIds = async () => {
     const candidates = await Ride.find({
-      status: RIDE_STATUS.accepted,
+      status: { $in: [RIDE_STATUS.accepted, RIDE_STATUS.arrived, RIDE_STATUS.started] },
       departureDate: { $lte: formatRideLocalDate(new Date()) },
     })
-      .select('_id departureDate departureTime')
+      .select('_id status departureDate departureTime')
       .lean();
     const now = new Date();
+    // Stale started/arrived trips (never completed) are overdue too.
     return candidates
-      .filter((r: any) => isPastUpcomingWindow(r.departureDate, r.departureTime, now))
+      .filter((r: any) =>
+        r.status === RIDE_STATUS.accepted
+          ? isPastUpcomingWindow(r.departureDate, r.departureTime, now)
+          : isStaleActiveTrip(r.departureDate, r.departureTime, now),
+      )
       .map((r: any) => r._id);
   };
 
@@ -425,6 +430,36 @@ export const isPastUpcomingWindow = (
   }
 };
 
+/**
+ * Issue 19 (V4 follow-up): a trip the driver started (or arrived for) but never
+ * completed stayed "started"/"arrived" forever, and the upcoming lists never
+ * hid rides in those states, so yesterday's abandoned trip sat in Upcoming.
+ * After this long past departure an under-way trip is treated as stale.
+ */
+export const STALE_ACTIVE_TRIP_HOURS = 24;
+
+export const isStaleActiveTrip = (
+  departureDate: unknown,
+  departureTime: unknown,
+  now: Date = new Date(),
+): boolean => {
+  const iso = toIsoDate(departureDate);
+  if (!iso) return false;
+  let departure: Date;
+  try {
+    departure = getDepartureDateTime(iso, String(departureTime ?? ''));
+  } catch {
+    // Unparseable time: count from the end of the departure day.
+    departure = getDepartureDateTime(iso, '23:59');
+  }
+  return departure.getTime() + STALE_ACTIVE_TRIP_HOURS * 3_600_000 < now.getTime();
+};
+
+const UNDER_WAY_RIDE_STATUSES = new Set<string>([
+  RIDE_STATUS.arrived,
+  RIDE_STATUS.started,
+]);
+
 /** The request is for not-yet-started rides (upcoming), not for history. */
 const wantsUpcomingRides = (
   isUpcomingList: boolean,
@@ -588,12 +623,16 @@ const getDriverRides = async (
     await Ride.find(baseRideCondition)
       .select('_id status departureDate departureTime')
       .lean()
-  ).filter(
-    (ride) =>
-      !hidePastAccepted ||
-      ride.status !== RIDE_STATUS.accepted ||
-      !isPastUpcomingWindow(ride.departureDate, ride.departureTime, now),
-  );
+  ).filter((ride) => {
+    if (!hidePastAccepted) return true;
+    if (ride.status === RIDE_STATUS.accepted) {
+      return !isPastUpcomingWindow(ride.departureDate, ride.departureTime, now);
+    }
+    if (UNDER_WAY_RIDE_STATUSES.has(String(ride.status))) {
+      return !isStaleActiveTrip(ride.departureDate, ride.departureTime, now);
+    }
+    return true;
+  });
   const driverRideIds = driverRides.map(r => r._id);
   const cancelledOrRejectedRideIdSet = new Set(
     driverRides
@@ -916,7 +955,8 @@ const getRiderRides = async (
       })
     : passengerDocs;
 
-  // Rides already under way (driver arrived / on board) are never hidden.
+  // Rides under way (driver arrived / on board) get a longer window than
+  // not-started ones, but an abandoned trip is still hidden once stale.
   const activeTripStatuses = new Set<string>([
     PASSENGER_STATUS.in_progress,
     PASSENGER_STATUS.driver_arrived,
@@ -925,10 +965,10 @@ const getRiderRides = async (
   const hidePastUpcoming = wantsUpcomingRides(isUpcomingList, statuses);
   const now = new Date();
   const visiblePassengers = hidePastUpcoming
-    ? eligiblePassengers.filter(
-        (p) =>
-          activeTripStatuses.has(String(p.status)) ||
-          !isPastUpcomingWindow(p.departureDate, p.departureTime, now),
+    ? eligiblePassengers.filter((p) =>
+        activeTripStatuses.has(String(p.status))
+          ? !isStaleActiveTrip(p.departureDate, p.departureTime, now)
+          : !isPastUpcomingWindow(p.departureDate, p.departureTime, now),
       )
     : eligiblePassengers;
 

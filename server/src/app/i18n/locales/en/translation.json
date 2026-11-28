@@ -8,6 +8,7 @@
     "Invalid token payload": "Invalid token payload",
     "User not found": "User not found",
     "User not found!": "User not found!",
+    "This account has an ongoing ride and cannot be blocked until the ride is finished.": "This account has an ongoing ride and cannot be blocked until the ride is finished.",
     "Your account has been blocked. Please contact support.": "Your account has been blocked. Please contact support.",
     "This account is not registered as a driver. Please log in as a passenger.": "This account is not registered as a driver. Please log in as a passenger.",
     "This account is registered as a driver. Please log in as a driver.": "This account is registered as a driver. Please log in as a driver.",

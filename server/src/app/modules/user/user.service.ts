@@ -21,7 +21,7 @@ import { config } from '../../config/env.config';
 import { Vehicle } from '../vehicle/vehicle.model';
 import { Ride } from '../ride/ride.model';
 import { RIDE_STATUS, RIDE_TYPE } from '../ride/ride.constant';
-import { isPastUpcomingWindow } from '../ride/ride.service';
+import { isPastUpcomingWindow, isStaleActiveTrip } from '../ride/ride.service';
 import { DRIVER_TOO_YOUNG_MESSAGE, isAdultDriverDob } from '../../utils/profileValidation.utils';
 import { Review } from '../review/review.model';
 import { Passenger } from '../passenger/passenger.model';
@@ -589,6 +589,17 @@ const updateUserStatus = async (
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found!');
   }
 
+  // Blocking mid-trip would strand the passengers (or the rider) of a ride
+  // that is under way, so the admin has to wait until it is finished.
+  if (status === USER_STATUS.blocked && user.status !== USER_STATUS.blocked) {
+    if (await hasOngoingRide(userId)) {
+      throw new ApiError(
+        StatusCodes.CONFLICT,
+        'This account has an ongoing ride and cannot be blocked until the ride is finished.'
+      );
+    }
+  }
+
   const updateFields: Record<string, unknown> = { status };
   if (status === USER_STATUS.blocked) {
     updateFields.isOnline = false;
@@ -631,8 +642,21 @@ const updateUserStatus = async (
   }
 
   // Only notify when this call actually changed the status.
+  // sendUserStatusNotifYToUser emits `user:status-changed` to `user:<id>`.
   if (statusChanged) {
     await sendUserStatusNotifYToUser(status, result);
+  }
+
+  // Socket auth rejects blocked users only on (re)connect, so drop the sockets
+  // that are already open. The short delay lets `user:status-changed` arrive first.
+  if (status === USER_STATUS.blocked) {
+    setTimeout(() => {
+      try {
+        getIO().in(`user:${userId}`).disconnectSockets(true);
+      } catch {
+        /* socket server may not be initialized in scripts */
+      }
+    }, 2000);
   }
 
   return result;
@@ -701,8 +725,33 @@ export const isRideStillActive = (
   now: Date = new Date(),
 ): boolean => {
   if (!ride || !ACTIVE_RIDE_STATUSES.includes(ride.status as any)) return false;
-  if (ride.status === RIDE_STATUS.started) return true;
+  // A started trip that was never completed must not block the account forever.
+  if (ride.status === RIDE_STATUS.started) {
+    return !isStaleActiveTrip(ride.departureDate, ride.departureTime, now);
+  }
   return !isPastUpcomingWindow(ride.departureDate, ride.departureTime, now);
+};
+
+/**
+ * Admin block guard: true while the user is on a trip that is under way right
+ * now (driver arrived / trip started / rider on board). Stale trips that were
+ * never completed do not count, or the account could never be blocked.
+ */
+const hasOngoingRide = async (userId: string, now: Date = new Date()): Promise<boolean> => {
+  const [driverRides, onBoardPassengers] = await Promise.all([
+    Ride.find({
+      driverId: userId,
+      status: { $in: [RIDE_STATUS.arrived, RIDE_STATUS.started] },
+    }).select('departureDate departureTime').lean(),
+    Passenger.find({
+      userId,
+      status: { $in: ON_BOARD_PASSENGER_STATUSES as any },
+    }).select('departureDate departureTime').lean(),
+  ]);
+
+  return [...driverRides, ...onBoardPassengers].some(
+    (r: any) => !isStaleActiveTrip(r.departureDate, r.departureTime, now),
+  );
 };
 
 const hasBlockingActiveRide = async (userId: string, now: Date = new Date()): Promise<boolean> => {
@@ -724,7 +773,10 @@ const hasBlockingActiveRide = async (userId: string, now: Date = new Date()): Pr
   ]);
 
   if (rides.some((r: any) => isRideStillActive(r, now))) return true;
-  if (passengers.some((p: any) => ON_BOARD_PASSENGER_STATUSES.includes(p.status))) return true;
+  if (passengers.some((p: any) =>
+    ON_BOARD_PASSENGER_STATUSES.includes(p.status) &&
+    !isStaleActiveTrip(p.departureDate, p.departureTime, now),
+  )) return true;
   if (bookings.some((b: any) => b.bookingStatus === BOOKING_STATUS.running)) return true;
 
   // Remaining passengers/bookings are only active while their ride is.

@@ -8,6 +8,7 @@
     "Invalid token payload": "תוכן אסימון לא תקין",
     "User not found": "המשתמש לא נמצא",
     "User not found!": "המשתמש לא נמצא!",
+    "This account has an ongoing ride and cannot be blocked until the ride is finished.": "לחשבון זה יש נסיעה פעילה ולא ניתן לחסום אותו עד לסיום הנסיעה.",
     "Your account has been blocked. Please contact support.": "החשבון שלך נחסם. אנא פנה לתמיכה.",
     "This account is not registered as a driver. Please log in as a passenger.": "חשבון זה אינו רשום כנהג. אנא התחבר כנוסע.",
     "This account is registered as a driver. Please log in as a driver.": "חשבון זה רשום כנהג. אנא התחבר כנהג.",
